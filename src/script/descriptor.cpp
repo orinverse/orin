@@ -938,19 +938,28 @@ std::unique_ptr<DescriptorImpl> ParseScript(uint32_t& key_exp_index, Span<const 
     bool sorted_multi = false;
     if (Func("pk", expr)) {
         auto pubkey = ParsePubkey(key_exp_index, expr, ctx, out, error);
-        if (!pubkey) return nullptr;
+        if (!pubkey) {
+            error = strprintf("pk(): %s", error);
+            return nullptr;
+        }
         ++key_exp_index;
         return std::make_unique<PKDescriptor>(std::move(pubkey));
     }
     if (Func("pkh", expr)) {
         auto pubkey = ParsePubkey(key_exp_index, expr, ctx, out, error);
-        if (!pubkey) return nullptr;
+        if (!pubkey) {
+            error = strprintf("pkh(): %s", error);
+            return nullptr;
+        }
         ++key_exp_index;
         return std::make_unique<PKHDescriptor>(std::move(pubkey));
     }
     if (ctx == ParseScriptContext::TOP && Func("combo", expr)) {
         auto pubkey = ParsePubkey(key_exp_index, expr, ctx, out, error);
-        if (!pubkey) return nullptr;
+        if (!pubkey) {
+            error = strprintf("combo(): %s", error);
+            return nullptr;
+        }
         ++key_exp_index;
         return std::make_unique<ComboDescriptor>(std::move(pubkey));
     } else if (Func("combo", expr)) {
@@ -973,7 +982,10 @@ std::unique_ptr<DescriptorImpl> ParseScript(uint32_t& key_exp_index, Span<const 
             }
             auto arg = Expr(expr);
             auto pk = ParsePubkey(key_exp_index, arg, ctx, out, error);
-            if (!pk) return nullptr;
+            if (!pk) {
+                error = strprintf("Multi: %s", error);
+                return nullptr;
+            }
             script_size += pk->GetSize() + 1;
             providers.emplace_back(std::move(pk));
             key_exp_index++;
