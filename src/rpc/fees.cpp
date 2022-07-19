@@ -7,7 +7,6 @@
 #include <node/context.h>
 #include <policy/feerate.h>
 #include <policy/fees.h>
-#include <policy/policy.h>
 #include <policy/settings.h>
 #include <rpc/protocol.h>
 #include <rpc/request.h>
