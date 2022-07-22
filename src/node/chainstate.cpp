@@ -12,9 +12,11 @@
 #include <node/blockstorage.h>
 #include <sync.h>
 #include <threadsafety.h>
+#include <tinyformat.h>
 #include <txdb.h>
 #include <uint256.h>
 #include <util/time.h>
+#include <util/translation.h>
 #include <validation.h>
 
 #include <evo/chainhelper.h>
