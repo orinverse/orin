@@ -19,7 +19,6 @@ LLMQContext::LLMQContext(ChainstateManager& chainman, CDeterministicMNManager& d
                          CMasternodeMetaMan& mn_metaman, CMNHFManager& mnhfman, CSporkManager& sporkman,
                          CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman,
                          const CMasternodeSync& mn_sync, bool unit_tests, bool wipe) :
-    is_masternode{mn_activeman != nullptr},
     bls_worker{std::make_shared<CBLSWorker>()},
     dkg_debugman{std::make_unique<llmq::CDKGDebugManager>()},
     qsnapman{std::make_unique<llmq::CQuorumSnapshotManager>(evo_db)},
@@ -49,23 +48,18 @@ void LLMQContext::Interrupt() {
     sigman->InterruptWorkerThread();
 }
 
-void LLMQContext::Start(CConnman& connman, PeerManager& peerman)
+void LLMQContext::Start(PeerManager& peerman)
 {
-    if (is_masternode) {
-        qdkgsman->StartThreads(connman, peerman);
-    }
     qman->Start();
     sigman->StartWorkerThread(peerman);
     clhandler->Start(*isman);
     isman->Start(peerman);
 }
 
-void LLMQContext::Stop() {
+void LLMQContext::Stop()
+{
     isman->Stop();
     clhandler->Stop();
     sigman->StopWorkerThread();
     qman->Stop();
-    if (is_masternode) {
-        qdkgsman->StopThreads();
-    }
 }

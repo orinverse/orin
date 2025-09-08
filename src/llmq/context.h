@@ -9,7 +9,6 @@
 
 class CActiveMasternodeManager;
 class CBLSWorker;
-class CConnman;
 class ChainstateManager;
 class CDeterministicMNManager;
 class CEvoDB;
@@ -32,9 +31,6 @@ class CSigningManager;
 }
 
 struct LLMQContext {
-private:
-    const bool is_masternode;
-
 public:
     LLMQContext() = delete;
     LLMQContext(const LLMQContext&) = delete;
@@ -45,7 +41,7 @@ public:
     ~LLMQContext();
 
     void Interrupt();
-    void Start(CConnman& connman, PeerManager& peerman);
+    void Start(PeerManager& peerman);
     void Stop();
 
     /** Guaranteed if LLMQContext is initialized then all members are valid too

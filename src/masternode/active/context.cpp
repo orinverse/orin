@@ -12,6 +12,7 @@
 #include <instantsend/instantsend.h>
 #include <instantsend/signing.h>
 #include <llmq/context.h>
+#include <llmq/dkgsessionmgr.h>
 #include <llmq/ehf_signals.h>
 #include <llmq/signing_shares.h>
 #include <validation.h>
@@ -51,6 +52,7 @@ void ActiveContext::Interrupt()
 
 void ActiveContext::Start(CConnman& connman, PeerManager& peerman)
 {
+    m_llmq_ctx.qdkgsman->StartThreads(connman, peerman);
     shareman->RegisterAsRecoveredSigsListener();
     shareman->StartWorkerThread(connman, peerman);
 }
@@ -59,4 +61,5 @@ void ActiveContext::Stop()
 {
     shareman->StopWorkerThread();
     shareman->UnregisterAsRecoveredSigsListener();
+    m_llmq_ctx.qdkgsman->StopThreads();
 }

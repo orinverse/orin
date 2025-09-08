@@ -2256,7 +2256,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     // ********************************************************* Step 10a: schedule Dash-specific tasks
 
-    node.llmq_ctx->Start(*node.connman, *node.peerman);
+    node.llmq_ctx->Start(*node.peerman);
     if (node.active_ctx) node.active_ctx->Start(*node.connman, *node.peerman);
 
     node.scheduler->scheduleEvery(std::bind(&CNetFulfilledRequestManager::DoMaintenance, std::ref(*node.netfulfilledman)), std::chrono::minutes{1});
