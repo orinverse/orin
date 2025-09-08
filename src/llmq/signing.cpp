@@ -332,10 +332,8 @@ void CRecoveredSigsDb::CleanupOldVotes(int64_t maxAge)
 
 //////////////////
 
-CSigningManager::CSigningManager(const CActiveMasternodeManager* const mn_activeman, const CChainState& chainstate,
-                                 const CQuorumManager& _qman, bool fMemory, bool fWipe) :
+CSigningManager::CSigningManager(const CChainState& chainstate, const CQuorumManager& _qman, bool fMemory, bool fWipe) :
     db(fMemory, fWipe),
-    m_mn_activeman(mn_activeman),
     m_chainstate(chainstate),
     qman(_qman)
 {
@@ -614,10 +612,6 @@ void CSigningManager::ProcessRecoveredSig(const std::shared_ptr<const CRecovered
 
     db.WriteRecoveredSig(*recoveredSig);
     WITH_LOCK(cs_pending, pendingReconstructedRecoveredSigs.erase(recoveredSig->GetHash()));
-
-    if (m_mn_activeman != nullptr) {
-        peerman.RelayRecoveredSig(recoveredSig->GetHash());
-    }
 
     auto listeners = WITH_LOCK(cs_listeners, return recoveredSigsListeners);
     for (auto& l : listeners) {
