@@ -24,7 +24,6 @@ class ChainstateManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
 class CNode;
-class PeerManager;
 
 extern RecursiveMutex cs_main;
 
@@ -252,8 +251,6 @@ public:
     CAmount GetMinCollateralFee() const;
 
     UniValue GetJSONObject() const;
-
-    void Relay(PeerManager& peerman, const CMasternodeSync& mn_sync) const;
 
     uint256 GetHash() const;
     uint256 GetDataHash() const;
