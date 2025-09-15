@@ -90,6 +90,9 @@ CGovernanceManager::~CGovernanceManager()
 
 void CGovernanceManager::Schedule(CScheduler& scheduler, CConnman& connman, PeerManager& peerman)
 {
+    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_relay);
+
     assert(IsValid());
 
     scheduler.scheduleEvery(
@@ -464,6 +467,7 @@ void CGovernanceManager::CheckAndRemove()
 
     const auto tip_mn_list = Assert(m_dmnman)->GetListAtChainTip();
 
+    {
     LOCK2(::cs_main, cs);
 
     for (const uint256& nHash : vecDirtyHashes) {
@@ -567,6 +571,7 @@ void CGovernanceManager::CheckAndRemove()
             ++r_it;
         }
     }
+    }
 
     LogPrint(BCLog::GOBJECT, "CGovernanceManager::UpdateCachesAndClean -- %s, m_requested_hash_time size=%d\n",
              ToString(), m_requested_hash_time.size());
@@ -669,6 +674,8 @@ void CGovernanceManager::GetAllNewerThan(std::vector<CGovernanceObject>& objs, i
 
 bool CGovernanceManager::ConfirmInventoryRequest(const CInv& inv)
 {
+    AssertLockNotHeld(cs);
+
     // do not request objects until it's time to sync
     if (!m_mn_sync.IsBlockchainSynced()) return false;
 
@@ -1084,6 +1091,8 @@ int CGovernanceManager::RequestGovernanceObjectVotes(CNode& peer, CConnman& conn
 int CGovernanceManager::RequestGovernanceObjectVotes(const std::vector<CNode*>& vNodesCopy, CConnman& connman,
                                                      const PeerManager& peerman) const
 {
+    AssertLockNotHeld(cs);
+
     static std::map<uint256, std::map<CService, int64_t> > mapAskedRecently;
     // Maximum number of nodes to request votes from for the same object hash on real networks
     // (mainnet, testnet, devnets). Keep this low to avoid unnecessary bandwidth usage.
@@ -1241,6 +1250,7 @@ void CGovernanceManager::AddCachedTriggers()
 
 void CGovernanceManager::InitOnLoad()
 {
+    {
     LOCK(cs);
     const auto start{SteadyClock::now()};
     LogPrintf("Preparing masternode indexes and governance triggers...\n");
@@ -1248,6 +1258,7 @@ void CGovernanceManager::InitOnLoad()
     AddCachedTriggers();
     LogPrintf("Masternode indexes and governance triggers prepared  %dms\n",
               Ticks<std::chrono::milliseconds>(SteadyClock::now() - start));
+    }
     LogPrintf("     %s\n", ToString());
 }
 
@@ -1263,6 +1274,7 @@ void GovernanceStore::Clear()
 
 void CGovernanceManager::Clear()
 {
+    AssertLockNotHeld(cs);
     LogPrint(BCLog::GOBJECT, "Governance object manager was cleared\n");
     GovernanceStore::Clear();
     cmapVoteToObject.Clear();
@@ -1297,6 +1309,7 @@ std::string GovernanceStore::ToString() const
 
 std::string CGovernanceManager::ToString() const
 {
+    AssertLockNotHeld(cs);
     return strprintf("%s, Votes: %d", GovernanceStore::ToString(), (int)cmapVoteToObject.GetSize());
 }
 
@@ -1591,6 +1604,7 @@ std::vector<CSuperblock_sptr> CGovernanceManager::GetActiveTriggersInternal() co
 
 bool CGovernanceManager::IsSuperblockTriggered(const CDeterministicMNList& tip_mn_list, int nBlockHeight)
 {
+    AssertLockNotHeld(cs);
     LogPrint(BCLog::GOBJECT, "IsSuperblockTriggered -- Start nBlockHeight = %d\n", nBlockHeight);
     if (!CSuperblock::IsValidBlockHeight(nBlockHeight)) {
         return false;
