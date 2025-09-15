@@ -41,7 +41,7 @@ class ScopedLockBool
     bool fPrevValue;
 
 public:
-    ScopedLockBool(RecursiveMutex& _cs, bool& _ref, bool _value) :
+    ScopedLockBool(Mutex& _cs, bool& _ref, bool _value) :
         ref(_ref)
     {
         AssertLockHeld(_cs);
@@ -54,7 +54,7 @@ public:
 } // anonymous namespace
 
 GovernanceStore::GovernanceStore() :
-    cs(),
+    cs_store(),
     mapObjects(),
     mapErasedGovernanceObjects(),
     cmapInvalidVotes(MAX_CACHE_SIZE),
@@ -90,7 +90,7 @@ CGovernanceManager::~CGovernanceManager()
 
 void CGovernanceManager::Schedule(CScheduler& scheduler, CConnman& connman, PeerManager& peerman)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     AssertLockNotHeld(cs_relay);
 
     assert(IsValid());
@@ -122,7 +122,7 @@ void CGovernanceManager::Schedule(CScheduler& scheduler, CConnman& connman, Peer
 
 bool CGovernanceManager::LoadCache(bool load_cache)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     assert(m_db != nullptr);
     is_valid = load_cache ? m_db->Load(*this) : m_db->Store(*this);
     if (is_valid && load_cache) {
@@ -165,13 +165,13 @@ void CGovernanceManager::RelayVote(const CGovernanceVote& vote)
 // Accessors for thread-safe access to maps
 bool CGovernanceManager::HaveObjectForHash(const uint256& nHash) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
     return (mapObjects.count(nHash) == 1 || mapPostponedObjects.count(nHash) == 1);
 }
 
 bool CGovernanceManager::SerializeObjectForHash(const uint256& nHash, CDataStream& ss) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
     auto it = mapObjects.find(nHash);
     if (it == mapObjects.end()) {
         it = mapPostponedObjects.find(nHash);
@@ -184,7 +184,7 @@ bool CGovernanceManager::SerializeObjectForHash(const uint256& nHash, CDataStrea
 
 bool CGovernanceManager::HaveVoteForHash(const uint256& nHash) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
 
     CGovernanceObject* pGovobj = nullptr;
     return cmapVoteToObject.Get(nHash, pGovobj) && pGovobj->GetVoteFile().HasVote(nHash);
@@ -192,13 +192,13 @@ bool CGovernanceManager::HaveVoteForHash(const uint256& nHash) const
 
 int CGovernanceManager::GetVoteCount() const
 {
-    LOCK(cs);
+    LOCK(cs_store);
     return (int)cmapVoteToObject.GetSize();
 }
 
 bool CGovernanceManager::SerializeVoteForHash(const uint256& nHash, CDataStream& ss) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
 
     CGovernanceObject* pGovobj = nullptr;
     return cmapVoteToObject.Get(nHash, pGovobj) && pGovobj->GetVoteFile().SerializeVoteToStream(nHash, ss);
@@ -206,20 +206,20 @@ bool CGovernanceManager::SerializeVoteForHash(const uint256& nHash, CDataStream&
 
 void CGovernanceManager::AddPostponedObject(const CGovernanceObject& govobj)
 {
-    LOCK(cs);
+    LOCK(cs_store);
     AddPostponedObjectInternal(govobj);
 }
 
 void CGovernanceManager::AddPostponedObjectInternal(const CGovernanceObject& govobj)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     mapPostponedObjects.insert(std::make_pair(govobj.GetHash(), govobj));
 }
 
 MessageProcessingResult CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, std::string_view msg_type,
                                                            CDataStream& vRecv)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     AssertLockNotHeld(cs_relay);
     if (!IsValid()) return {};
     if (!m_mn_sync.IsBlockchainSynced()) return {};
@@ -238,7 +238,7 @@ MessageProcessingResult CGovernanceManager::ProcessMessage(CNode& peer, CConnman
         vRecv >> filter;
 
         LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- syncing governance objects to our peer %s\n", peer.GetLogString());
-        LOCK(cs);
+        LOCK(cs_store);
         if (nProp == uint256()) {
             return SyncObjects(peer, connman);
         } else {
@@ -274,7 +274,7 @@ MessageProcessingResult CGovernanceManager::ProcessMessage(CNode& peer, CConnman
             return ret;
         }
 
-        LOCK2(::cs_main, cs);
+        LOCK2(::cs_main, cs_store);
 
         if (mapObjects.count(nHash) || mapPostponedObjects.count(nHash) || mapErasedGovernanceObjects.count(nHash)) {
             // TODO - print error code? what if it's GOVOBJ_ERROR_IMMATURE?
@@ -365,14 +365,14 @@ MessageProcessingResult CGovernanceManager::ProcessMessage(CNode& peer, CConnman
 
 void CGovernanceManager::CheckOrphanVotes(CGovernanceObject& govobj)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     AssertLockNotHeld(cs_relay);
 
     uint256 nHash = govobj.GetHash();
     std::vector<vote_time_pair_t> vecVotePairs;
     cmmapOrphanVotes.GetAll(nHash, vecVotePairs);
 
-    ScopedLockBool guard(cs, fRateChecksEnabled, false);
+    ScopedLockBool guard(cs_store, fRateChecksEnabled, false);
 
     int64_t nNow = GetAdjustedTime();
     const auto tip_mn_list = Assert(m_dmnman)->GetListAtChainTip();
@@ -404,7 +404,7 @@ void CGovernanceManager::AddGovernanceObject(CGovernanceObject& govobj, const CN
 
     govobj.UpdateSentinelVariables(tip_mn_list); //this sets local vars in object
 
-    LOCK2(::cs_main, cs);
+    LOCK2(::cs_main, cs_store);
     std::string strError;
 
     // MAKE SURE THIS OBJECT IS OK
@@ -455,7 +455,7 @@ void CGovernanceManager::AddGovernanceObject(CGovernanceObject& govobj, const CN
 
 void CGovernanceManager::CheckAndRemove()
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     assert(m_mn_metaman.IsValid());
 
     // Return on initial sync, spammed the debug.log and provided no use
@@ -468,7 +468,7 @@ void CGovernanceManager::CheckAndRemove()
     const auto tip_mn_list = Assert(m_dmnman)->GetListAtChainTip();
 
     {
-    LOCK2(::cs_main, cs);
+    LOCK2(::cs_main, cs_store);
 
     for (const uint256& nHash : vecDirtyHashes) {
         auto it = mapObjects.find(nHash);
@@ -478,7 +478,7 @@ void CGovernanceManager::CheckAndRemove()
         it->second.ClearMasternodeVotes(tip_mn_list);
     }
 
-    ScopedLockBool guard(cs, fRateChecksEnabled, false);
+    ScopedLockBool guard(cs_store, fRateChecksEnabled, false);
 
     // Clean up any expired or invalid triggers
     CleanAndRemoveTriggers();
@@ -579,13 +579,13 @@ void CGovernanceManager::CheckAndRemove()
 
 const CGovernanceObject* CGovernanceManager::FindConstGovernanceObject(const uint256& nHash) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
     return FindConstGovernanceObjectInternal(nHash);
 }
 
 const CGovernanceObject* CGovernanceManager::FindConstGovernanceObjectInternal(const uint256& nHash) const
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     auto it = mapObjects.find(nHash);
     if (it != mapObjects.end()) return &(it->second);
@@ -595,22 +595,22 @@ const CGovernanceObject* CGovernanceManager::FindConstGovernanceObjectInternal(c
 
 CGovernanceObject* CGovernanceManager::FindGovernanceObject(const uint256& nHash)
 {
-    AssertLockNotHeld(cs);
-    LOCK(cs);
+    AssertLockNotHeld(cs_store);
+    LOCK(cs_store);
     return FindGovernanceObjectInternal(nHash);
 }
 
 CGovernanceObject* CGovernanceManager::FindGovernanceObjectInternal(const uint256& nHash)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     if (mapObjects.count(nHash)) return &mapObjects[nHash];
     return nullptr;
 }
 
 CGovernanceObject* CGovernanceManager::FindGovernanceObjectByDataHash(const uint256 &nDataHash)
 {
-    AssertLockNotHeld(cs);
-    LOCK(cs);
+    AssertLockNotHeld(cs_store);
+    LOCK(cs_store);
     for (const auto& [nHash, object] : mapObjects) {
         if (object.GetDataHash() == nDataHash) return &mapObjects[nHash];
     }
@@ -619,7 +619,7 @@ CGovernanceObject* CGovernanceManager::FindGovernanceObjectByDataHash(const uint
 
 std::vector<CGovernanceVote> CGovernanceManager::GetCurrentVotes(const uint256& nParentHash, const COutPoint& mnCollateralOutpointFilter) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
     std::vector<CGovernanceVote> vecResult;
 
     // Find the governance object or short-circuit.
@@ -659,7 +659,7 @@ std::vector<CGovernanceVote> CGovernanceManager::GetCurrentVotes(const uint256& 
 
 void CGovernanceManager::GetAllNewerThan(std::vector<CGovernanceObject>& objs, int64_t nMoreThanTime) const
 {
-    LOCK(cs);
+    LOCK(cs_store);
 
     for (const auto& objPair : mapObjects) {
         // IF THIS OBJECT IS OLDER THAN TIME, CONTINUE
@@ -674,12 +674,12 @@ void CGovernanceManager::GetAllNewerThan(std::vector<CGovernanceObject>& objs, i
 
 bool CGovernanceManager::ConfirmInventoryRequest(const CInv& inv)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
 
     // do not request objects until it's time to sync
     if (!m_mn_sync.IsBlockchainSynced()) return false;
 
-    LOCK(cs);
+    LOCK(cs_store);
 
     LogPrint(BCLog::GOBJECT, "CGovernanceManager::ConfirmInventoryRequest inv = %s\n", inv.ToString());
 
@@ -719,7 +719,7 @@ bool CGovernanceManager::ConfirmInventoryRequest(const CInv& inv)
 
 MessageProcessingResult CGovernanceManager::SyncSingleObjVotes(CNode& peer, const uint256& nProp, const CBloomFilter& filter, CConnman& connman)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     // do not provide any data until our node is synced
     if (!m_mn_sync.IsSynced()) return {};
 
@@ -769,7 +769,7 @@ MessageProcessingResult CGovernanceManager::SyncSingleObjVotes(CNode& peer, cons
 
 MessageProcessingResult CGovernanceManager::SyncObjects(CNode& peer, CConnman& connman) const
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     assert(m_netfulfilledman.IsValid());
 
     // do not provide any data until our node is synced
@@ -816,7 +816,7 @@ MessageProcessingResult CGovernanceManager::SyncObjects(CNode& peer, CConnman& c
 
 void CGovernanceManager::MasternodeRateUpdate(const CGovernanceObject& govobj)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     if (govobj.GetObjectType() != GovernanceObject::TRIGGER) return;
 
@@ -840,14 +840,14 @@ void CGovernanceManager::MasternodeRateUpdate(const CGovernanceObject& govobj)
 
 bool CGovernanceManager::MasternodeRateCheck(const CGovernanceObject& govobj, bool fUpdateFailStatus)
 {
-    LOCK(cs);
+    LOCK(cs_store);
     bool fRateCheckBypassed;
     return MasternodeRateCheck(govobj, fUpdateFailStatus, true, fRateCheckBypassed);
 }
 
 bool CGovernanceManager::MasternodeRateCheck(const CGovernanceObject& govobj, bool fUpdateFailStatus, bool fForce, bool& fRateCheckBypassed)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     fRateCheckBypassed = false;
 
@@ -911,7 +911,7 @@ bool CGovernanceManager::MasternodeRateCheck(const CGovernanceObject& govobj, bo
 
 bool CGovernanceManager::ProcessVoteAndRelay(const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     AssertLockNotHeld(cs_relay);
     bool fOK = ProcessVote(/*pfrom=*/nullptr, vote, exception, connman);
     if (fOK) {
@@ -922,15 +922,15 @@ bool CGovernanceManager::ProcessVoteAndRelay(const CGovernanceVote& vote, CGover
 
 bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman)
 {
-    AssertLockNotHeld(cs);
-    ENTER_CRITICAL_SECTION(cs);
+    AssertLockNotHeld(cs_store);
+    ENTER_CRITICAL_SECTION(cs_store);
     uint256 nHashVote = vote.GetHash();
     uint256 nHashGovobj = vote.GetParentHash();
 
     if (cmapVoteToObject.HasKey(nHashVote)) {
         LogPrint(BCLog::GOBJECT, "CGovernanceObject::%s -- skipping known valid vote %s for object %s\n", __func__,
             nHashVote.ToString(), nHashGovobj.ToString());
-        LEAVE_CRITICAL_SECTION(cs);
+        LEAVE_CRITICAL_SECTION(cs_store);
         return false;
     }
 
@@ -939,7 +939,7 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
             __func__, vote.GetMasternodeOutpoint().ToStringShort(), nHashGovobj.ToString())};
         LogPrint(BCLog::GOBJECT, "%s\n", msg);
         exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        LEAVE_CRITICAL_SECTION(cs);
+        LEAVE_CRITICAL_SECTION(cs_store);
         return false;
     }
 
@@ -950,14 +950,14 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
         exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_WARNING);
         if (cmmapOrphanVotes.Insert(nHashGovobj, vote_time_pair_t(vote, count_seconds(GetTime<std::chrono::seconds>() +
                                                                                       GOVERNANCE_ORPHAN_EXPIRATION_TIME)))) {
-            LEAVE_CRITICAL_SECTION(cs);
+            LEAVE_CRITICAL_SECTION(cs_store);
             RequestGovernanceObject(pfrom, nHashGovobj, connman);
             LogPrint(BCLog::GOBJECT, "%s\n", msg);
             return false;
         }
 
         LogPrint(BCLog::GOBJECT, "%s\n", msg);
-        LEAVE_CRITICAL_SECTION(cs);
+        LEAVE_CRITICAL_SECTION(cs_store);
         return false;
     }
 
@@ -966,18 +966,18 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
     if (govobj.IsSetCachedDelete() || govobj.IsSetExpired()) {
         LogPrint(BCLog::GOBJECT, "CGovernanceObject::%s -- ignoring vote for expired or deleted object, hash = %s\n",
             __func__, nHashGovobj.ToString());
-        LEAVE_CRITICAL_SECTION(cs);
+        LEAVE_CRITICAL_SECTION(cs_store);
         return false;
     }
 
     bool fOk = govobj.ProcessVote(m_mn_metaman, *this, Assert(m_dmnman)->GetListAtChainTip(), vote, exception) && cmapVoteToObject.Insert(nHashVote, &govobj);
-    LEAVE_CRITICAL_SECTION(cs);
+    LEAVE_CRITICAL_SECTION(cs_store);
     return fOk;
 }
 
 void CGovernanceManager::CheckPostponedObjects()
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     AssertLockNotHeld(cs_relay);
     if (!m_mn_sync.IsSynced()) return;
 
@@ -1046,7 +1046,7 @@ void CGovernanceManager::CheckPostponedObjects()
 
 void CGovernanceManager::RequestGovernanceObject(CNode* pfrom, const uint256& nHash, CConnman& connman, bool fUseFilter) const
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     if (!pfrom) {
         return;
     }
@@ -1059,7 +1059,7 @@ void CGovernanceManager::RequestGovernanceObject(CNode* pfrom, const uint256& nH
 
     size_t nVoteCount = 0;
     if (fUseFilter) {
-        LOCK(cs);
+        LOCK(cs_store);
         const CGovernanceObject* pObj = FindConstGovernanceObjectInternal(nHash);
 
         if (pObj) {
@@ -1078,7 +1078,7 @@ void CGovernanceManager::RequestGovernanceObject(CNode* pfrom, const uint256& nH
 
 void CGovernanceManager::AddInvalidVote(const CGovernanceVote& vote)
 {
-    LOCK(cs);
+    LOCK(cs_store);
     cmapInvalidVotes.Insert(vote.GetHash(), vote);
 }
 
@@ -1091,7 +1091,7 @@ int CGovernanceManager::RequestGovernanceObjectVotes(CNode& peer, CConnman& conn
 int CGovernanceManager::RequestGovernanceObjectVotes(const std::vector<CNode*>& vNodesCopy, CConnman& connman,
                                                      const PeerManager& peerman) const
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
 
     static std::map<uint256, std::map<CService, int64_t> > mapAskedRecently;
     // Maximum number of nodes to request votes from for the same object hash on real networks
@@ -1124,7 +1124,7 @@ int CGovernanceManager::RequestGovernanceObjectVotes(const std::vector<CNode*>& 
     }
 
     {
-        LOCK(cs);
+        LOCK(cs_store);
 
         if (mapObjects.empty()) return -2;
 
@@ -1203,8 +1203,8 @@ int CGovernanceManager::RequestGovernanceObjectVotes(const std::vector<CNode*>& 
 
 bool CGovernanceManager::AcceptMessage(const uint256& nHash)
 {
-    AssertLockNotHeld(cs);
-    LOCK(cs);
+    AssertLockNotHeld(cs_store);
+    LOCK(cs_store);
     auto it = m_requested_hash_time.find(nHash);
     if (it == m_requested_hash_time.end()) {
         // We never requested this
@@ -1217,7 +1217,7 @@ bool CGovernanceManager::AcceptMessage(const uint256& nHash)
 
 void CGovernanceManager::RebuildIndexes()
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     cmapVoteToObject.Clear();
     for (auto& objPair : mapObjects) {
@@ -1231,7 +1231,7 @@ void CGovernanceManager::RebuildIndexes()
 
 void CGovernanceManager::AddCachedTriggers()
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     int64_t nNow = GetTime<std::chrono::seconds>().count();
 
@@ -1251,7 +1251,7 @@ void CGovernanceManager::AddCachedTriggers()
 void CGovernanceManager::InitOnLoad()
 {
     {
-    LOCK(cs);
+    LOCK(cs_store);
     const auto start{SteadyClock::now()};
     LogPrintf("Preparing masternode indexes and governance triggers...\n");
     RebuildIndexes();
@@ -1264,7 +1264,7 @@ void CGovernanceManager::InitOnLoad()
 
 void GovernanceStore::Clear()
 {
-    LOCK(cs);
+    LOCK(cs_store);
     mapObjects.clear();
     mapErasedGovernanceObjects.clear();
     cmapInvalidVotes.Clear();
@@ -1274,7 +1274,7 @@ void GovernanceStore::Clear()
 
 void CGovernanceManager::Clear()
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     LogPrint(BCLog::GOBJECT, "Governance object manager was cleared\n");
     GovernanceStore::Clear();
     cmapVoteToObject.Clear();
@@ -1282,7 +1282,7 @@ void CGovernanceManager::Clear()
 
 std::string GovernanceStore::ToString() const
 {
-    LOCK(cs);
+    LOCK(cs_store);
 
     int nProposalCount = 0;
     int nTriggerCount = 0;
@@ -1309,13 +1309,13 @@ std::string GovernanceStore::ToString() const
 
 std::string CGovernanceManager::ToString() const
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     return strprintf("%s, Votes: %d", GovernanceStore::ToString(), (int)cmapVoteToObject.GetSize());
 }
 
 UniValue CGovernanceManager::ToJson() const
 {
-    LOCK(cs);
+    LOCK(cs_store);
 
     int nProposalCount = 0;
     int nTriggerCount = 0;
@@ -1347,7 +1347,7 @@ UniValue CGovernanceManager::ToJson() const
 
 void CGovernanceManager::UpdatedBlockTip(const CBlockIndex* pindex)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     AssertLockNotHeld(cs_relay);
     // Note this gets called from ActivateBestChain without cs_main being held
     // so it should be safe to lock our mutex here without risking a deadlock
@@ -1361,7 +1361,7 @@ void CGovernanceManager::UpdatedBlockTip(const CBlockIndex* pindex)
     nCachedBlockHeight = pindex->nHeight;
     LogPrint(BCLog::GOBJECT, "CGovernanceManager::UpdatedBlockTip -- nCachedBlockHeight: %d\n", nCachedBlockHeight);
 
-    LOCK(cs);
+    LOCK(cs_store);
     if (DeploymentDIP0003Enforced(pindex->nHeight, Params().GetConsensus())) {
         RemoveInvalidVotes();
     }
@@ -1373,12 +1373,12 @@ void CGovernanceManager::UpdatedBlockTip(const CBlockIndex* pindex)
 
 void CGovernanceManager::RequestOrphanObjects(CConnman& connman)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     const CConnman::NodesSnapshot snap{connman, /* cond = */ CConnman::FullyConnectedOnly};
 
     std::vector<uint256> vecHashesFiltered;
     {
-        LOCK(cs);
+        LOCK(cs_store);
         std::vector<uint256> vecHashes;
         cmmapOrphanVotes.GetKeys(vecHashes);
         for (const uint256& nHash : vecHashes) {
@@ -1401,7 +1401,7 @@ void CGovernanceManager::RequestOrphanObjects(CConnman& connman)
 
 void CGovernanceManager::CleanOrphanObjects()
 {
-    LOCK(cs);
+    LOCK(cs_store);
     const vote_cmm_t::list_t& items = cmmapOrphanVotes.GetItemList();
 
     int64_t nNow = GetTime<std::chrono::seconds>().count();
@@ -1419,7 +1419,7 @@ void CGovernanceManager::CleanOrphanObjects()
 
 void CGovernanceManager::RemoveInvalidVotes()
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     if (!m_mn_sync.IsSynced()) {
         return;
@@ -1473,7 +1473,7 @@ void CGovernanceManager::RemoveInvalidVotes()
 
 bool CGovernanceManager::AddNewTrigger(uint256 nHash)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     // IF WE ALREADY HAVE THIS HASH, RETURN
     if (mapTrigger.count(nHash)) {
@@ -1512,7 +1512,7 @@ bool CGovernanceManager::AddNewTrigger(uint256 nHash)
 
 void CGovernanceManager::CleanAndRemoveTriggers()
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     // Remove triggers that are invalid or expired
     LogPrint(BCLog::GOBJECT, "CGovernanceManager::%s -- mapTrigger.size() = %d\n", __func__, mapTrigger.size());
@@ -1581,14 +1581,14 @@ void CGovernanceManager::CleanAndRemoveTriggers()
  */
 std::vector<CSuperblock_sptr> CGovernanceManager::GetActiveTriggers() const
 {
-    AssertLockNotHeld(cs);
-    LOCK(cs);
+    AssertLockNotHeld(cs_store);
+    LOCK(cs_store);
     return GetActiveTriggersInternal();
 }
 
 std::vector<CSuperblock_sptr> CGovernanceManager::GetActiveTriggersInternal() const
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     std::vector<CSuperblock_sptr> vecResults;
 
     // LOOK AT THESE OBJECTS AND COMPILE A VALID LIST OF TRIGGERS
@@ -1604,13 +1604,13 @@ std::vector<CSuperblock_sptr> CGovernanceManager::GetActiveTriggersInternal() co
 
 bool CGovernanceManager::IsSuperblockTriggered(const CDeterministicMNList& tip_mn_list, int nBlockHeight)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
     LogPrint(BCLog::GOBJECT, "IsSuperblockTriggered -- Start nBlockHeight = %d\n", nBlockHeight);
     if (!CSuperblock::IsValidBlockHeight(nBlockHeight)) {
         return false;
     }
 
-    LOCK(cs);
+    LOCK(cs_store);
     // GET ALL ACTIVE TRIGGERS
     std::vector<CSuperblock_sptr> vecTriggers = GetActiveTriggersInternal();
 
@@ -1658,8 +1658,8 @@ bool CGovernanceManager::IsSuperblockTriggered(const CDeterministicMNList& tip_m
 bool CGovernanceManager::GetBestSuperblock(const CDeterministicMNList& tip_mn_list, CSuperblock_sptr& pSuperblockRet,
                                            int nBlockHeight)
 {
-    AssertLockNotHeld(cs);
-    LOCK(cs);
+    AssertLockNotHeld(cs_store);
+    LOCK(cs_store);
     return GetBestSuperblockInternal(tip_mn_list, pSuperblockRet, nBlockHeight);
 }
 
@@ -1670,7 +1670,7 @@ bool CGovernanceManager::GetBestSuperblockInternal(const CDeterministicMNList& t
         return false;
     }
 
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
     std::vector<CSuperblock_sptr> vecTriggers = GetActiveTriggersInternal();
     int nYesCount = 0;
 
@@ -1699,7 +1699,7 @@ bool CGovernanceManager::GetBestSuperblockInternal(const CDeterministicMNList& t
 bool CGovernanceManager::GetSuperblockPayments(const CDeterministicMNList& tip_mn_list, int nBlockHeight,
                                                std::vector<CTxOut>& voutSuperblockRet)
 {
-    LOCK(cs);
+    LOCK(cs_store);
 
     // GET THE BEST SUPERBLOCK FOR THIS BLOCK HEIGHT
 
@@ -1747,7 +1747,7 @@ bool CGovernanceManager::IsValidSuperblock(const CChain& active_chain, const CDe
                                            const CTransaction& txNew, int nBlockHeight, CAmount blockReward)
 {
     // GET BEST SUPERBLOCK, SHOULD MATCH
-    LOCK(cs);
+    LOCK(cs_store);
 
     CSuperblock_sptr pSuperblock;
     if (GetBestSuperblockInternal(tip_mn_list, pSuperblock, nBlockHeight)) {
@@ -1759,7 +1759,7 @@ bool CGovernanceManager::IsValidSuperblock(const CChain& active_chain, const CDe
 
 void CGovernanceManager::ExecuteBestSuperblock(const CDeterministicMNList& tip_mn_list, int nBlockHeight)
 {
-    AssertLockHeld(cs);
+    AssertLockHeld(cs_store);
 
     CSuperblock_sptr pSuperblock;
     if (GetBestSuperblockInternal(tip_mn_list, pSuperblock, nBlockHeight)) {
@@ -1772,7 +1772,7 @@ void CGovernanceManager::ExecuteBestSuperblock(const CDeterministicMNList& tip_m
 std::vector<std::shared_ptr<const CGovernanceObject>> CGovernanceManager::GetApprovedProposals(
     const CDeterministicMNList& tip_mn_list)
 {
-    AssertLockNotHeld(cs);
+    AssertLockNotHeld(cs_store);
 
     // Use std::vector of std::shared_ptr<const CGovernanceObject> because CGovernanceObject doesn't support move operations (needed for sorting the vector later)
     std::vector<std::shared_ptr<const CGovernanceObject>> ret{};
@@ -1782,7 +1782,7 @@ std::vector<std::shared_ptr<const CGovernanceObject>> CGovernanceManager::GetApp
     const int nWeightedMnCount = tip_mn_list.GetValidWeightedMNsCount();
     const int nAbsVoteReq = std::max(Params().GetConsensus().nGovernanceMinQuorum, nWeightedMnCount / 10);
 
-    LOCK(cs);
+    LOCK(cs_store);
     for (const auto& [unused, object] : mapObjects) {
         // Skip all non-proposals objects
         if (object.GetObjectType() != GovernanceObject::PROPOSAL) continue;
