@@ -8,6 +8,7 @@
 #include <validationinterface.h>
 
 class CConnman;
+class CDSTXManager;
 class CDeterministicMNManager;
 class CGovernanceManager;
 class ChainstateManager;
@@ -19,6 +20,7 @@ class CDSNotificationInterface : public CValidationInterface
 {
 public:
     explicit CDSNotificationInterface(CConnman& connman,
+                                      CDSTXManager& dstxman,
                                       CMasternodeSync& mn_sync,
                                       CGovernanceManager& govman,
                                       const ChainstateManager& chainman,
@@ -46,6 +48,7 @@ protected:
 
 private:
     CConnman& m_connman;
+    CDSTXManager& m_dstxman;
     CMasternodeSync& m_mn_sync;
     CGovernanceManager& m_govman;
     const ChainstateManager& m_chainman;
