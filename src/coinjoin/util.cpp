@@ -4,6 +4,7 @@
 
 #include <coinjoin/util.h>
 #include <policy/fees.h>
+#include <coinjoin/options.h>
 #include <policy/policy.h>
 #include <util/translation.h>
 #include <wallet/fees.h>
@@ -125,8 +126,12 @@ CTransactionBuilder::CTransactionBuilder(CWallet& wallet, const CompactTallyItem
     coinControl.m_discard_feerate = ::GetDiscardRate(m_wallet);
     // Generate a feerate which will be used by calculations of this class and also by CWallet::CreateTransaction
     coinControl.m_feerate = std::max(GetRequiredFeeRate(m_wallet), m_wallet.m_pay_tx_fee);
-    // Do not force change to go back to the origin address; let the wallet
-    // select a fresh change destination to avoid address reuse.
+    // By default, keep legacy behavior: change goes back to the origin address.
+    // When -coinjoinfreshchange is enabled, let the wallet select a fresh
+    // change destination to avoid address reuse.
+    if (!CCoinJoinClientOptions::GetFreshChange()) {
+        coinControl.destChange = tallyItemIn.txdest;
+    }
     // Only allow tallyItems inputs for tx creation
     coinControl.m_allow_other_inputs = false;
     // Create dummy tx to calculate the exact required fees upfront for accurate amount and fee calculations
