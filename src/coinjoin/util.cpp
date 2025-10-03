@@ -125,8 +125,8 @@ CTransactionBuilder::CTransactionBuilder(CWallet& wallet, const CompactTallyItem
     coinControl.m_discard_feerate = ::GetDiscardRate(m_wallet);
     // Generate a feerate which will be used by calculations of this class and also by CWallet::CreateTransaction
     coinControl.m_feerate = std::max(GetRequiredFeeRate(m_wallet), m_wallet.m_pay_tx_fee);
-    // Change always goes back to origin
-    coinControl.destChange = tallyItemIn.txdest;
+    // Do not force change to go back to the origin address; let the wallet
+    // select a fresh change destination to avoid address reuse.
     // Only allow tallyItems inputs for tx creation
     coinControl.m_allow_other_inputs = false;
     // Create dummy tx to calculate the exact required fees upfront for accurate amount and fee calculations
