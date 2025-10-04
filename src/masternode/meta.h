@@ -139,6 +139,8 @@ protected:
     std::map<uint256, CMasternodeMetaInfoPtr> metaInfos GUARDED_BY(cs);
     // keep track of dsq count to prevent masternodes from gaming coinjoin queue
     std::atomic<int64_t> nDsqCount{0};
+    // keep track of the used Masternodes for CoinJoin
+    std::vector<uint256> m_used_masternodes GUARDED_BY(cs);
 
 public:
     template<typename Stream>
@@ -149,7 +151,7 @@ public:
         for (const auto& p : metaInfos) {
             tmpMetaInfo.emplace_back(*p.second);
         }
-        s << SERIALIZATION_VERSION_STRING << tmpMetaInfo << nDsqCount;
+        s << SERIALIZATION_VERSION_STRING << tmpMetaInfo << nDsqCount << m_used_masternodes;
     }
 
     template<typename Stream>
@@ -164,7 +166,7 @@ public:
             return;
         }
         std::vector<CMasternodeMetaInfo> tmpMetaInfo;
-        s >> tmpMetaInfo >> nDsqCount;
+        s >> tmpMetaInfo >> nDsqCount >> m_used_masternodes;
         metaInfos.clear();
         for (auto& mm : tmpMetaInfo) {
             metaInfos.emplace(mm.GetProTxHash(), std::make_shared<CMasternodeMetaInfo>(std::move(mm)));
@@ -176,6 +178,7 @@ public:
         LOCK(cs);
 
         metaInfos.clear();
+        m_used_masternodes.clear();
     }
 
     std::string ToString() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
@@ -257,6 +260,12 @@ public:
     bool AlreadyHavePlatformBan(const uint256& inv_hash) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
     std::optional<PlatformBanMessage> GetPlatformBan(const uint256& inv_hash) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void RememberPlatformBan(const uint256& inv_hash, PlatformBanMessage&& msg) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    // CoinJoin masternode tracking
+    void AddUsedMasternode(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    void RemoveUsedMasternodes(size_t nCount) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    size_t GetUsedMasternodesCount() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    std::set<uint256> GetUsedMasternodesSet() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
 };
 
 #endif // BITCOIN_MASTERNODE_META_H
