@@ -8,7 +8,6 @@
 #include <chainparams.h>
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
-#include <masternode/node.h>
 #include <masternode/sync.h>
 #include <messagesigner.h>
 #include <net_processing.h>
@@ -155,16 +154,6 @@ bool CGovernanceVote::CheckSignature(const CKeyID& keyID) const
         }
     }
 
-    return true;
-}
-
-bool CGovernanceVote::Sign(const CActiveMasternodeManager& mn_activeman)
-{
-    CBLSSignature sig = mn_activeman.Sign(GetSignatureHash(), false);
-    if (!sig.IsValid()) {
-        return false;
-    }
-    vchSig = sig.ToByteVector(false);
     return true;
 }
 
