@@ -105,7 +105,6 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
     argsman.AddArg("-coinjoinmultisession", strprintf("Enable multiple CoinJoin mixing sessions per block, experimental (0-1, default: %u)", DEFAULT_COINJOIN_MULTISESSION), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET_COINJOIN);
     argsman.AddArg("-coinjoinrounds=<n>", strprintf("Use N separate masternodes for each denominated input to mix funds (%u-%u, default: %u)", MIN_COINJOIN_ROUNDS, MAX_COINJOIN_ROUNDS, DEFAULT_COINJOIN_ROUNDS), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET_COINJOIN);
     argsman.AddArg("-coinjoinsessions=<n>", strprintf("Use N separate masternodes in parallel to mix funds (%u-%u, default: %u)", MIN_COINJOIN_SESSIONS, MAX_COINJOIN_SESSIONS, DEFAULT_COINJOIN_SESSIONS), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET_COINJOIN);
-    
 
 #ifdef USE_BDB
     argsman.AddArg("-dblogsize=<n>", strprintf("Flush wallet database activity from memory to disk log every <n> megabytes (default: %u)", DatabaseOptions().max_log_mb), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::WALLET_DEBUG_TEST);

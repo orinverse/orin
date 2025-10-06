@@ -61,7 +61,6 @@ void CCoinJoinClientOptions::SetDenomsHardCap(int denoms_hardcap)
     options.nCoinJoinDenomsHardCap = denoms_hardcap;
 }
 
-
 void CCoinJoinClientOptions::Init()
 {
     assert(!CCoinJoinClientOptions::_instance);
