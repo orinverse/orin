@@ -1025,11 +1025,9 @@ CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
     // shuffle pointers
     Shuffle(vpMasternodesShuffled.begin(), vpMasternodesShuffled.end(), FastRandomContext());
 
-    std::set<uint256> excludeSet{m_mn_metaman.GetUsedMasternodesSet()};
-
-    // loop through
+    // loop through - using direct O(1) lookup instead of creating a set copy
     for (const auto& dmn : vpMasternodesShuffled) {
-        if (excludeSet.count(dmn->proTxHash)) {
+        if (m_mn_metaman.IsUsedMasternode(dmn->proTxHash)) {
             continue;
         }
 

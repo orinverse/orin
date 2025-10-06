@@ -14,6 +14,7 @@
 #include <unordered_lru_cache.h>
 
 #include <atomic>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -139,8 +140,10 @@ protected:
     std::map<uint256, CMasternodeMetaInfoPtr> metaInfos GUARDED_BY(cs);
     // keep track of dsq count to prevent masternodes from gaming coinjoin queue
     std::atomic<int64_t> nDsqCount{0};
-    // keep track of the used Masternodes for CoinJoin
-    std::vector<uint256> m_used_masternodes GUARDED_BY(cs);
+    // keep track of the used Masternodes for CoinJoin across all wallets
+    // Using deque for efficient FIFO removal and unordered_set for O(1) lookups
+    std::deque<uint256> m_used_masternodes GUARDED_BY(cs);
+    Uint256HashSet m_used_masternodes_set GUARDED_BY(cs);
 
 public:
     template<typename Stream>
@@ -151,7 +154,9 @@ public:
         for (const auto& p : metaInfos) {
             tmpMetaInfo.emplace_back(*p.second);
         }
-        s << SERIALIZATION_VERSION_STRING << tmpMetaInfo << nDsqCount << m_used_masternodes;
+        // Convert deque to vector for serialization - unordered_set will be rebuilt on deserialization
+        std::vector<uint256> tmpUsedMasternodes(m_used_masternodes.begin(), m_used_masternodes.end());
+        s << SERIALIZATION_VERSION_STRING << tmpMetaInfo << nDsqCount << tmpUsedMasternodes;
     }
 
     template<typename Stream>
@@ -166,11 +171,18 @@ public:
             return;
         }
         std::vector<CMasternodeMetaInfo> tmpMetaInfo;
-        s >> tmpMetaInfo >> nDsqCount >> m_used_masternodes;
+        std::vector<uint256> tmpUsedMasternodes;
+        s >> tmpMetaInfo >> nDsqCount >> tmpUsedMasternodes;
+
         metaInfos.clear();
         for (auto& mm : tmpMetaInfo) {
             metaInfos.emplace(mm.GetProTxHash(), std::make_shared<CMasternodeMetaInfo>(std::move(mm)));
         }
+
+        // Convert vector to deque and build unordered_set for O(1) lookups
+        m_used_masternodes.assign(tmpUsedMasternodes.begin(), tmpUsedMasternodes.end());
+        m_used_masternodes_set.clear();
+        m_used_masternodes_set.insert(tmpUsedMasternodes.begin(), tmpUsedMasternodes.end());
     }
 
     void Clear() EXCLUSIVE_LOCKS_REQUIRED(!cs)
@@ -179,6 +191,7 @@ public:
 
         metaInfos.clear();
         m_used_masternodes.clear();
+        m_used_masternodes_set.clear();
     }
 
     std::string ToString() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
@@ -265,7 +278,7 @@ public:
     void AddUsedMasternode(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void RemoveUsedMasternodes(size_t nCount) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     size_t GetUsedMasternodesCount() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
-    std::set<uint256> GetUsedMasternodesSet() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    bool IsUsedMasternode(const uint256& proTxHash) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
 };
 
 #endif // BITCOIN_MASTERNODE_META_H

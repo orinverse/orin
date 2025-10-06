@@ -156,16 +156,21 @@ void CMasternodeMetaMan::RememberPlatformBan(const uint256& inv_hash, PlatformBa
 void CMasternodeMetaMan::AddUsedMasternode(const uint256& proTxHash)
 {
     LOCK(cs);
-    m_used_masternodes.push_back(proTxHash);
+    // Only add if not already present (prevents duplicates)
+    if (m_used_masternodes_set.insert(proTxHash).second) {
+        m_used_masternodes.push_back(proTxHash);
+    }
 }
 
 void CMasternodeMetaMan::RemoveUsedMasternodes(size_t nCount)
 {
     LOCK(cs);
-    if (nCount > m_used_masternodes.size()) {
-        m_used_masternodes.clear();
-    } else {
-        m_used_masternodes.erase(m_used_masternodes.begin(), m_used_masternodes.begin() + nCount);
+    size_t removed = 0;
+    while (removed < nCount && !m_used_masternodes.empty()) {
+        // Remove from both the set and the deque
+        m_used_masternodes_set.erase(m_used_masternodes.front());
+        m_used_masternodes.pop_front();
+        ++removed;
     }
 }
 
@@ -175,10 +180,10 @@ size_t CMasternodeMetaMan::GetUsedMasternodesCount() const
     return m_used_masternodes.size();
 }
 
-std::set<uint256> CMasternodeMetaMan::GetUsedMasternodesSet() const
+bool CMasternodeMetaMan::IsUsedMasternode(const uint256& proTxHash) const
 {
     LOCK(cs);
-    return {m_used_masternodes.begin(), m_used_masternodes.end()};
+    return m_used_masternodes_set.find(proTxHash) != m_used_masternodes_set.end();
 }
 
 std::string MasternodeMetaStore::ToString() const
