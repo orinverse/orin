@@ -1,9 +1,9 @@
 Wallet
 ------
 
-- Add `-coinjoinfreshchange` option to control change destination behavior
-  during CoinJoin denomination creation. By default (flag unset), change is
-  sent back to the source address (legacy behavior). When enabled, change is
-  sent to a fresh change address to avoid address/public key reuse. (#6870)
+- CoinJoin denomination creation now respects the wallet's "avoid_reuse"
+  setting. When the wallet has `avoid_reuse` enabled, change is sent to a
+  fresh change address to avoid address/public key reuse. Otherwise, change
+  goes back to the source address (legacy behavior). (#6870)
 
 

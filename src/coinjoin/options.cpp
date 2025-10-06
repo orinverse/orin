@@ -61,18 +61,12 @@ void CCoinJoinClientOptions::SetDenomsHardCap(int denoms_hardcap)
     options.nCoinJoinDenomsHardCap = denoms_hardcap;
 }
 
-void CCoinJoinClientOptions::SetFreshChange(bool fresh_change)
-{
-    CCoinJoinClientOptions& options = CCoinJoinClientOptions::Get();
-    options.fCoinJoinFreshChange = fresh_change;
-}
 
 void CCoinJoinClientOptions::Init()
 {
     assert(!CCoinJoinClientOptions::_instance);
     static CCoinJoinClientOptions instance;
     instance.fCoinJoinMultiSession = gArgs.GetBoolArg("-coinjoinmultisession", DEFAULT_COINJOIN_MULTISESSION);
-    instance.fCoinJoinFreshChange = gArgs.GetBoolArg("-coinjoinfreshchange", DEFAULT_COINJOIN_FRESHCHANGE);
     instance.nCoinJoinSessions = std::min(std::max((int)gArgs.GetIntArg("-coinjoinsessions", DEFAULT_COINJOIN_SESSIONS), MIN_COINJOIN_SESSIONS), MAX_COINJOIN_SESSIONS);
     instance.nCoinJoinRounds = std::min(std::max((int)gArgs.GetIntArg("-coinjoinrounds", DEFAULT_COINJOIN_ROUNDS), MIN_COINJOIN_ROUNDS), MAX_COINJOIN_ROUNDS);
     instance.nCoinJoinAmount = std::min(std::max((int)gArgs.GetIntArg("-coinjoinamount", DEFAULT_COINJOIN_AMOUNT), MIN_COINJOIN_AMOUNT), MAX_COINJOIN_AMOUNT);
@@ -92,5 +86,4 @@ void CCoinJoinClientOptions::GetJsonInfo(UniValue& obj)
     obj.pushKV("max_amount", options.nCoinJoinAmount.load());
     obj.pushKV("denoms_goal", options.nCoinJoinDenomsGoal.load());
     obj.pushKV("denoms_hardcap", options.nCoinJoinDenomsHardCap.load());
-    obj.pushKV("fresh_change", options.fCoinJoinFreshChange.load());
 }

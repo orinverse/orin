@@ -31,7 +31,6 @@ static constexpr int DEFAULT_COINJOIN_DENOMS_HARDCAP = 300;
 
 static constexpr bool DEFAULT_COINJOIN_AUTOSTART = false;
 static constexpr bool DEFAULT_COINJOIN_MULTISESSION = false;
-static constexpr bool DEFAULT_COINJOIN_FRESHCHANGE = false;
 
 // How many new denom outputs to create before we consider the "goal" loop in CreateDenominated
 // a final one and start creating an actual tx. Same limit applies for the "hard cap" part of the algo.
@@ -61,7 +60,6 @@ public:
     static int GetAmount() { return CCoinJoinClientOptions::Get().nCoinJoinAmount; }
     static int GetDenomsGoal() { return CCoinJoinClientOptions::Get().nCoinJoinDenomsGoal; }
     static int GetDenomsHardCap() { return CCoinJoinClientOptions::Get().nCoinJoinDenomsHardCap; }
-    static bool GetFreshChange() { return CCoinJoinClientOptions::Get().fCoinJoinFreshChange; }
 
     static void SetEnabled(bool fEnabled);
     static void SetMultiSessionEnabled(bool fEnabled);
@@ -70,7 +68,6 @@ public:
     static void SetAmount(CAmount amount);
     static void SetDenomsGoal(int denoms_goal);
     static void SetDenomsHardCap(int denoms_hardcap);
-    static void SetFreshChange(bool fresh_change);
 
     static bool IsEnabled() { return CCoinJoinClientOptions::Get().fEnableCoinJoin; }
     static bool IsMultiSessionEnabled() { return CCoinJoinClientOptions::Get().fCoinJoinMultiSession; }
@@ -89,7 +86,6 @@ private:
     std::atomic<int> nCoinJoinDenomsHardCap{DEFAULT_COINJOIN_DENOMS_HARDCAP};
     std::atomic<bool> fEnableCoinJoin{false};
     std::atomic<bool> fCoinJoinMultiSession{DEFAULT_COINJOIN_MULTISESSION};
-    std::atomic<bool> fCoinJoinFreshChange{DEFAULT_COINJOIN_FRESHCHANGE};
 
     CCoinJoinClientOptions() = default;
 

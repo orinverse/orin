@@ -10,6 +10,7 @@
 #include <wallet/fees.h>
 #include <wallet/spend.h>
 #include <wallet/wallet.h>
+#include <wallet/walletutil.h>
 
 #include <numeric>
 
@@ -126,10 +127,11 @@ CTransactionBuilder::CTransactionBuilder(CWallet& wallet, const CompactTallyItem
     coinControl.m_discard_feerate = ::GetDiscardRate(m_wallet);
     // Generate a feerate which will be used by calculations of this class and also by CWallet::CreateTransaction
     coinControl.m_feerate = std::max(GetRequiredFeeRate(m_wallet), m_wallet.m_pay_tx_fee);
-    // By default, keep legacy behavior: change goes back to the origin address.
-    // When -coinjoinfreshchange is enabled, let the wallet select a fresh
+    // If wallet does not have the avoid-reuse feature enabled, keep legacy
+    // behavior: force change to go back to the origin address. When
+    // WALLET_FLAG_AVOID_REUSE is enabled, let the wallet select a fresh
     // change destination to avoid address reuse.
-    if (!CCoinJoinClientOptions::GetFreshChange()) {
+    if (!m_wallet.IsWalletFlagSet(wallet::WALLET_FLAG_AVOID_REUSE)) {
         coinControl.destChange = tallyItemIn.txdest;
     }
     // Only allow tallyItems inputs for tx creation
