@@ -39,7 +39,9 @@ std::optional<const CSuperblock> GovernanceSigner::CreateSuperblockCandidate(int
 {
     if (!m_govman.IsValid()) return std::nullopt;
     if (!m_mn_sync.IsSynced()) return std::nullopt;
-    if (nHeight % Params().GetConsensus().nSuperblockCycle < Params().GetConsensus().nSuperblockCycle - Params().GetConsensus().nSuperblockMaturityWindow) return std::nullopt;
+    if (nHeight % Params().GetConsensus().nSuperblockCycle <
+        Params().GetConsensus().nSuperblockCycle - Params().GetConsensus().nSuperblockMaturityWindow)
+        return std::nullopt;
     if (HasAlreadyVotedFundingTrigger()) return std::nullopt;
 
     const auto approvedProposals = m_govman.GetApprovedProposals(m_dmnman.GetListAtChainTip());
@@ -53,7 +55,8 @@ std::optional<const CSuperblock> GovernanceSigner::CreateSuperblockCandidate(int
     int nNextSuperblock;
 
     CSuperblock::GetNearestSuperblocksHeights(nHeight, nLastSuperblock, nNextSuperblock);
-    auto SBEpochTime = static_cast<int64_t>(GetTime<std::chrono::seconds>().count() + (nNextSuperblock - nHeight) * 2.62 * 60);
+    auto SBEpochTime = static_cast<int64_t>(GetTime<std::chrono::seconds>().count() +
+                                            (nNextSuperblock - nHeight) * 2.62 * 60);
     auto governanceBudget = CSuperblock::GetPaymentsLimit(m_chainman.ActiveChain(), nNextSuperblock);
 
     CAmount budgetAllocated{};
@@ -67,9 +70,8 @@ std::optional<const CSuperblock> GovernanceSigner::CreateSuperblockCandidate(int
         CAmount nAmount{};
         try {
             nAmount = ParsePaymentAmount(jproposal["payment_amount"].getValStr());
-        }
-        catch (const std::runtime_error& e) {
-            LogPrint(BCLog::GOBJECT, "%s -- nHeight:%d Skipping payment exception:%s\n", __func__,nHeight, e.what());
+        } catch (const std::runtime_error& e) {
+            LogPrint(BCLog::GOBJECT, "%s -- nHeight:%d Skipping payment exception:%s\n", __func__, nHeight, e.what());
             continue;
         }
 
@@ -85,11 +87,12 @@ std::optional<const CSuperblock> GovernanceSigner::CreateSuperblockCandidate(int
 
         // Skip proposals if the SB isn't within the proposal time window
         if (SBEpochTime < windowStart) {
-            LogPrint(BCLog::GOBJECT, "%s -- nHeight:%d SB:%d windowStart:%d\n", __func__,nHeight, SBEpochTime, windowStart);
+            LogPrint(BCLog::GOBJECT, "%s -- nHeight:%d SB:%d windowStart:%d\n", __func__, nHeight, SBEpochTime,
+                     windowStart);
             continue;
         }
         if (SBEpochTime > windowEnd) {
-            LogPrint(BCLog::GOBJECT, "%s -- nHeight:%d SB:%d windowEnd:%d\n", __func__,nHeight, SBEpochTime, windowEnd);
+            LogPrint(BCLog::GOBJECT, "%s -- nHeight:%d SB:%d windowEnd:%d\n", __func__, nHeight, SBEpochTime, windowEnd);
             continue;
         }
 
@@ -120,7 +123,7 @@ std::optional<const CGovernanceObject> GovernanceSigner::CreateGovernanceTrigger
     // no sb_opt, no trigger
     if (!sb_opt.has_value()) return std::nullopt;
 
-    //TODO: Check if nHashParentIn, nRevision and nCollateralHashIn are correct
+    // TODO: Check if nHashParentIn, nRevision and nCollateralHashIn are correct
     LOCK(::cs_main);
 
     // Check if identical trigger (equal DataHash()) is already created (signed by other masternode)
@@ -153,7 +156,8 @@ std::optional<const CGovernanceObject> GovernanceSigner::CreateGovernanceTrigger
     }
 
     if (!m_govman.MasternodeRateCheck(gov_sb)) {
-        LogPrint(BCLog::GOBJECT, "%s -- Trigger rejected because of rate check failure hash(%s)\n", __func__, gov_sb.GetHash().ToString());
+        LogPrint(BCLog::GOBJECT, "%s -- Trigger rejected because of rate check failure hash(%s)\n", __func__,
+                 gov_sb.GetHash().ToString());
         return std::nullopt;
     }
 
@@ -220,12 +224,14 @@ void GovernanceSigner::VoteGovernanceTriggers(const std::optional<const CGoverna
         const uint256 trigger_hash = govobj->GetHash();
         if (trigger->GetBlockHeight() <= m_govman.GetCachedBlockHeight()) {
             // ignore triggers from the past
-            LogPrint(BCLog::GOBJECT, "%s -- Not voting NO-FUNDING for outdated trigger:%s\n", __func__, trigger_hash.ToString());
+            LogPrint(BCLog::GOBJECT, "%s -- Not voting NO-FUNDING for outdated trigger:%s\n", __func__,
+                     trigger_hash.ToString());
             continue;
         }
         if (trigger_hash == votedFundingYesTriggerHash) {
             // Skip actual trigger
-            LogPrint(BCLog::GOBJECT, "%s -- Not voting NO-FUNDING for trigger:%s, we voted yes for it already\n", __func__, trigger_hash.ToString());
+            LogPrint(BCLog::GOBJECT, "%s -- Not voting NO-FUNDING for trigger:%s, we voted yes for it already\n",
+                     __func__, trigger_hash.ToString());
             continue;
         }
         if (vote_rec_t voteRecord; govobj->GetCurrentMNVotes(m_mn_activeman.GetOutPoint(), voteRecord)) {
@@ -233,8 +239,8 @@ void GovernanceSigner::VoteGovernanceTriggers(const std::optional<const CGoverna
             if (ranges::any_of(voteRecord.mapInstances, [&](const auto& voteInstancePair) {
                     if (voteInstancePair.first == VOTE_SIGNAL_FUNDING) {
                         LogPrint(BCLog::GOBJECT, /* Continued */
-                                 "%s -- Not voting NO-FUNDING for trigger:%s, we voted %s for it already\n",
-                                 strFunc, trigger_hash.ToString(),
+                                 "%s -- Not voting NO-FUNDING for trigger:%s, we voted %s for it already\n", strFunc,
+                                 trigger_hash.ToString(),
                                  CGovernanceVoting::ConvertOutcomeToString(voteInstancePair.second.eOutcome));
                         return true;
                     }
@@ -260,7 +266,8 @@ bool GovernanceSigner::VoteFundingTrigger(const uint256& nHash, const vote_outco
 
     CGovernanceException exception;
     if (!m_govman.ProcessVoteAndRelay(vote, exception, m_connman)) {
-        LogPrint(BCLog::GOBJECT, "%s -- Vote FUNDING %d for trigger:%s failed:%s\n", __func__, outcome, nHash.ToString(), exception.what());
+        LogPrint(BCLog::GOBJECT, "%s -- Vote FUNDING %d for trigger:%s failed:%s\n", __func__, outcome,
+                 nHash.ToString(), exception.what());
         return false;
     }
 
