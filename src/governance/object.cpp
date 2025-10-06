@@ -5,15 +5,16 @@
 #include <governance/object.h>
 
 #include <bls/bls.h>
-#include <chainparams.h>
-#include <core_io.h>
 #include <evo/deterministicmns.h>
 #include <governance/governance.h>
 #include <governance/validators.h>
-#include <index/txindex.h>
 #include <masternode/meta.h>
 #include <masternode/sync.h>
-#include <net_processing.h>
+
+#include <chainparams.h>
+#include <core_io.h>
+#include <index/txindex.h>
+#include <logging.h>
 #include <timedata.h>
 #include <util/time.h>
 #include <validation.h>

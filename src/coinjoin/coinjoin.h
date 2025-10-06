@@ -28,7 +28,6 @@ class CBlockIndex;
 class ChainstateManager;
 class CMasternodeSync;
 class CTxMemPool;
-class TxValidationState;
 
 namespace llmq {
 class CChainLocksHandler;
