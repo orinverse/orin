@@ -189,7 +189,8 @@ bool CMasternodeMetaMan::IsUsedMasternode(const uint256& proTxHash) const
 std::string MasternodeMetaStore::ToString() const
 {
     LOCK(cs);
-    return strprintf("Masternodes: meta infos object count: %d, nDsqCount: %d", metaInfos.size(), nDsqCount);
+    return strprintf("Masternodes: meta infos object count: %d, nDsqCount: %d, used masternodes count: %d",
+                     metaInfos.size(), nDsqCount, m_used_masternodes.size());
 }
 
 uint256 PlatformBanMessage::GetHash() const { return ::SerializeHash(*this); }
