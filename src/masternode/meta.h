@@ -16,7 +16,6 @@
 #include <atomic>
 #include <deque>
 #include <map>
-#include <memory>
 #include <optional>
 #include <vector>
 
@@ -129,7 +128,6 @@ public:
         return m_platform_ban;
     }
 };
-using CMasternodeMetaInfoPtr = std::shared_ptr<CMasternodeMetaInfo>;
 
 class MasternodeMetaStore
 {
@@ -137,7 +135,7 @@ protected:
     static const std::string SERIALIZATION_VERSION_STRING;
 
     mutable Mutex cs;
-    std::map<uint256, CMasternodeMetaInfoPtr> metaInfos GUARDED_BY(cs);
+    std::map<uint256, CMasternodeMetaInfo> metaInfos GUARDED_BY(cs);
     // keep track of dsq count to prevent masternodes from gaming coinjoin queue
     std::atomic<int64_t> nDsqCount{0};
     // keep track of the used Masternodes for CoinJoin across all wallets
@@ -152,7 +150,7 @@ public:
         LOCK(cs);
         std::vector<CMasternodeMetaInfo> tmpMetaInfo;
         for (const auto& p : metaInfos) {
-            tmpMetaInfo.emplace_back(*p.second);
+            tmpMetaInfo.emplace_back(p.second);
         }
         // Convert deque to vector for serialization - unordered_set will be rebuilt on deserialization
         std::vector<uint256> tmpUsedMasternodes(m_used_masternodes.begin(), m_used_masternodes.end());
@@ -162,9 +160,9 @@ public:
     template<typename Stream>
     void Unserialize(Stream &s) EXCLUSIVE_LOCKS_REQUIRED(!cs)
     {
-        Clear();
-
         LOCK(cs);
+
+        metaInfos.clear();
         std::string strVersion;
         s >> strVersion;
         if (strVersion != SERIALIZATION_VERSION_STRING) {
@@ -173,10 +171,8 @@ public:
         std::vector<CMasternodeMetaInfo> tmpMetaInfo;
         std::vector<uint256> tmpUsedMasternodes;
         s >> tmpMetaInfo >> nDsqCount >> tmpUsedMasternodes;
-
-        metaInfos.clear();
         for (auto& mm : tmpMetaInfo) {
-            metaInfos.emplace(mm.GetProTxHash(), std::make_shared<CMasternodeMetaInfo>(std::move(mm)));
+            metaInfos.emplace(mm.GetProTxHash(), CMasternodeMetaInfo{std::move(mm)});
         }
 
         // Convert vector to deque and build unordered_set for O(1) lookups
@@ -249,6 +245,8 @@ private:
     mutable unordered_lru_cache<uint256, PlatformBanMessage, StaticSaltedHasher> m_seen_platform_bans GUARDED_BY(cs){
         SeenBanInventorySize};
 
+    CMasternodeMetaInfo& GetMetaInfo(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(cs);
+
 public:
     CMasternodeMetaMan(const CMasternodeMetaMan&) = delete;
     CMasternodeMetaMan& operator=(const CMasternodeMetaMan&) = delete;
@@ -260,7 +258,6 @@ public:
     bool IsValid() const { return is_valid; }
 
     CMasternodeMetaInfo GetInfo(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
-    CMasternodeMetaInfoPtr GetMetaInfo(const uint256& proTxHash, bool fCreate = true) EXCLUSIVE_LOCKS_REQUIRED(!cs);
 
     // We keep track of dsq (mixing queues) count to avoid using same masternodes for mixing too often.
     // MN's threshold is calculated as the last dsq count this specific masternode was used in a mixing
