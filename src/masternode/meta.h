@@ -204,6 +204,7 @@ private:
         SeenBanInventorySize};
 
     CMasternodeMetaInfo& GetMetaInfo(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(cs);
+    const CMasternodeMetaInfo& GetMetaInfoOrDefault(const uint256& proTxHash) const EXCLUSIVE_LOCKS_REQUIRED(cs);
 
 public:
     CMasternodeMetaMan(const CMasternodeMetaMan&) = delete;
