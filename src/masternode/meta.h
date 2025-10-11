@@ -19,7 +19,6 @@
 #include <optional>
 #include <vector>
 
-class CConnman;
 class UniValue;
 
 template<typename T>
