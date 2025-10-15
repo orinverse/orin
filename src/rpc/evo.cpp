@@ -1405,15 +1405,15 @@ static RPCHelpMan protx_list()
             {"height", RPCArg::Type::NUM, RPCArg::DefaultHint{"current chain-tip"}, ""},
         },
         RPCResult{
-            RPCResult::Type::ARR, "", "list of masternodes",
+            RPCResult::Type::ARR, "", "List of masternodes",
             {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    // TODO: list fields of output for RPC help instead ELISION
-                    {RPCResult::Type::ELISION, "", ""}
-                }},
-            },
-        },
+                RPCResult{"when detailed=false", RPCResult::Type::STR, "", "ProTx hash"},
+                RPCResult{"when detailed=true", RPCResult::Type::OBJ, "", "",
+                    {
+                        // TODO: document fields of the detailed entry
+                        {RPCResult::Type::ELISION, "", ""}
+                    }},
+            }},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1673,7 +1673,7 @@ static RPCHelpMan protx_listdiff()
                                 {RPCResult::Type::STR_HEX, "protx", "ProTx of removed masternode"},
                             },
                         },
-                        {RPCResult::Type::ARR, "addedMNs", "added masternodes",
+                        {RPCResult::Type::ARR, "updatedMNs", "updated masternodes",
                             {
                                 {RPCResult::Type::OBJ, "", "",
                                 {

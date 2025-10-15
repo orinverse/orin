@@ -780,10 +780,9 @@ static RPCHelpMan quorum_selectquorum()
             RPCResult::Type::OBJ, "", "",
             {
                 {RPCResult::Type::STR_HEX, "quorumHash", "Hash of chosen quorum"},
-/*                {RPCResult::Type::ARR, "recoveryMembers", "list of members to do sig recovery",
-                        {RPCResult::Type::STR_HEX, "hash", "protx hash of member"}
+                {RPCResult::Type::ARR, "recoveryMembers", "List of members to use for signature recovery",
+                    {{RPCResult::Type::STR_HEX, "hash", "ProTxHash of member"}}
                 },
-                */
             }
         },
         RPCExamples{""},

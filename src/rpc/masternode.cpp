@@ -50,7 +50,7 @@ static RPCHelpMan masternode_connect()
             {"v2transport", RPCArg::Type::BOOL, RPCArg::DefaultHint{"set by -v2transport"}, "Attempt to connect using BIP324 v2 transport protocol"},
         },
         RPCResult{
-            RPCResult::Type::STR, "status", "Returns 'successfully connected' if succeed"
+            RPCResult::Type::STR, "status", "Returns 'successfully connected' if successful"
         },
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -90,20 +90,20 @@ static RPCHelpMan masternode_count()
         RPCResult{
             RPCResult::Type::OBJ, "", "",
             {
-                {RPCResult::Type::NUM, "total", "Total amount Masternodes"},
-                {RPCResult::Type::NUM, "enabled", "Amount of enabled Masternodes"},
-                {RPCResult::Type::OBJ, "details", "Amount of enabled Masternodes",
+                {RPCResult::Type::NUM, "total", "Total number of Masternodes"},
+                {RPCResult::Type::NUM, "enabled", "Number of enabled Masternodes"},
+                {RPCResult::Type::OBJ, "details", "Breakdown of masternodes by type",
                     {{RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::OBJ, "regular", "Details for regular masternodes",
                             {
-                                {RPCResult::Type::NUM, "total", "Total amount regular Masternodes"},
-                                {RPCResult::Type::NUM, "enabled", "Amount of enabled regular Masternodes"}
+                                {RPCResult::Type::NUM, "total", "Total number of regular Masternodes"},
+                                {RPCResult::Type::NUM, "enabled", "Number of enabled regular Masternodes"}
                         }},
                         {RPCResult::Type::OBJ, "evo", "Details for Evo nodes",
                             {
-                                {RPCResult::Type::NUM, "total", "Total amount Evo nodes"},
-                                {RPCResult::Type::NUM, "enabled", "Amount of enabled Evo nodes"}
+                                {RPCResult::Type::NUM, "total", "Total number of Evo nodes"},
+                                {RPCResult::Type::NUM, "enabled", "Number of enabled Evo nodes"}
                         }},
                     }},
                     }}

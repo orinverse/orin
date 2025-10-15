@@ -174,9 +174,7 @@ static RPCHelpMan gobject_prepare()
             {"outputHash", RPCArg::Type::STR_HEX, RPCArg::Default{""}, "the single output to submit the proposal fee from"},
             {"outputIndex", RPCArg::Type::NUM, RPCArg::Default{0}, "The output index."},
         },
-        {
-            RPCResult{"if object valid", RPCResult::Type::STR, "", "serialized governance object"},
-        },
+        {RPCResult{"if object valid", RPCResult::Type::STR, "", "The collateral transaction id (txid)"}},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -735,7 +733,7 @@ static RPCHelpMan gobject_list_helper(const bool make_a_diff)
                 },
             },
             RPCResult{"if request is invalid",
-                RPCResult::Type::STR_HEX, "", "Error string"
+                RPCResult::Type::STR, "", "Error string"
             },
         },
         RPCExamples{""},
