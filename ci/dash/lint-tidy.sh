@@ -31,6 +31,7 @@ iwyu_tool.py \
   "src/rpc/fees.cpp" \
   "src/rpc/signmessage.cpp" \
   "src/test/fuzz/txorphan.cpp" \
+  "src/threadinterrupt.cpp" \
   "src/util/bip32.cpp" \
   "src/util/bytevectorhash.cpp" \
   "src/util/check.cpp" \
