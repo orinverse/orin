@@ -5,6 +5,7 @@
 #ifndef BITCOIN_DBWRAPPER_H
 #define BITCOIN_DBWRAPPER_H
 
+#include <assert.h>
 #include <clientversion.h>
 #include <fs.h>
 #include <logging.h>
@@ -12,8 +13,9 @@
 #include <span.h>
 #include <streams.h>
 
-#include <typeindex>
+#include <sys/types.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -23,9 +25,15 @@
 #include <leveldb/slice.h>
 #include <leveldb/status.h>
 #include <leveldb/write_batch.h>
+#include <map>
+#include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
 namespace leveldb {
 class Env;
 }

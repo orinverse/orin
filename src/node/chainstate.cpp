@@ -14,19 +14,20 @@
 #include <threadsafety.h>
 #include <tinyformat.h>
 #include <txdb.h>
+#include <txmempool.h>
 #include <uint256.h>
-#include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
 
+#include <bls/bls.h>
 #include <evo/chainhelper.h>
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <gsl/pointers.h>
 #include <llmq/context.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <memory>

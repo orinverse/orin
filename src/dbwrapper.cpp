@@ -7,7 +7,6 @@
 #include <fs.h>
 #include <logging.h>
 #include <random.h>
-#include <tinyformat.h>
 #include <util/strencodings.h>
 #include <util/system.h>
 
