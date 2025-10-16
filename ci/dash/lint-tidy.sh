@@ -27,6 +27,7 @@ iwyu_tool.py \
   "src/policy/feerate.cpp" \
   "src/policy/packages.cpp" \
   "src/policy/settings.cpp" \
+  "src/primitives/transaction.cpp" \
   "src/rpc/fees.cpp" \
   "src/rpc/signmessage.cpp" \
   "src/test/fuzz/txorphan.cpp" \
