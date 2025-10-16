@@ -24,6 +24,9 @@ iwyu_tool.py \
   "src/dbwrapper.cpp" \
   "src/init" \
   "src/node/chainstate.cpp" \
+  "src/policy/feerate.cpp" \
+  "src/policy/packages.cpp" \
+  "src/policy/settings.cpp" \
   "src/rpc/fees.cpp" \
   "src/rpc/signmessage.cpp" \
   "src/test/fuzz/txorphan.cpp" \
