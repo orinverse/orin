@@ -142,12 +142,11 @@ private:
         msgHashes.reserve(messages.size());
         pubKeys.reserve(messages.size());
 
-        for (const auto& p : byMessageHash) {
-            const auto& msgHash = p.first;
+        for (const auto& [msgHash, vec_message_it] : byMessageHash) {
+            std::vector<CBLSPublicKey> pubKeysToAggregate;
+            pubKeysToAggregate.reserve(vec_message_it.size());
 
-            CBLSPublicKey aggPubKey;
-
-            for (const auto& msgIt : p.second) {
+            for (const auto& msgIt : vec_message_it) {
                 const auto& msg = msgIt->second;
 
                 if (!dups.emplace(msg.msgId).second) {
@@ -160,12 +159,10 @@ private:
                     aggSig.AggregateInsecure(msg.sig);
                 }
 
-                if (!aggPubKey.IsValid()) {
-                    aggPubKey = msg.pubKey;
-                } else {
-                    aggPubKey.AggregateInsecure(msg.pubKey);
-                }
+                pubKeysToAggregate.push_back(msg.pubKey);
             }
+
+            CBLSPublicKey aggPubKey = CBLSPublicKey::AggregateInsecure(pubKeysToAggregate);
 
             if (!aggPubKey.IsValid()) {
                 // only duplicates for this msgHash
