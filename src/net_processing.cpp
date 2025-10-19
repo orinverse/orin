@@ -2406,11 +2406,13 @@ void PeerManagerImpl::RelayInvFiltered(const CInv& inv, const CTransaction& rela
 {
     // TODO: Migrate to iteration through m_peer_map
     m_connman.ForEachNode([&](CNode* pnode) {
+        if (!pnode->CanRelay()) return;
+
         PeerRef peer = GetPeerRef(pnode->GetId());
         if (peer == nullptr) return;
 
         auto tx_relay = peer->GetTxRelay();
-        if (!pnode->CanRelay() || tx_relay == nullptr) {
+        if (tx_relay == nullptr) {
             return;
         }
 
