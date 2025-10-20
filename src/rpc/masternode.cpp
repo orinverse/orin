@@ -262,9 +262,9 @@ static RPCHelpMan masternode_winners()
             {"filter", RPCArg::Type::STR, RPCArg::Default{""}, "filter for returned winners"},
         },
         RPCResult{
-            RPCResult::Type::OBJ, "", "Details about a specific deterministic masternode",
+            RPCResult::Type::OBJ_DYN, "", "Keys are block heights (as strings); values describe the payees for that height",
             {
-                {RPCResult::Type::STR, "height", "payment string"}
+                {RPCResult::Type::STR, "payee", "Payee for the height"}
             }
         },
         RPCExamples{""},

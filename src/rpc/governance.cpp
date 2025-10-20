@@ -84,18 +84,7 @@ static RPCHelpMan gobject_deserialize()
         {
             {"hex_data", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "data in hex string form"},
         },
-        {
-            RPCResult{
-                RPCResult::Type::OBJ, "", "Deserialized governance object",
-                {
-                    // TODO: list fields of output for RPC help instead ELISION
-                    {RPCResult::Type::ELISION, "", ""}
-                }
-            },
-            RPCResult{"for mode = all",
-                RPCResult::Type::STR, "", "The transaction hash in hex"
-            },
-        },
+        RPCResult{RPCResult::Type::STR, "", "JSON string of the deserialized governance object"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -174,7 +163,7 @@ static RPCHelpMan gobject_prepare()
             {"outputHash", RPCArg::Type::STR_HEX, RPCArg::Default{""}, "the single output to submit the proposal fee from"},
             {"outputIndex", RPCArg::Type::NUM, RPCArg::Default{0}, "The output index."},
         },
-        {RPCResult{"if object valid", RPCResult::Type::STR, "", "The collateral transaction id (txid)"}},
+        {RPCResult{"if object valid", RPCResult::Type::STR_HEX, "", "The collateral transaction id (txid)"}},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -341,7 +330,7 @@ static RPCHelpMan gobject_submit()
             {"data-hex", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "data in hex string form"},
             {"fee-txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "txid of the corresponding proposal fee transaction"},
         },
-        RPCResult{RPCResult::Type::STR_HEX, "data", "A string that is serialized, hex-encoded data for the gobject"},
+        RPCResult{RPCResult::Type::STR_HEX, "hash", "Hash of the submitted governance object"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -886,9 +875,9 @@ static RPCHelpMan gobject_getcurrentvotes()
             {"vout", RPCArg::Type::STR, RPCArg::Default{""}, "masternode collateral output index, required if <txid> present"},
         },
         RPCResult{
-            RPCResult::Type::OBJ, "", "Map with governance votes",
+            RPCResult::Type::OBJ_DYN, "", "Keys are hashes of vote, values are votes",
             {
-                {RPCResult::Type::STR, "votehash", "Human-friendly presentation of vote"},
+                {RPCResult::Type::STR, "votes", "Human-friendly presentation of vote"},
             },
         },
         RPCExamples{""},
