@@ -257,7 +257,7 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(CConnman& connman, const C
     LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Process block %s\n", __func__, pIndex->GetBlockHash().ToString());
 
     for (const auto& params : Params().GetConsensus().llmqs) {
-        const auto vecQuorums = ScanQuorums(params.type, pIndex, params.keepOldConnections);
+        auto vecQuorums = ScanQuorums(params.type, pIndex, params.keepOldConnections);
 
         // First check if we are member of any quorum of this type
         const uint256 proTxHash = m_mn_activeman != nullptr ? m_mn_activeman->GetProTxHash() : uint256();
@@ -266,7 +266,7 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(CConnman& connman, const C
             return pQuorum->IsValidMember(proTxHash);
         });
 
-        for (const auto& pQuorum : vecQuorums) {
+        for (auto& pQuorum : vecQuorums) {
             // If there is already a thread running for this specific quorum skip it
             if (pQuorum->fQuorumDataRecoveryThreadRunning) {
                 continue;
