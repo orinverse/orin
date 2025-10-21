@@ -876,7 +876,7 @@ bool CSigSharesManager::AsyncSignIfMember(Consensus::LLMQType llmqType, CSigning
 
     if (m_mn_activeman.GetProTxHash().IsNull()) return false;
 
-    const auto quorum = [&]() {
+    auto quorum = [&]() {
         if (quorumHash.IsNull()) {
             // This might end up giving different results on different members
             // This might happen when we are on the brink of confirming a new quorum
@@ -943,7 +943,7 @@ bool CSigSharesManager::AsyncSignIfMember(Consensus::LLMQType llmqType, CSigning
         // make us re-announce all known shares (other nodes might have run into a timeout)
         ForceReAnnouncement(quorum, llmqType, id, msgHash);
     }
-    AsyncSign(quorum, id, msgHash);
+    AsyncSign(std::move(quorum), id, msgHash);
 
     return true;
 }
@@ -1599,10 +1599,10 @@ void CSigSharesManager::WorkThreadMain()
     }
 }
 
-void CSigSharesManager::AsyncSign(const CQuorumCPtr& quorum, const uint256& id, const uint256& msgHash)
+void CSigSharesManager::AsyncSign(CQuorumCPtr quorum, const uint256& id, const uint256& msgHash)
 {
     LOCK(cs_pendingSigns);
-    pendingSigns.emplace_back(quorum, id, msgHash);
+    pendingSigns.emplace_back(std::move(quorum), id, msgHash);
 }
 
 void CSigSharesManager::SignPendingSigShares()
