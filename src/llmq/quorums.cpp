@@ -475,7 +475,7 @@ bool CQuorumManager::HasQuorum(Consensus::LLMQType llmqType, const CQuorumBlockP
     return quorum_block_processor.HasMinedCommitment(llmqType, quorumHash);
 }
 
-bool CQuorumManager::RequestQuorumData(CNode* pfrom, CConnman& connman, CQuorumCPtr pQuorum, uint16_t nDataMask,
+bool CQuorumManager::RequestQuorumData(CNode* pfrom, CConnman& connman, const CQuorum& quorum, uint16_t nDataMask,
                                        const uint256& proTxHash) const
 {
     if (pfrom == nullptr) {
@@ -486,12 +486,12 @@ bool CQuorumManager::RequestQuorumData(CNode* pfrom, CConnman& connman, CQuorumC
         LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- pfrom is not a verified masternode\n", __func__);
         return false;
     }
-    const Consensus::LLMQType llmqType = pQuorum->qc->llmqType;
+    const Consensus::LLMQType llmqType = quorum.qc->llmqType;
     if (!Params().GetLLMQ(llmqType).has_value()) {
         LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Invalid llmqType: %d\n", __func__, ToUnderlying(llmqType));
         return false;
     }
-    const CBlockIndex* pindex{pQuorum->m_quorum_base_block_index};
+    const CBlockIndex* pindex{quorum.m_quorum_base_block_index};
     if (pindex == nullptr) {
         LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Invalid m_quorum_base_block_index : nullptr\n", __func__);
         return false;
@@ -673,7 +673,7 @@ CQuorumCPtr CQuorumManager::GetQuorum(Consensus::LLMQType llmqType, gsl::not_nul
     return BuildQuorumFromCommitment(llmqType, pQuorumBaseBlockIndex, populate_cache);
 }
 
-size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex) const
+size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorum& quorum, const CBlockIndex* pIndex) const
 {
     assert(m_mn_activeman);
 
@@ -695,7 +695,7 @@ size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, c
             }
         }
     }
-    return nIndex % pQuorum->qc->validMembers.size();
+    return nIndex % quorum.qc->validMembers.size();
 }
 
 MessageProcessingResult CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& connman, std::string_view msg_type, CDataStream& vRecv)
@@ -930,7 +930,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(CConnman& connman, const CQuo
         int64_t nTimeLastSuccess{0};
         uint256* pCurrentMemberHash{nullptr};
         std::vector<uint256> vecMemberHashes;
-        const size_t nMyStartOffset{GetQuorumRecoveryStartOffset(pQuorum, pIndex)};
+        const size_t nMyStartOffset{GetQuorumRecoveryStartOffset(*pQuorum, pIndex)};
         const int64_t nRequestTimeout{10};
 
         auto printLog = [&](const std::string& strMessage) {
@@ -1006,7 +1006,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(CConnman& connman, const CQuo
                     return;
                 }
 
-                if (RequestQuorumData(pNode, connman, pQuorum, nDataMask, proTxHash)) {
+                if (RequestQuorumData(pNode, connman, *pQuorum, nDataMask, proTxHash)) {
                     nTimeLastSuccess = GetTime<std::chrono::seconds>().count();
                     printLog("Requested");
                 } else {

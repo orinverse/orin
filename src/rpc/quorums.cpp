@@ -902,7 +902,7 @@ static RPCHelpMan quorum_getdata()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "quorum not found");
     }
     return connman.ForNode(nodeId, [&](CNode* pNode) {
-        return llmq_ctx.qman->RequestQuorumData(pNode, connman, quorum, nDataMask, proTxHash);
+        return llmq_ctx.qman->RequestQuorumData(pNode, connman, *quorum, nDataMask, proTxHash);
     });
 },
     };
