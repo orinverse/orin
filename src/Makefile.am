@@ -259,6 +259,7 @@ BITCOIN_CORE_H = \
   instantsend/instantsend.h \
   instantsend/lock.h \
   instantsend/signing.h \
+  kernel/coinstats.h \
   key.h \
   key_io.h \
   limitedmap.h \
@@ -306,7 +307,6 @@ BITCOIN_CORE_H = \
   node/caches.h \
   node/chainstate.h \
   node/coin.h \
-  node/coinstats.h \
   node/connection_types.h \
   node/context.h \
   node/eviction.h \
@@ -530,6 +530,7 @@ libbitcoin_node_a_SOURCES = \
   instantsend/instantsend.cpp \
   instantsend/lock.cpp \
   instantsend/signing.cpp \
+  kernel/coinstats.cpp \
   llmq/blockprocessor.cpp \
   llmq/commitment.cpp \
   llmq/context.cpp \
@@ -561,7 +562,6 @@ libbitcoin_node_a_SOURCES = \
   node/caches.cpp \
   node/chainstate.cpp \
   node/coin.cpp \
-  node/coinstats.cpp \
   node/connection_types.cpp \
   node/context.cpp \
   node/eviction.cpp \
