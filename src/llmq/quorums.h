@@ -311,7 +311,7 @@ private:
     /// should receive the same number of request if all active llmqType members requests data from one llmqType quorum.
     size_t GetQuorumRecoveryStartOffset(const CQuorum& quorum, const CBlockIndex* pIndex) const;
 
-    void StartCachePopulatorThread(const CQuorumCPtr pQuorum) const;
+    void StartCachePopulatorThread(CQuorumCPtr pQuorum) const;
     void StartQuorumDataRecoveryThread(CConnman& connman, CQuorumCPtr pQuorum, const CBlockIndex* pIndex,
                                        uint16_t nDataMask) const;
 

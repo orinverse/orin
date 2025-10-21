@@ -883,7 +883,7 @@ MessageProcessingResult CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& c
     return {};
 }
 
-void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
+void CQuorumManager::StartCachePopulatorThread(CQuorumCPtr pQuorum) const
 {
     if (!pQuorum->HasVerificationVector()) {
         return;
@@ -896,7 +896,7 @@ void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
             pQuorum->m_quorum_base_block_index->GetBlockHash().ToString());
 
     // when then later some other thread tries to get keys, it will be much faster
-    workerPool.push([pQuorum, t, this](int threadId) {
+    workerPool.push([pQuorum = std::move(pQuorum), t, this](int threadId) {
         for (const auto i : irange::range(pQuorum->members.size())) {
             if (quorumThreadInterrupt) {
                 break;
