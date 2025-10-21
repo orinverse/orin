@@ -293,7 +293,7 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(CConnman& connman, const C
             }
 
             // Finally start the thread which triggers the requests for this quorum
-            StartQuorumDataRecoveryThread(connman, pQuorum, pIndex, nDataMask);
+            StartQuorumDataRecoveryThread(connman, std::move(pQuorum), pIndex, nDataMask);
         }
     }
 }
@@ -913,7 +913,7 @@ void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
     });
 }
 
-void CQuorumManager::StartQuorumDataRecoveryThread(CConnman& connman, const CQuorumCPtr pQuorum,
+void CQuorumManager::StartQuorumDataRecoveryThread(CConnman& connman, CQuorumCPtr pQuorum,
                                                    const CBlockIndex* pIndex, uint16_t nDataMaskIn) const
 {
     assert(m_mn_activeman);
@@ -924,7 +924,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(CConnman& connman, const CQuo
         return;
     }
 
-    workerPool.push([&connman, pQuorum, pIndex, nDataMaskIn, this](int threadId) {
+    workerPool.push([&connman, pQuorum = std::move(pQuorum), pIndex, nDataMaskIn, this](int threadId) {
         size_t nTries{0};
         uint16_t nDataMask{nDataMaskIn};
         int64_t nTimeLastSuccess{0};
