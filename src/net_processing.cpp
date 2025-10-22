@@ -5377,7 +5377,7 @@ void PeerManagerImpl::ProcessMessage(
 #endif // ENABLE_WALLET
         if (m_active_ctx) {
             PostProcessMessage(m_active_ctx->cj_server->ProcessMessage(pfrom, msg_type, vRecv), pfrom.GetId());
-            m_active_ctx->shareman->ProcessMessage(pfrom, *this, m_sporkman, msg_type, vRecv);
+            m_active_ctx->shareman->ProcessMessage(pfrom, msg_type, vRecv);
         }
         PostProcessMessage(m_sporkman.ProcessMessage(pfrom, m_connman, msg_type, vRecv), pfrom.GetId());
         m_mn_sync.ProcessMessage(pfrom, msg_type, vRecv);
