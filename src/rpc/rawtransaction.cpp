@@ -361,14 +361,14 @@ static RPCHelpMan getrawtransactionmulti() {
             RPCResult{
                 RPCResult::Type::OBJ, "", "",
                 {
-                    {"if verbose is not set or set to false",
+                    {"If verbose is not set or set to false",
                         RPCResult::Type::STR_HEX, "txid", "The serialized, hex-encoded data for 'txid'"},
                     {"if verbose is set to true",
                         RPCResult::Type::OBJ, "txid", "The decoded network-serialized transaction.",
                         {
                             {RPCResult::Type::ELISION, "", "The layout is the same as the output of getrawtransaction."},
                         }},
-                    {"if tx is unknown", RPCResult::Type::STR, "txid", "None"},
+                    {"If tx is unknown", RPCResult::Type::STR, "txid", "None"},
                 },
             },
             RPCExamples{

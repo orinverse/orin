@@ -295,7 +295,7 @@ static RPCHelpMan quorum_dkgstatus()
                         {RPCResult::Type::OBJ, "", "",
                         {
                             {RPCResult::Type::NUM, "llmqType", "Name of quorum"},
-                            {RPCResult::Type::NUM, "quorumIndex", "Relevant for rotation quorums only, for non rotating quorums is 0"},
+                            {RPCResult::Type::NUM, "quorumIndex", "Relevant for rotation quorums only, 0 for non-rotating quorums"},
                             {RPCResult::Type::OBJ, "status", "",
                             {
                                 // TODO: list fields of output for RPC help instead ELISION
@@ -1105,7 +1105,7 @@ static RPCHelpMan verifyislock()
             {"signature", RPCArg::Type::STR, RPCArg::Optional::NO, "The InstantSend Lock signature to verify."},
             {"maxHeight", RPCArg::Type::NUM, RPCArg::Default{-1}, "The maximum height to search quorums from."},
         },
-        RPCResult{RPCResult::Type::BOOL, "", "Returns true if the instantsent is valid"},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if the instantsend lock is valid"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {

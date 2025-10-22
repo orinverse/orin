@@ -515,7 +515,7 @@ namespace {
 const RPCResult vote_results{
     RPCResult::Type::OBJ, "", "",
         {
-            {RPCResult::Type::STR, "overall", "Total amount of successful and failed votes"},
+            {RPCResult::Type::STR, "overall", "Total number of successful and failed votes"},
             {RPCResult::Type::OBJ, "detail", "Detailed information for each vote",
             {
                 {RPCResult::Type::OBJ, "protx", "ProTx of masternode for voting",
@@ -714,14 +714,14 @@ static RPCHelpMan gobject_list_helper(const bool make_a_diff)
             {"type", RPCArg::Type::STR, RPCArg::Default{"all"}, "object type, possible values: [proposals|triggers|all]"},
         },
         {
-            RPCResult{"if request is valid",
+            RPCResult{"If request is valid",
                 RPCResult::Type::OBJ, "hash", "Object details",
                 {
                     // TODO: list fields of output for RPC help instead ELISION
                     {RPCResult::Type::ELISION, "", ""}
                 },
             },
-            RPCResult{"if request is invalid",
+            RPCResult{"If request is invalid",
                 RPCResult::Type::STR, "", "Error string"
             },
         },

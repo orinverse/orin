@@ -1657,9 +1657,9 @@ static RPCHelpMan protx_listdiff()
                 RPCResult {
                     RPCResult::Type::OBJ, "", "",
                     {
-                        {RPCResult::Type::NUM, "baseHeight", "height of base (starting) block"},
-                        {RPCResult::Type::NUM, "blockHeight", "height of target (ending) block"},
-                        {RPCResult::Type::ARR, "addedMNs", "added masternodes",
+                        {RPCResult::Type::NUM, "baseHeight", "Height of base (starting) block"},
+                        {RPCResult::Type::NUM, "blockHeight", "Height of target (ending) block"},
+                        {RPCResult::Type::ARR, "addedMNs", "Added masternodes",
                             {
                                 {RPCResult::Type::OBJ, "", "",
                                 {
@@ -1668,12 +1668,12 @@ static RPCHelpMan protx_listdiff()
                                 }},
                             },
                         },
-                        {RPCResult::Type::ARR, "removedMns", "removed masternodes",
+                        {RPCResult::Type::ARR, "removedMns", "Removed masternodes",
                             {
                                 {RPCResult::Type::STR_HEX, "protx", "ProTx of removed masternode"},
                             },
                         },
-                        {RPCResult::Type::ARR, "updatedMNs", "updated masternodes",
+                        {RPCResult::Type::ARR, "updatedMNs", "Updated masternodes",
                             {
                                 {RPCResult::Type::OBJ, "", "",
                                 {
