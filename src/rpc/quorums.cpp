@@ -464,8 +464,7 @@ static UniValue quorum_sign_helper(const JSONRPCRequest& request, Consensus::LLM
         fSubmit = ParseBoolV(request.params[3], "submit");
     }
     if (fSubmit) {
-        return llmq_ctx.sigman->AsyncSignIfMember(llmqType, *CHECK_NONFATAL(node.active_ctx)->shareman, id, msgHash,
-                                                  quorumHash);
+        return CHECK_NONFATAL(node.active_ctx)->shareman->AsyncSignIfMember(llmqType, *llmq_ctx.sigman, id, msgHash, quorumHash);
     } else {
         const auto pQuorum = [&]() {
             if (quorumHash.IsNull()) {

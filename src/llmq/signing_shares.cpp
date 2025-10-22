@@ -21,6 +21,7 @@
 #include <util/thread.h>
 #include <util/time.h>
 #include <util/underlying.h>
+#include <validation.h>
 
 #include <cxxtimer.hpp>
 
@@ -179,10 +180,11 @@ void CSigSharesNodeState::RemoveSession(const uint256& signHash)
 
 //////////////////////
 
-CSigSharesManager::CSigSharesManager(CConnman& connman, CSigningManager& _sigman, PeerManager& peerman,
-                                     const CActiveMasternodeManager& mn_activeman, const CQuorumManager& _qman,
-                                     const CSporkManager& sporkman) :
+CSigSharesManager::CSigSharesManager(CConnman& connman, CChainState& chainstate, CSigningManager& _sigman,
+                                     PeerManager& peerman, const CActiveMasternodeManager& mn_activeman,
+                                     const CQuorumManager& _qman, const CSporkManager& sporkman) :
     m_connman{connman},
+    m_chainstate{chainstate},
     sigman{_sigman},
     m_peerman{peerman},
     m_mn_activeman{mn_activeman},
@@ -864,6 +866,86 @@ CDeterministicMNCPtr CSigSharesManager::SelectMemberForRecovery(const CQuorumCPt
     std::sort(v.begin(), v.end());
 
     return v[attempt % v.size()].second;
+}
+
+bool CSigSharesManager::AsyncSignIfMember(Consensus::LLMQType llmqType, CSigningManager& sigman, const uint256& id,
+                                          const uint256& msgHash, const uint256& quorumHash, bool allowReSign,
+                                          bool allowDiffMsgHashSigning)
+{
+    AssertLockNotHeld(cs_pendingSigns);
+
+    if (m_mn_activeman.GetProTxHash().IsNull()) return false;
+
+    const auto quorum = [&]() {
+        if (quorumHash.IsNull()) {
+            // This might end up giving different results on different members
+            // This might happen when we are on the brink of confirming a new quorum
+            // This gives a slight risk of not getting enough shares to recover a signature
+            // But at least it shouldn't be possible to get conflicting recovered signatures
+            // TODO fix this by re-signing when the next block arrives, but only when that block results in a change of
+            // the quorum list and no recovered signature has been created in the mean time
+            const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
+            assert(llmq_params_opt.has_value());
+            return SelectQuorumForSigning(llmq_params_opt.value(), m_chainstate.m_chain, qman, id);
+        } else {
+            return qman.GetQuorum(llmqType, quorumHash);
+        }
+    }();
+
+    if (!quorum) {
+        LogPrint(BCLog::LLMQ, "CSigningManager::%s -- failed to select quorum. id=%s, msgHash=%s\n", __func__,
+                 id.ToString(), msgHash.ToString());
+        return false;
+    }
+
+    if (!quorum->IsValidMember(m_mn_activeman.GetProTxHash())) {
+        return false;
+    }
+
+    {
+        auto& db = sigman.GetDb();
+        bool hasVoted = db.HasVotedOnId(llmqType, id);
+        if (hasVoted) {
+            uint256 prevMsgHash;
+            db.GetVoteForId(llmqType, id, prevMsgHash);
+            if (msgHash != prevMsgHash) {
+                if (allowDiffMsgHashSigning) {
+                    LogPrintf("%s -- already voted for id=%s and msgHash=%s. Signing for different " /* Continued */
+                              "msgHash=%s\n",
+                              __func__, id.ToString(), prevMsgHash.ToString(), msgHash.ToString());
+                    hasVoted = false;
+                } else {
+                    LogPrintf("%s -- already voted for id=%s and msgHash=%s. Not voting on " /* Continued */
+                              "conflicting msgHash=%s\n",
+                              __func__, id.ToString(), prevMsgHash.ToString(), msgHash.ToString());
+                    return false;
+                }
+            } else if (allowReSign) {
+                LogPrint(BCLog::LLMQ, "%s -- already voted for id=%s and msgHash=%s. Resigning!\n", __func__,
+                         id.ToString(), prevMsgHash.ToString());
+            } else {
+                LogPrint(BCLog::LLMQ, "%s -- already voted for id=%s and msgHash=%s. Not voting again.\n", __func__,
+                         id.ToString(), prevMsgHash.ToString());
+                return false;
+            }
+        }
+
+        if (db.HasRecoveredSigForId(llmqType, id)) {
+            // no need to sign it if we already have a recovered sig
+            return true;
+        }
+        if (!hasVoted) {
+            db.WriteVoteForId(llmqType, id, msgHash);
+        }
+    }
+
+    if (allowReSign) {
+        // make us re-announce all known shares (other nodes might have run into a timeout)
+        ForceReAnnouncement(quorum, llmqType, id, msgHash);
+    }
+    AsyncSign(quorum, id, msgHash);
+
+    return true;
 }
 
 void CSigSharesManager::CollectSigSharesToRequest(std::unordered_map<NodeId, Uint256HashMap<CSigSharesInv>>& sigSharesToRequest)

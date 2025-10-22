@@ -209,22 +209,20 @@ private:
         EXCLUSIVE_LOCKS_REQUIRED(!cs_pending, !cs_listeners);
     bool ProcessPendingRecoveredSigs(PeerManager& peerman)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_pending, !cs_listeners); // called from the worker thread of CSigSharesManager
-public:
-    // TODO - should not be public!
+
+    // Used by CSigSharesManager
+    CRecoveredSigsDb& GetDb() { return db; }
     void ProcessRecoveredSig(const std::shared_ptr<const CRecoveredSig>& recoveredSig, PeerManager& peerman)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_pending, !cs_listeners);
 
-private:
-    void Cleanup(); // called from the worker thread of CSigSharesManager
+    // Needed for access to GetDb() and ProcessRecoveredSig()
+    friend class CSigSharesManager;
 
 public:
     // public interface
     void RegisterRecoveredSigsListener(CRecoveredSigsListener* l) EXCLUSIVE_LOCKS_REQUIRED(!cs_listeners);
     void UnregisterRecoveredSigsListener(CRecoveredSigsListener* l) EXCLUSIVE_LOCKS_REQUIRED(!cs_listeners);
 
-    bool AsyncSignIfMember(Consensus::LLMQType llmqType, CSigSharesManager& shareman, const uint256& id,
-                           const uint256& msgHash, const uint256& quorumHash = uint256(), bool allowReSign = false,
-                           bool allowDiffMsgHashSigning = false);
     bool HasRecoveredSig(Consensus::LLMQType llmqType, const uint256& id, const uint256& msgHash) const;
     bool HasRecoveredSigForId(Consensus::LLMQType llmqType, const uint256& id) const;
     bool HasRecoveredSigForSession(const uint256& signHash) const;
@@ -236,8 +234,8 @@ public:
 private:
     std::thread workThread;
     CThreadInterrupt workInterrupt;
+    void Cleanup(); // called from the worker thread of CSigSharesManager
     void WorkThreadMain(PeerManager& peerman) EXCLUSIVE_LOCKS_REQUIRED(!cs_pending, !cs_listeners);
-    ;
 
 public:
     void StartWorkerThread(PeerManager& peerman);

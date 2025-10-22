@@ -405,6 +405,7 @@ private:
     FastRandomContext rnd GUARDED_BY(cs);
 
     CConnman& m_connman;
+    CChainState& m_chainstate;
     CSigningManager& sigman;
     PeerManager& m_peerman;
     const CActiveMasternodeManager& m_mn_activeman;
@@ -415,9 +416,9 @@ private:
     std::atomic<uint32_t> recoveredSigsCounter{0};
 
 public:
-    explicit CSigSharesManager(CConnman& connman, CSigningManager& _sigman, PeerManager& peerman,
-                               const CActiveMasternodeManager& mn_activeman, const CQuorumManager& _qman,
-                               const CSporkManager& sporkman);
+    explicit CSigSharesManager(CConnman& connman, CChainState& chainstate, CSigningManager& _sigman,
+                               PeerManager& peerman, const CActiveMasternodeManager& mn_activeman,
+                               const CQuorumManager& _qman, const CSporkManager& sporkman);
     ~CSigSharesManager() override;
 
     CSigSharesManager() = delete;
@@ -438,6 +439,11 @@ public:
     [[nodiscard]] MessageProcessingResult HandleNewRecoveredSig(const CRecoveredSig& recoveredSig) override;
 
     static CDeterministicMNCPtr SelectMemberForRecovery(const CQuorumCPtr& quorum, const uint256& id, int attempt);
+
+    bool AsyncSignIfMember(Consensus::LLMQType llmqType, CSigningManager& sigman, const uint256& id,
+                           const uint256& msgHash, const uint256& quorumHash = uint256(), bool allowReSign = false,
+                           bool allowDiffMsgHashSigning = false)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_pendingSigns);
 
 private:
     // all of these return false when the currently processed message should be aborted (as each message actually contains multiple messages)
