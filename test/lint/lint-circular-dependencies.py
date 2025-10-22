@@ -69,6 +69,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "llmq/signing -> llmq/signing_shares -> llmq/signing",
     "llmq/signing -> net_processing -> llmq/signing",
     "llmq/signing_shares -> net_processing -> llmq/signing_shares",
+    "llmq/signing_shares -> net_processing -> masternode/active/context -> llmq/signing_shares",
     "masternode/payments -> validation -> masternode/payments",
     "net -> netmessagemaker -> net",
     "netaddress -> netbase -> netaddress",

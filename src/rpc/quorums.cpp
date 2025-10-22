@@ -28,6 +28,7 @@
 #include <llmq/signing_shares.h>
 #include <llmq/snapshot.h>
 #include <llmq/utils.h>
+#include <masternode/active/context.h>
 #include <masternode/node.h>
 
 #include <iomanip>
@@ -439,6 +440,10 @@ static RPCHelpMan quorum_memberof()
 static UniValue quorum_sign_helper(const JSONRPCRequest& request, Consensus::LLMQType llmqType)
 {
     const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.mn_activeman) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Only available in masternode mode.");
+    }
+
     const ChainstateManager& chainman = EnsureChainman(node);
     const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
 
@@ -459,7 +464,8 @@ static UniValue quorum_sign_helper(const JSONRPCRequest& request, Consensus::LLM
         fSubmit = ParseBoolV(request.params[3], "submit");
     }
     if (fSubmit) {
-        return llmq_ctx.sigman->AsyncSignIfMember(llmqType, *llmq_ctx.shareman, id, msgHash, quorumHash);
+        return llmq_ctx.sigman->AsyncSignIfMember(llmqType, *CHECK_NONFATAL(node.active_ctx)->shareman, id, msgHash,
+                                                  quorumHash);
     } else {
         const auto pQuorum = [&]() {
             if (quorumHash.IsNull()) {
@@ -473,7 +479,7 @@ static UniValue quorum_sign_helper(const JSONRPCRequest& request, Consensus::LLM
             throw JSONRPCError(RPC_INVALID_PARAMETER, "quorum not found");
         }
 
-        auto sigShare = llmq_ctx.shareman->CreateSigShare(pQuorum, id, msgHash);
+        auto sigShare = CHECK_NONFATAL(node.active_ctx)->shareman->CreateSigShare(pQuorum, id, msgHash);
 
         if (!sigShare.has_value() || !sigShare->sigShare.Get().IsValid()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "failed to create sigShare");
@@ -742,7 +748,7 @@ static RPCHelpMan quorum_selectquorum()
 
     UniValue recoveryMembers(UniValue::VARR);
     for (int i = 0; i < quorum->params.recoveryMembers; ++i) {
-        auto dmn = llmq_ctx.shareman->SelectMemberForRecovery(quorum, id, i);
+        auto dmn = llmq::CSigSharesManager::SelectMemberForRecovery(quorum, id, i);
         recoveryMembers.push_back(dmn->proTxHash.ToString());
     }
     ret.pushKV("recoveryMembers", recoveryMembers);
