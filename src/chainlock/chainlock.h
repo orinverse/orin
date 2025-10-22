@@ -18,7 +18,11 @@
 #include <gsl/pointers.h>
 
 #include <atomic>
+#include <cassert>
+#include <chrono>
 #include <map>
+#include <memory>
+#include <thread>
 #include <unordered_map>
 
 class CBlock;

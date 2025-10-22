@@ -711,7 +711,7 @@ void CSigningManager::StartWorkerThread(PeerManager& peerman)
         assert(false);
     }
 
-    workThread = std::thread(&util::TraceThread, "sigshares", [this, &peerman] { WorkThreadMain(peerman); });
+    workThread = std::thread(&util::TraceThread, "recsigs", [this, &peerman] { WorkThreadMain(peerman); });
 }
 
 void CSigningManager::StopWorkerThread()
