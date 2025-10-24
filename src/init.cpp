@@ -231,6 +231,9 @@ void Interrupt(NodeContext& node)
     InterruptRPC();
     InterruptREST();
     InterruptTorControl();
+    if (node.active_ctx) {
+        node.active_ctx->Interrupt();
+    }
     if (node.llmq_ctx) {
         node.llmq_ctx->Interrupt();
     }
@@ -266,6 +269,7 @@ void PrepareShutdown(NodeContext& node)
     StopREST();
     StopRPC();
     StopHTTPServer();
+    if (node.active_ctx) node.active_ctx->Stop();
     if (node.llmq_ctx) node.llmq_ctx->Stop();
 
     for (const auto& client : node.chain_clients) {
@@ -2263,7 +2267,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     // ********************************************************* Step 10a: schedule Dash-specific tasks
 
-    node.llmq_ctx->Start(*node.connman, *node.peerman);
+    node.llmq_ctx->Start(*node.peerman);
+    if (node.active_ctx) node.active_ctx->Start(*node.connman, *node.peerman);
 
     node.scheduler->scheduleEvery(std::bind(&CNetFulfilledRequestManager::DoMaintenance, std::ref(*node.netfulfilledman)), std::chrono::minutes{1});
     node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*node.mn_sync), std::cref(*node.peerman), std::cref(*node.govman)), std::chrono::seconds{1});
