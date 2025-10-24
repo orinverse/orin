@@ -243,7 +243,12 @@ static RPCHelpMan quorum_info()
             {"quorumHash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Block hash of quorum."},
             {"includeSkShare", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include secret key share in output."},
         },
-        RPCResults{},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::ELISION, "", ""}
+            },
+        },
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -281,7 +286,35 @@ static RPCHelpMan quorum_dkgstatus()
                 "Detail level of output.\n"
                 "0=Only show counts. 1=Show member indexes. 2=Show member's ProTxHashes."},
         },
-        RPCResults{},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "time", "Adjusted time for the last update, timestamp"},
+                {RPCResult::Type::STR, "timeStr", "Adjusted time for the last update, human friendly"},
+                {RPCResult::Type::ARR, "session", "",
+                    {
+                        {RPCResult::Type::OBJ, "", "",
+                        {
+                            {RPCResult::Type::NUM, "llmqType", "Name of quorum"},
+                            {RPCResult::Type::NUM, "quorumIndex", "Relevant for rotation quorums only, 0 for non-rotating quorums"},
+                            {RPCResult::Type::OBJ, "status", "",
+                            {
+                                // TODO: list fields of output for RPC help instead ELISION
+                                {RPCResult::Type::ELISION, "", ""},
+                            }},
+                        }},
+                    },
+                },
+                {RPCResult::Type::ARR, "quorumConnections", "",
+                    // TODO: list fields of output for RPC help instead ELISION
+                    {{RPCResult::Type::ELISION, "", ""}},
+                },
+                {RPCResult::Type::ARR, "mineableCommitments", "",
+                    // TODO: list fields of output for RPC help instead ELISION
+                    {{RPCResult::Type::ELISION, "", ""}},
+                },
+            },
+        },
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -389,7 +422,17 @@ static RPCHelpMan quorum_memberof()
                 "Can be CPU/disk heavy when the value is larger than the number of active quorums."
             },
         },
-        RPCResults{},
+        RPCResult{
+            RPCResult::Type::ARR, "quorums", "",
+            {
+                {RPCResult::Type::OBJ, "", "Quorum Info",
+                {
+                    {RPCResult::Type::ELISION, "", "See for details help for `quorum info`"},
+                    {RPCResult::Type::BOOL, "isValidMember", ""},
+                    {RPCResult::Type::NUM, "memberIndex", ""},
+                }},
+            },
+        },
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -497,6 +540,23 @@ static UniValue quorum_sign_helper(const JSONRPCRequest& request, Consensus::LLM
     }
 }
 
+namespace {
+const RPCResults quorum_sign_result{
+    RPCResult{"if submit is set to true", RPCResult::Type::BOOL, "result", "result of signing, true if success"},
+    RPCResult{"if submit is not set or set to false", RPCResult::Type::OBJ, "", "",
+        {
+            {RPCResult::Type::NUM, "llmqType", "Quorum type"},
+            {RPCResult::Type::STR_HEX, "quorumHash", "Quorum Hash"},
+            {RPCResult::Type::NUM, "quorumMember", "Number of quorum member"},
+            {RPCResult::Type::STR_HEX, "id", "Request ID"},
+            {RPCResult::Type::STR_HEX, "msgHash", "Hash of message"},
+            {RPCResult::Type::STR_HEX, "signHash", "Hash of signature"},
+            {RPCResult::Type::STR_HEX, "signature", "Hex encoded signature"},
+        },
+    },
+};
+} // anonymous namespace
+
 static RPCHelpMan quorum_sign()
 {
     return RPCHelpMan{"quorum sign",
@@ -509,7 +569,7 @@ static RPCHelpMan quorum_sign()
             {"submit", RPCArg::Type::BOOL, RPCArg::Default{true}, "Submits the signature share to the network if this is true. "
                                                                 "Returns an object containing the signature share if this is false."},
         },
-        RPCResults{},
+        quorum_sign_result,
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -536,7 +596,7 @@ static RPCHelpMan quorum_platformsign()
             {"submit", RPCArg::Type::BOOL, RPCArg::Default{true}, "Submits the signature share to the network if this is true. "
                                                                 "Returns an object containing the signature share if this is false."},
         },
-        RPCResults{},
+        quorum_sign_result,
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -574,7 +634,7 @@ static RPCHelpMan quorum_verify()
                 "The height at which the message was signed.\n"
                 "Only works when quorumHash is \"\"."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if the signature is valid"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -628,7 +688,7 @@ static RPCHelpMan quorum_hasrecsig()
             {"id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Request id."},
             {"msgHash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Message hash."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if node has this recovered signature"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -693,7 +753,7 @@ static RPCHelpMan quorum_isconflicting()
             {"id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Request id."},
             {"msgHash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Message hash."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if this msgHash is conflicting with previous signing sessions"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -721,7 +781,15 @@ static RPCHelpMan quorum_selectquorum()
             {"llmqType", RPCArg::Type::NUM, RPCArg::Optional::NO, "LLMQ type."},
             {"id", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "Request id."},
         },
-        RPCResults{},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::STR_HEX, "quorumHash", "Hash of chosen quorum"},
+                {RPCResult::Type::ARR, "recoveryMembers", "List of members to use for signature recovery",
+                    {{RPCResult::Type::STR_HEX, "hash", "ProTxHash of member"}}
+                },
+            }
+        },
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -766,7 +834,7 @@ static RPCHelpMan quorum_dkgsimerror()
             {"type", RPCArg::Type::STR, RPCArg::Optional::NO, "Error type."},
             {"rate", RPCArg::Type::NUM, RPCArg::Optional::NO, "Rate at which to simulate this error type (between 0 and 100)."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -782,7 +850,7 @@ static RPCHelpMan quorum_dkgsimerror()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "invalid type. See DKGError class implementation");
     } else {
         llmq::SetSimulatedDKGErrorRate(type, static_cast<double>(rate) / 100);
-        return UniValue();
+        return NullUniValue;
     }
 },
     };
@@ -803,7 +871,7 @@ static RPCHelpMan quorum_getdata()
                 "3 - Request both, 1 and 2"},
             {"proTxHash", RPCArg::Type::STR_HEX, RPCArg::Default{""}, "The proTxHash the contributions will be requested for. Must be member of the specified LLMQ."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if the message QGETDATA has been successfully sent"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -965,7 +1033,7 @@ static RPCHelpMan quorum_help()
             {
                 {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
             },
-            RPCResults{},
+            RPCResult{RPCResult::Type::NONE, "", ""},
             RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -983,7 +1051,7 @@ static RPCHelpMan verifychainlock()
             {"signature", RPCArg::Type::STR, RPCArg::Optional::NO, "The signature of the ChainLock."},
             {"blockHeight", RPCArg::Type::NUM, RPCArg::DefaultHint{"There will be an internal lookup of \"blockHash\" if this is not provided."}, "The height of the ChainLock."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if the chainlock is valid"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1042,7 +1110,7 @@ static RPCHelpMan verifyislock()
             {"signature", RPCArg::Type::STR, RPCArg::Optional::NO, "The InstantSend Lock signature to verify."},
             {"maxHeight", RPCArg::Type::NUM, RPCArg::Default{-1}, "The maximum height to search quorums from."},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::BOOL, "", "Returns true if the instantsend lock is valid"},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
