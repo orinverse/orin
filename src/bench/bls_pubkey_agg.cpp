@@ -62,59 +62,29 @@ static void BLS_PubKeyAggregate_Batch(size_t count, benchmark::Bench& bench)
 // Benchmarks for different sizes
 
 // Small aggregation (5 keys) - typical for small quorum subsets
-static void BLS_PubKeyAggregate_Iterative_5(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Iterative(5, bench);
-}
+static void BLS_PubKeyAggregate_Iterative_5(benchmark::Bench& bench) { BLS_PubKeyAggregate_Iterative(5, bench); }
 
-static void BLS_PubKeyAggregate_Batch_5(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Batch(5, bench);
-}
+static void BLS_PubKeyAggregate_Batch_5(benchmark::Bench& bench) { BLS_PubKeyAggregate_Batch(5, bench); }
 
 // Medium aggregation (25 keys) - typical for medium quorum subsets
-static void BLS_PubKeyAggregate_Iterative_25(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Iterative(25, bench);
-}
+static void BLS_PubKeyAggregate_Iterative_25(benchmark::Bench& bench) { BLS_PubKeyAggregate_Iterative(25, bench); }
 
-static void BLS_PubKeyAggregate_Batch_25(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Batch(25, bench);
-}
+static void BLS_PubKeyAggregate_Batch_25(benchmark::Bench& bench) { BLS_PubKeyAggregate_Batch(25, bench); }
 
 // Large aggregation (50 keys) - typical for larger quorums
-static void BLS_PubKeyAggregate_Iterative_50(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Iterative(50, bench);
-}
+static void BLS_PubKeyAggregate_Iterative_50(benchmark::Bench& bench) { BLS_PubKeyAggregate_Iterative(50, bench); }
 
-static void BLS_PubKeyAggregate_Batch_50(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Batch(50, bench);
-}
+static void BLS_PubKeyAggregate_Batch_50(benchmark::Bench& bench) { BLS_PubKeyAggregate_Batch(50, bench); }
 
 // Very large aggregation (100 keys) - stress test
-static void BLS_PubKeyAggregate_Iterative_100(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Iterative(100, bench);
-}
+static void BLS_PubKeyAggregate_Iterative_100(benchmark::Bench& bench) { BLS_PubKeyAggregate_Iterative(100, bench); }
 
-static void BLS_PubKeyAggregate_Batch_100(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Batch(100, bench);
-}
+static void BLS_PubKeyAggregate_Batch_100(benchmark::Bench& bench) { BLS_PubKeyAggregate_Batch(100, bench); }
 
 // Extra large aggregation (200 keys) - extreme case
-static void BLS_PubKeyAggregate_Iterative_200(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Iterative(200, bench);
-}
+static void BLS_PubKeyAggregate_Iterative_200(benchmark::Bench& bench) { BLS_PubKeyAggregate_Iterative(200, bench); }
 
-static void BLS_PubKeyAggregate_Batch_200(benchmark::Bench& bench)
-{
-    BLS_PubKeyAggregate_Batch(200, bench);
-}
+static void BLS_PubKeyAggregate_Batch_200(benchmark::Bench& bench) { BLS_PubKeyAggregate_Batch(200, bench); }
 
 // Register all benchmarks
 BENCHMARK(BLS_PubKeyAggregate_Iterative_5)
