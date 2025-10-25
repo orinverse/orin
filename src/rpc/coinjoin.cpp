@@ -82,7 +82,7 @@ static RPCHelpMan coinjoin_reset()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -116,7 +116,7 @@ static RPCHelpMan coinjoin_start()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -157,7 +157,7 @@ static RPCHelpMan coinjoin_status()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -196,7 +196,7 @@ static RPCHelpMan coinjoin_stop()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -257,7 +257,7 @@ static RPCHelpMan coinjoinsalt_generate()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const auto str_wallet = wallet->GetName();
     if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
@@ -321,7 +321,7 @@ static RPCHelpMan coinjoinsalt_get()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const auto str_wallet = wallet->GetName();
     if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
@@ -359,7 +359,7 @@ static RPCHelpMan coinjoinsalt_set()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const auto salt{ParseHashV(request.params[0], "salt")};
     if (salt == uint256::ZERO) {
