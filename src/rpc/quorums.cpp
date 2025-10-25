@@ -329,7 +329,7 @@ static RPCHelpMan quorum_dkgstatus()
                     // TODO: list fields of output for RPC help instead ELISION
                     {{RPCResult::Type::ELISION, "", ""}},
                 },
-                {RPCResult::Type::ARR, "mineableCommitments", "",
+                {RPCResult::Type::ARR, "minableCommitments", "",
                     // TODO: list fields of output for RPC help instead ELISION
                     {{RPCResult::Type::ELISION, "", ""}},
                 },
