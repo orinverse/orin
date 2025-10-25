@@ -257,7 +257,7 @@ static RPCHelpMan quorum_info()
                         {RPCResult::Type::OBJ, "", "",
                         {
                             {RPCResult::Type::STR_HEX, "proTxHash", "ProTx of collaterial"},
-                            {RPCResult::Type::NUM, "service", "Address of node. Legacy, will be deprecated in further versions. See `addresses` instead."},
+                            {RPCResult::Type::STR, "service", "Address of node. Legacy, will be deprecated in further versions. See `addresses` instead."},
                             {RPCResult::Type::ARR, "addresses", "Addresses of node",
                                 // TODO - expand it when extended addresses are fully implemented
                                 {{RPCResult::Type::ELISION, "", ""}},
