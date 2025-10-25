@@ -212,7 +212,7 @@ static UniValue BuildQuorumInfo(const llmq::CQuorumBlockProcessor& quorum_block_
             mo.pushKV("pubKeyOperator", dmn->pdmnState->pubKeyOperator.ToString());
             mo.pushKV("valid", static_cast<bool>(quorum->qc->validMembers[i]));
             if (quorum->qc->validMembers[i]) {
-                if (quorum->params.size == 1) {
+                if (quorum->params.is_single_member()) {
                     mo.pushKV("pubKeyShare", dmn->pdmnState->pubKeyOperator.ToString());
                 } else {
                     CBLSPublicKey pubKey = quorum->GetPubKeyShare(i);

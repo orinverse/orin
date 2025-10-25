@@ -789,7 +789,7 @@ void CSigSharesManager::TryRecoverSig(const CQuorumCPtr& quorum, const uint256& 
             return;
         }
 
-        if (quorum->params.size == 1) {
+        if (quorum->params.is_single_member()) {
             if (sigSharesForSignHash->empty()) {
                 LogPrint(BCLog::LLMQ_SIGS, /* Continued */
                          "CSigSharesManager::%s -- impossible to recover single-node signature - no shares yet. id=%s, "
@@ -1638,7 +1638,7 @@ std::optional<CSigShare> CSigSharesManager::CreateSigShare(const CQuorumCPtr& qu
         return std::nullopt;
     }
 
-    if (quorum->params.size == 1) {
+    if (quorum->params.is_single_member()) {
         int memberIdx = quorum->GetMemberIndex(activeMasterNodeProTxHash);
         if (memberIdx == -1) {
             // this should really not happen (IsValidMember gave true)
