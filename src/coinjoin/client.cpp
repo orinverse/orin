@@ -966,15 +966,14 @@ bool CCoinJoinClientManager::DoAutomaticDenominating(ChainstateManager& chainman
     // If we've used 90% of the Masternode list then drop the oldest first ~30%
     int nThreshold_high = nMnCountEnabled * 0.9;
     int nThreshold_low = nThreshold_high * 0.7;
-    size_t nUsedMasternodes{m_mn_metaman.GetUsedMasternodesCount()};
+    size_t used_count{m_mn_metaman.GetUsedMasternodesCount()};
 
-    WalletCJLogPrint(m_wallet, "Checking nUsedMasternodes: %d, threshold: %d\n", (int)nUsedMasternodes, nThreshold_high);
+    WalletCJLogPrint(m_wallet, "Checking threshold - used: %d, threshold: %d\n", (int)used_count, nThreshold_high);
 
-    if ((int)nUsedMasternodes > nThreshold_high) {
-        size_t nToRemove{nUsedMasternodes - nThreshold_low};
-        m_mn_metaman.RemoveUsedMasternodes(nToRemove);
-        WalletCJLogPrint(m_wallet, "  new nUsedMasternodes: %d, threshold: %d\n",
-                         (int)m_mn_metaman.GetUsedMasternodesCount(), nThreshold_high);
+    if ((int)used_count > nThreshold_high) {
+        m_mn_metaman.RemoveUsedMasternodes(used_count - nThreshold_low);
+        WalletCJLogPrint(m_wallet, "  new used: %d, threshold: %d\n", (int)m_mn_metaman.GetUsedMasternodesCount(),
+                         nThreshold_high);
     }
 
     bool fResult = true;

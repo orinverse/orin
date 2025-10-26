@@ -276,7 +276,7 @@ public:
 
     // CoinJoin masternode tracking
     void AddUsedMasternode(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
-    void RemoveUsedMasternodes(size_t nCount) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    void RemoveUsedMasternodes(size_t count) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     size_t GetUsedMasternodesCount() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
     bool IsUsedMasternode(const uint256& proTxHash) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
 };

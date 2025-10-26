@@ -162,11 +162,11 @@ void CMasternodeMetaMan::AddUsedMasternode(const uint256& proTxHash)
     }
 }
 
-void CMasternodeMetaMan::RemoveUsedMasternodes(size_t nCount)
+void CMasternodeMetaMan::RemoveUsedMasternodes(size_t count)
 {
     LOCK(cs);
     size_t removed = 0;
-    while (removed < nCount && !m_used_masternodes.empty()) {
+    while (removed < count && !m_used_masternodes.empty()) {
         // Remove from both the set and the deque
         m_used_masternodes_set.erase(m_used_masternodes.front());
         m_used_masternodes.pop_front();
