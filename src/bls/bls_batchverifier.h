@@ -143,8 +143,9 @@ private:
         pubKeys.reserve(messages.size());
         sigsToAggregate.reserve(messages.size());
 
+        std::vector<CBLSPublicKey> pubKeysToAggregate;
         for (const auto& [msgHash, vec_message_it] : byMessageHash) {
-            std::vector<CBLSPublicKey> pubKeysToAggregate;
+            pubKeysToAggregate.clear();
             pubKeysToAggregate.reserve(vec_message_it.size());
 
             for (const auto& msgIt : vec_message_it) {
