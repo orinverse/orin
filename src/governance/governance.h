@@ -260,14 +260,14 @@ private:
     const std::unique_ptr<CDeterministicMNManager>& m_dmnman;
     CMasternodeSync& m_mn_sync;
 
-    int64_t nTimeLastDiff;
+    int64_t nTimeLastDiff{0};
     // keep track of current block height
-    int nCachedBlockHeight;
+    int nCachedBlockHeight{0};
     object_ref_cm_t cmapVoteToObject;
     std::map<uint256, std::shared_ptr<CGovernanceObject>> mapPostponedObjects;
     std::set<uint256> setAdditionalRelayObjects;
     std::map<uint256, std::chrono::seconds> m_requested_hash_time;
-    bool fRateChecksEnabled;
+    bool fRateChecksEnabled{true};
     std::map<uint256, std::shared_ptr<CSuperblock>> mapTrigger;
 
     mutable Mutex cs_relay;

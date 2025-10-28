@@ -73,11 +73,8 @@ CGovernanceManager::CGovernanceManager(CMasternodeMetaMan& mn_metaman, CNetFulfi
     m_chainman{chainman},
     m_dmnman{dmnman},
     m_mn_sync{mn_sync},
-    nTimeLastDiff(0),
-    nCachedBlockHeight(0),
-    cmapVoteToObject(MAX_CACHE_SIZE),
-    mapPostponedObjects(),
-    fRateChecksEnabled(true),
+    cmapVoteToObject{MAX_CACHE_SIZE},
+    mapPostponedObjects{},
     mapTrigger{}
 {
 }
@@ -1267,6 +1264,7 @@ void GovernanceStore::Clear()
     cmapInvalidVotes.Clear();
     cmmapOrphanVotes.Clear();
     mapLastMasternodeObject.clear();
+    lastMNListForVotingKeys = std::make_shared<CDeterministicMNList>();
 }
 
 void CGovernanceManager::Clear()
@@ -1274,7 +1272,14 @@ void CGovernanceManager::Clear()
     AssertLockNotHeld(cs_store);
     LogPrint(BCLog::GOBJECT, "Governance object manager was cleared\n");
     GovernanceStore::Clear();
+    nTimeLastDiff = 0;
+    nCachedBlockHeight = 0;
     cmapVoteToObject.Clear();
+    mapPostponedObjects.clear();
+    setAdditionalRelayObjects.clear();
+    m_requested_hash_time.clear();
+    fRateChecksEnabled = true;
+    mapTrigger.clear();
 }
 
 std::string GovernanceStore::ToString() const
