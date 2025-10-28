@@ -31,7 +31,8 @@ ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
 # Build and base stuff
 ENV APT_ARGS="-y --no-install-recommends --no-upgrade"
 
-# Packages needed to build Python and extract artifacts
+# Packages needed for builds and tests
+# Note: Python build deps (libbz2-dev, libffi-dev, etc.) removed since uv installs Python binaries
 RUN set -ex; \
     apt-get update && apt-get install ${APT_ARGS} \
     build-essential \
@@ -39,29 +40,28 @@ RUN set -ex; \
     curl \
     g++ \
     git \
-    libbz2-dev \
-    libffi-dev \
-    liblzma-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libssl-dev \
     make \
-    tk-dev \
     xz-utils \
-    zlib1g-dev \
     zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv by copying from the official Docker image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install Python and set it as default
+# Install Python to a system-wide location and set it as default
 # PYTHON_VERSION should match the value in .python-version
 ARG PYTHON_VERSION=3.9.18
+ENV UV_PYTHON_INSTALL_DIR=/usr/local/python
 RUN uv python install ${PYTHON_VERSION}
-ENV PATH="/root/.local/share/uv/python/cpython-${PYTHON_VERSION}-linux-$(uname -m)-gnu/bin:${PATH}"
+
+# Create symlinks to make python available system-wide
+RUN set -ex; \
+    PYTHON_PATH=$(uv python find ${PYTHON_VERSION}); \
+    PYTHON_DIR=$(dirname $PYTHON_PATH); \
+    ln -sf $PYTHON_DIR/python3 /usr/local/bin/python3; \
+    ln -sf $PYTHON_DIR/python3 /usr/local/bin/python; \
+    ln -sf $PYTHON_DIR/pip3 /usr/local/bin/pip3 2>/dev/null || true; \
+    ln -sf $PYTHON_DIR/pip /usr/local/bin/pip 2>/dev/null || true
 
 # Use system Python for installations
 ENV UV_SYSTEM_PYTHON=1
