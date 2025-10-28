@@ -265,7 +265,6 @@ private:
     std::set<uint256> setAdditionalRelayObjects;
     std::map<uint256, std::chrono::seconds> m_requested_hash_time;
     bool fRateChecksEnabled;
-    std::optional<uint256> votedFundingYesTriggerHash;
     std::map<uint256, std::shared_ptr<CSuperblock>> mapTrigger;
 
     mutable Mutex cs_relay;
@@ -302,7 +301,6 @@ public:
     const CGovernanceObject* FindConstGovernanceObject(const uint256& nHash) const EXCLUSIVE_LOCKS_REQUIRED(cs);
     CGovernanceObject* FindGovernanceObject(const uint256& nHash) override EXCLUSIVE_LOCKS_REQUIRED(!cs);
     CGovernanceObject* FindGovernanceObjectByDataHash(const uint256& nDataHash) override EXCLUSIVE_LOCKS_REQUIRED(!cs);
-    void DeleteGovernanceObject(const uint256& nHash);
 
     // These commands are only used in RPC
     std::vector<CGovernanceVote> GetCurrentVotes(const uint256& nParentHash, const COutPoint& mnCollateralOutpointFilter) const;
