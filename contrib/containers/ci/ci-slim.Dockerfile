@@ -85,6 +85,19 @@ RUN set -ex; \
     cd dash_hash && uv pip install --system --break-system-packages -r requirements.txt .; \
     cd .. && rm -rf dash_hash
 
+# Symlink all Python package executables to /usr/local/bin
+RUN set -ex; \
+    PYTHON_PATH=$(uv python find ${PYTHON_VERSION}); \
+    PYTHON_BIN=$(dirname $PYTHON_PATH); \
+    for exe in $PYTHON_BIN/*; do \
+        if [ -x "$exe" ] && [ -f "$exe" ]; then \
+            basename_exe=$(basename $exe); \
+            if [ "$basename_exe" != "python" ] && [ "$basename_exe" != "python3" ] && [ "$basename_exe" != "pip" ] && [ "$basename_exe" != "pip3" ]; then \
+                ln -sf "$exe" "/usr/local/bin/$basename_exe"; \
+            fi; \
+        fi; \
+    done
+
 ARG SHELLCHECK_VERSION=v0.8.0
 RUN set -ex; \
     curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -o /tmp/shellcheck.tar.xz; \
