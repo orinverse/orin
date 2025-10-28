@@ -427,10 +427,7 @@ static UniValue VoteWithMasternodes(const JSONRPCRequest& request, const CWallet
 
     UniValue resultsObj(UniValue::VOBJ);
 
-    for (const auto& p : votingKeys) {
-        const auto& proTxHash = p.first;
-        const auto& keyID = p.second;
-
+    for (const auto& [proTxHash, keyID] : votingKeys) {
         UniValue statusObj(UniValue::VOBJ);
 
         auto dmn = mnList.GetValidMN(proTxHash);
