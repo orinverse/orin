@@ -54,21 +54,20 @@ RUN set -ex; \
     zstd \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv by copying from the official Docker image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Install Python and set it as default
-ENV PYENV_ROOT="/usr/local/pyenv"
-ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
 # PYTHON_VERSION should match the value in .python-version
 ARG PYTHON_VERSION=3.9.18
-RUN set -ex; \
-    curl https://pyenv.run | bash \
-    && pyenv update \
-    && pyenv install ${PYTHON_VERSION} \
-    && pyenv global ${PYTHON_VERSION} \
-    && pyenv rehash
+RUN uv python install ${PYTHON_VERSION}
+ENV PATH="/root/.local/share/uv/python/cpython-${PYTHON_VERSION}-linux-$(uname -m)-gnu/bin:${PATH}"
+
+# Use system Python for installations
+ENV UV_SYSTEM_PYTHON=1
 
 # Install Python packages
-RUN set -ex; \
-    pip3 install --no-cache-dir \
+RUN uv pip install --system --break-system-packages \
     codespell==2.1.0 \
     flake8==4.0.1 \
     jinja2 \
@@ -83,7 +82,7 @@ ARG DASH_HASH_VERSION=1.4.0
 RUN set -ex; \
     cd /tmp; \
     git clone --depth 1 --no-tags --branch=${DASH_HASH_VERSION} https://github.com/dashpay/dash_hash; \
-    cd dash_hash && pip3 install -r requirements.txt .; \
+    cd dash_hash && uv pip install --system --break-system-packages -r requirements.txt .; \
     cd .. && rm -rf dash_hash
 
 ARG SHELLCHECK_VERSION=v0.8.0
