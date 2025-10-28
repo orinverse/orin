@@ -56,6 +56,8 @@ using vote_time_pair_t = std::pair<CGovernanceVote, int64_t>;
 static constexpr int RATE_BUFFER_SIZE = 5;
 static constexpr bool DEFAULT_GOVERNANCE_ENABLE{true};
 
+extern RecursiveMutex cs_main;
+
 class CRateCheckBuffer
 {
 private:
@@ -341,7 +343,7 @@ public:
     std::vector<std::shared_ptr<const CGovernanceObject>> GetApprovedProposals(const CDeterministicMNList& tip_mn_list) override
         EXCLUSIVE_LOCKS_REQUIRED(!cs_store);
     void AddGovernanceObject(CGovernanceObject& govobj, const CNode* pfrom = nullptr) override
-        EXCLUSIVE_LOCKS_REQUIRED(!cs_relay);
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_store, !cs_relay);
 
     // Superblocks
     bool GetSuperblockPayments(const CDeterministicMNList& tip_mn_list, int nBlockHeight,
@@ -399,6 +401,11 @@ private:
     const CGovernanceObject* FindConstGovernanceObjectInternal(const uint256& nHash) const
         EXCLUSIVE_LOCKS_REQUIRED(cs_store);
 
+    // Internal counterpart to "Signer interface"
+    void AddGovernanceObjectInternal(CGovernanceObject& govobj, const CNode* pfrom = nullptr)
+        EXCLUSIVE_LOCKS_REQUIRED(::cs_main, cs_store, !cs_relay);
+
+    // ...
     void MasternodeRateUpdate(const CGovernanceObject& govobj)
         EXCLUSIVE_LOCKS_REQUIRED(cs_store);
 
@@ -406,7 +413,7 @@ private:
         EXCLUSIVE_LOCKS_REQUIRED(cs_store);
 
     void CheckPostponedObjects()
-        EXCLUSIVE_LOCKS_REQUIRED(cs_store, !cs_relay);
+        EXCLUSIVE_LOCKS_REQUIRED(::cs_main, cs_store, !cs_relay);
 
     void InitOnLoad()
         EXCLUSIVE_LOCKS_REQUIRED(!cs_store);

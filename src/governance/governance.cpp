@@ -314,7 +314,7 @@ MessageProcessingResult CGovernanceManager::ProcessMessage(CNode& peer, CConnman
             return ret;
         }
 
-        AddGovernanceObject(govobj, &peer);
+        AddGovernanceObjectInternal(govobj, &peer);
         return ret;
     }
 
@@ -392,9 +392,12 @@ void CGovernanceManager::CheckOrphanVotes(CGovernanceObject& govobj)
     }
 }
 
-void CGovernanceManager::AddGovernanceObject(CGovernanceObject& govobj, const CNode* pfrom)
+void CGovernanceManager::AddGovernanceObjectInternal(CGovernanceObject& govobj, const CNode* pfrom)
 {
+    AssertLockHeld(::cs_main);
+    AssertLockHeld(cs_store);
     AssertLockNotHeld(cs_relay);
+
     uint256 nHash = govobj.GetHash();
     std::string strHash = nHash.ToString();
 
@@ -404,7 +407,6 @@ void CGovernanceManager::AddGovernanceObject(CGovernanceObject& govobj, const CN
 
     govobj.UpdateSentinelVariables(tip_mn_list); //this sets local vars in object
 
-    LOCK2(::cs_main, cs_store);
     std::string strError;
 
     // MAKE SURE THIS OBJECT IS OK
@@ -451,6 +453,12 @@ void CGovernanceManager::AddGovernanceObject(CGovernanceObject& govobj, const CN
 
     // SEND NOTIFICATION TO SCRIPT/ZMQ
     GetMainSignals().NotifyGovernanceObject(std::make_shared<const Governance::Object>(govobj.Object()), nHash.ToString());
+}
+
+void CGovernanceManager::AddGovernanceObject(CGovernanceObject& govobj, const CNode* pfrom)
+{
+    LOCK2(::cs_main, cs_store);
+    AddGovernanceObjectInternal(govobj, pfrom);
 }
 
 void CGovernanceManager::CheckAndRemove()
@@ -980,11 +988,10 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
 
 void CGovernanceManager::CheckPostponedObjects()
 {
+    AssertLockHeld(::cs_main);
     AssertLockHeld(cs_store);
     AssertLockNotHeld(cs_relay);
     if (!m_mn_sync.IsSynced()) return;
-
-    LOCK(::cs_main);
 
     // Check postponed proposals
     for (auto it = mapPostponedObjects.begin(); it != mapPostponedObjects.end();) {
@@ -997,7 +1004,7 @@ void CGovernanceManager::CheckPostponedObjects()
         bool fMissingConfirmations;
         if (govobj.IsCollateralValid(m_chainman, strError, fMissingConfirmations)) {
             if (govobj.IsValidLocally(Assert(m_dmnman)->GetListAtChainTip(), m_chainman, strError, false)) {
-                AddGovernanceObject(govobj);
+                AddGovernanceObjectInternal(govobj);
             } else {
                 LogPrint(BCLog::GOBJECT, "CGovernanceManager::CheckPostponedObjects -- %s invalid\n", nHash.ToString());
             }
@@ -1364,7 +1371,7 @@ void CGovernanceManager::UpdatedBlockTip(const CBlockIndex* pindex)
     nCachedBlockHeight = pindex->nHeight;
     LogPrint(BCLog::GOBJECT, "CGovernanceManager::UpdatedBlockTip -- nCachedBlockHeight: %d\n", nCachedBlockHeight);
 
-    LOCK(cs_store);
+    LOCK2(::cs_main, cs_store);
     if (DeploymentDIP0003Enforced(pindex->nHeight, Params().GetConsensus())) {
         RemoveInvalidVotes();
     }
