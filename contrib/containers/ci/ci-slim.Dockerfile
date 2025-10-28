@@ -32,7 +32,6 @@ ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
 ENV APT_ARGS="-y --no-install-recommends --no-upgrade"
 
 # Packages needed for builds and tests
-# Note: Python build deps (libbz2-dev, libffi-dev, etc.) removed since uv installs Python binaries
 RUN set -ex; \
     apt-get update && apt-get install ${APT_ARGS} \
     build-essential \
@@ -40,8 +39,14 @@ RUN set -ex; \
     curl \
     g++ \
     git \
+    libbz2-dev \
+    liblzma-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libssl-dev \
     make \
     xz-utils \
+    zlib1g-dev \
     zstd \
     && rm -rf /var/lib/apt/lists/*
 
