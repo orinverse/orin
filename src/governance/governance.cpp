@@ -981,7 +981,12 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
         return false;
     }
 
-    bool fOk = govobj.ProcessVote(m_mn_metaman, *this, Assert(m_dmnman)->GetListAtChainTip(), vote, exception) && cmapVoteToObject.Insert(nHashVote, &govobj);
+    bool fOk = govobj.ProcessVote(m_mn_metaman, *this, Assert(m_dmnman)->GetListAtChainTip(), vote, exception);
+    if (fOk) {
+        fOk = cmapVoteToObject.Insert(nHashVote, &govobj);
+    } else if (exception.GetType() == GOVERNANCE_EXCEPTION_PERMANENT_ERROR && exception.GetNodePenalty() == 20) {
+        cmapInvalidVotes.Insert(nHashVote, vote);
+    }
     LEAVE_CRITICAL_SECTION(cs_store);
     return fOk;
 }
@@ -1084,12 +1089,6 @@ void CGovernanceManager::RequestGovernanceObject(CNode* pfrom, const uint256& nH
 
     LogPrint(BCLog::GOBJECT, "CGovernanceManager::RequestGovernanceObject -- nHash %s nVoteCount %d peer=%d\n", nHash.ToString(), nVoteCount, pfrom->GetId());
     connman.PushMessage(pfrom, msgMaker.Make(NetMsgType::MNGOVERNANCESYNC, nHash, filter));
-}
-
-void CGovernanceManager::AddInvalidVote(const CGovernanceVote& vote)
-{
-    LOCK(cs_store);
-    cmapInvalidVotes.Insert(vote.GetHash(), vote);
 }
 
 int CGovernanceManager::RequestGovernanceObjectVotes(CNode& peer, CConnman& connman, const PeerManager& peerman) const

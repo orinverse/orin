@@ -144,7 +144,6 @@ bool CGovernanceObject::ProcessVote(CMasternodeMetaMan& mn_metaman, CGovernanceM
             __func__, vote.GetMasternodeOutpoint().ToStringShort(), GetHash().ToString(), vote.GetHash().ToString())};
         LogPrintf("%s\n", msg);
         exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        govman.AddInvalidVote(vote);
         return false;
     }
 

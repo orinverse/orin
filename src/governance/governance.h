@@ -296,8 +296,6 @@ public:
 
     // CGovernanceObject
     bool AreRateChecksEnabled() const { return fRateChecksEnabled; }
-    void AddInvalidVote(const CGovernanceVote& vote)
-        EXCLUSIVE_LOCKS_REQUIRED(!cs_store);
 
     // Getters/Setters
     int GetCachedBlockHeight() const override { return nCachedBlockHeight; }
