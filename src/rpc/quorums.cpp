@@ -249,7 +249,7 @@ static RPCHelpMan quorum_info()
                 {RPCResult::Type::NUM, "height", "Quorum Height"},
                 {RPCResult::Type::STR, "type", "Quorum type"},
                 GetRpcResult("quorumHash"),
-                {RPCResult::Type::NUM, "quorumIndex", "Quorum index (applicable only to rotated quorums)."},
+                GetRpcResult("quorumIndex"),
                 {RPCResult::Type::STR_HEX, "minedBlock", "Blockhash where the commitment was mined."},
                 {RPCResult::Type::NUM, "previousConsecutiveDKGFailures", "Number of previous consecutive DKG failures."},
                 {RPCResult::Type::ARR, "members", "Members of quorum",
