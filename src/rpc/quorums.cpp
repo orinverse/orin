@@ -248,7 +248,7 @@ static RPCHelpMan quorum_info()
             {
                 {RPCResult::Type::NUM, "height", "Quorum Height"},
                 {RPCResult::Type::STR, "type", "Quorum type"},
-                {RPCResult::Type::STR_HEX, "quorumHash", "Quorum hash"},
+                GetRpcResult("quorumHash"),
                 {RPCResult::Type::NUM, "quorumIndex", "Quorum index (applicable only to rotated quorums)."},
                 {RPCResult::Type::STR_HEX, "minedBlock", "Blockhash where the commitment was mined."},
                 {RPCResult::Type::NUM, "previousConsecutiveDKGFailures", "Number of previous consecutive DKG failures."},
@@ -256,13 +256,10 @@ static RPCHelpMan quorum_info()
                     {
                         {RPCResult::Type::OBJ, "", "",
                         {
-                            {RPCResult::Type::STR_HEX, "proTxHash", "ProTx of collaterial"},
-                            {RPCResult::Type::STR, "service", "Address of node. Legacy, will be deprecated in further versions. See `addresses` instead."},
-                            {RPCResult::Type::ARR, "addresses", "Addresses of node",
-                                // TODO - expand it when extended addresses are fully implemented
-                                {{RPCResult::Type::ELISION, "", ""}},
-                            },
-                            {RPCResult::Type::STR_HEX, "pubKeyOperator", "The operator BLS public key"},
+                            GetRpcResult("proTxHash"),
+                            GetRpcResult("service"),
+                            GetRpcResult("addresses"),
+                            GetRpcResult("pubKeyOperator"),
                             {RPCResult::Type::BOOL, "valid", "True is member valid for this DKG"}
                         }},
                     },
@@ -316,7 +313,7 @@ static RPCHelpMan quorum_dkgstatus()
                         {RPCResult::Type::OBJ, "", "",
                         {
                             {RPCResult::Type::NUM, "llmqType", "Name of quorum"},
-                            {RPCResult::Type::NUM, "quorumIndex", "Relevant for rotation quorums only, 0 for non-rotating quorums"},
+                            GetRpcResult("quorumIndex"),
                             {RPCResult::Type::OBJ, "status", "",
                             {
                                 // TODO: list fields of output for RPC help instead ELISION
