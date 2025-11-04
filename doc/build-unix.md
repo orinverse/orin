@@ -58,7 +58,7 @@ sudo apt-get install build-essential libtool autotools-dev automake pkg-config b
 Now, you can either build from self-compiled [depends](/depends/README.md) or install the required dependencies:
 
 ```sh
-sudo apt-get install libevent-dev libboost-dev
+sudo apt-get install libbacktrace-dev libevent-dev libboost-dev
 ```
 
 SQLite is required for the descriptor wallet:
@@ -139,7 +139,7 @@ sudo dnf install gcc-c++ libtool make autoconf automake python3
 Now, you can either build from self-compiled [depends](/depends/README.md) or install the required dependencies:
 
 ```sh
-sudo dnf install libevent-devel boost-devel
+sudo dnf install libbacktrace-devel libevent-devel boost-devel
 ```
 
 SQLite is required for the descriptor wallet:
@@ -279,7 +279,7 @@ Setup and Build Example: Arch Linux
 This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
 
 ```sh
-pacman --sync --needed autoconf automake boost gcc git libevent libtool make pkgconf python sqlite
+pacman --sync --needed autoconf automake boost gcc git libbacktrace libevent libtool make pkgconf python sqlite
 git clone https://github.com/dashpay/dash.git
 cd dash/
 ./autogen.sh
