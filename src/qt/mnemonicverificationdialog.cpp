@@ -21,6 +21,8 @@
 #include <QSet>
 #include <QMessageBox>
 
+#include <algorithm>
+
 MnemonicVerificationDialog::MnemonicVerificationDialog(const SecureString& mnemonic, QWidget *parent) :
     QDialog(parent, GUIUtil::dialog_flags),
     ui(new Ui::MnemonicVerificationDialog),
@@ -141,7 +143,25 @@ void MnemonicVerificationDialog::setupStep2()
     ui->stackedWidget->setCurrentIndex(1);
     // Parse words for validation (needed in step 2)
     parseWords();
+    
+    // Validate mnemonic has at least 3 words before proceeding
+    const int wordCount = getWordCount();
+    if (wordCount < 3) {
+        QMessageBox::critical(this, tr("Invalid Mnemonic"),
+            tr("Mnemonic phrase has fewer than 3 words (found %1). Verification cannot proceed.").arg(wordCount));
+        reject();
+        return;
+    }
+    
     generateRandomPositions();
+    
+    // Safety check: ensure positions were generated successfully
+    if (m_selected_positions.size() < 3) {
+        QMessageBox::critical(this, tr("Verification Error"),
+            tr("Failed to generate verification positions. Please try again."));
+        reject();
+        return;
+    }
 
     ui->word1Edit->clear();
     ui->word2Edit->clear();
@@ -214,7 +234,11 @@ void MnemonicVerificationDialog::setupStep2()
 void MnemonicVerificationDialog::generateRandomPositions()
 {
     m_selected_positions.clear();
-    const int n = std::max(1, getWordCount());
+    const int n = getWordCount();
+    if (n < 3) {
+        // Unable to verify; bail out so the dialog can surface an error message upstream.
+        return;
+    }
     QSet<int> used;
     QRandomGenerator* rng = QRandomGenerator::global();
     while (m_selected_positions.size() < 3) {
