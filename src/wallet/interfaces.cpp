@@ -565,15 +565,7 @@ public:
                 }
             }
 
-            SecureString ssMnemonic;
-            SecureString ssMnemonicPassphrase;
-            if (!hdChainCurrent.GetMnemonic(ssMnemonic, ssMnemonicPassphrase)) {
-                return false;
-            }
-
-            mnemonic_out = ssMnemonic;
-            mnemonic_passphrase_out = ssMnemonicPassphrase;
-            return true;
+            return hdChainCurrent.GetMnemonic(mnemonic_out, mnemonic_passphrase_out);
         }
     }
     std::unique_ptr<Handler> handleUnload(UnloadFn fn) override
