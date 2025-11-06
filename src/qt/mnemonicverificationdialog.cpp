@@ -1,0 +1,428 @@
+// Copyright (c) 2024 The Dash Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#if defined(HAVE_CONFIG_H)
+#include <config/bitcoin-config.h>
+#endif
+
+#include <qt/mnemonicverificationdialog.h>
+#include <qt/forms/ui_mnemonicverificationdialog.h>
+
+#include <qt/guiutil.h>
+
+#include <QDialogButtonBox>
+#include <QGridLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QRandomGenerator>
+#include <QRegularExpression>
+#include <QScrollArea>
+#include <QSet>
+#include <QMessageBox>
+
+MnemonicVerificationDialog::MnemonicVerificationDialog(const SecureString& mnemonic, QWidget *parent) :
+    QDialog(parent, GUIUtil::dialog_flags),
+    ui(new Ui::MnemonicVerificationDialog),
+    m_mnemonic(mnemonic),
+    m_mnemonic_revealed(false)
+{
+    ui->setupUi(this);
+
+    if (auto w = findChild<QWidget*>("mnemonicGridWidget")) {
+        m_gridLayout = qobject_cast<QGridLayout*>(w->layout());
+    }
+
+    // Keep minimum small so the page can compress when users scale down
+    setMinimumSize(QSize(550, 360));
+    resize(minimumSize());
+
+    setWindowTitle(tr("Save Your Mnemonic"));
+
+    // Words will be parsed on-demand to minimize exposure time in non-secure memory
+    // m_words is intentionally left empty initially
+
+    // Trim outer paddings and inter-item spacing to avoid over-padded look
+    if (auto mainLayout = findChild<QVBoxLayout*>("verticalLayout")) {
+        mainLayout->setContentsMargins(8, 4, 8, 6);
+        mainLayout->setSpacing(6);
+    }
+    if (auto s1 = findChild<QVBoxLayout*>("verticalLayout_step1")) {
+        s1->setContentsMargins(8, 4, 8, 6);
+        s1->setSpacing(6);
+    }
+    if (auto s2 = findChild<QVBoxLayout*>("verticalLayout_step2")) {
+        s2->setContentsMargins(8, 2, 8, 6);
+        s2->setSpacing(4);
+        s2->setAlignment(Qt::AlignTop);
+    }
+    if (ui->formLayout) {
+        ui->formLayout->setContentsMargins(0, 0, 0, 0);
+        ui->formLayout->setVerticalSpacing(3);
+        ui->formLayout->setHorizontalSpacing(8);
+    }
+    if (ui->buttonBox) {
+        ui->buttonBox->setContentsMargins(0, 0, 0, 0);
+        ui->buttonBox->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+    }
+
+    // Prefer compact default; we will adjust per-step to sizeHint
+    ui->stackedWidget->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+    // Ensure buttonBox is hidden initially (will be shown in step2)
+    ui->buttonBox->hide();
+    setupStep1();
+    adjustSize();
+    m_defaultSize = size();
+
+    // Connections
+    connect(ui->showMnemonicButton, &QPushButton::clicked, this, &MnemonicVerificationDialog::onShowMnemonicClicked);
+    connect(ui->hideMnemonicButton,  &QPushButton::clicked, this, &MnemonicVerificationDialog::onHideMnemonicClicked);
+    connect(ui->writtenDownCheckbox, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked && m_has_ever_revealed) setupStep2();
+    });
+    connect(ui->word1Edit, &QLineEdit::textChanged, this, &MnemonicVerificationDialog::onWord1Changed);
+    connect(ui->word2Edit, &QLineEdit::textChanged, this, &MnemonicVerificationDialog::onWord2Changed);
+    connect(ui->word3Edit, &QLineEdit::textChanged, this, &MnemonicVerificationDialog::onWord3Changed);
+    connect(ui->showMnemonicAgainButton, &QPushButton::clicked, this, &MnemonicVerificationDialog::onShowMnemonicAgainClicked);
+
+    // Button box
+    ui->buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Continue"));
+    connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &MnemonicVerificationDialog::accept);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &MnemonicVerificationDialog::reject);
+
+    GUIUtil::handleCloseWindowShortcut(this);
+}
+
+MnemonicVerificationDialog::~MnemonicVerificationDialog()
+{
+    clearWordsSecurely();
+    clearMnemonic();
+    delete ui;
+}
+
+void MnemonicVerificationDialog::setupStep1()
+{
+    ui->stackedWidget->setCurrentIndex(0);
+    buildMnemonicGrid(false);
+    ui->hideMnemonicButton->hide();
+    ui->showMnemonicButton->show();
+    ui->writtenDownCheckbox->setEnabled(false);
+    ui->writtenDownCheckbox->setChecked(false);
+    m_mnemonic_revealed = false;
+    ui->buttonBox->hide();
+    // Compact to content
+    adjustSize();
+
+    // Match visual hierarchy and tone of the improved mock
+    QString warningStyle = QString("font-size:17px; font-weight:700; ") + GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR);
+    QString instructionStyle = QString("font-size:14px; ") + GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_PRIMARY);
+    ui->warningLabel->setText(
+        tr("<span style='%1'>WARNING: If you lose your mnemonic seed phrase, you will lose access to your wallet forever. Write it down in a safe place and never share it with anyone.</span>")
+        .arg(warningStyle)
+    );
+    ui->instructionLabel->setText(
+        tr("<span style='%1'>Please write down these words in order. You will need them to restore your wallet.</span>")
+        .arg(instructionStyle)
+    );
+
+    // Reduce extra padding to avoid an over-padded look
+    if (auto outer = findChild<QVBoxLayout*>("verticalLayout_step1")) {
+        outer->setContentsMargins(12, 6, 12, 6);
+        outer->setSpacing(6);
+    }
+    if (auto hb = findChild<QHBoxLayout*>("horizontalLayout_buttons")) {
+        hb->setContentsMargins(0, 4, 0, 0);
+        hb->setSpacing(10);
+    }
+}
+
+void MnemonicVerificationDialog::setupStep2()
+{
+    ui->stackedWidget->setCurrentIndex(1);
+    // Parse words for validation (needed in step 2)
+    parseWords();
+    generateRandomPositions();
+
+    ui->word1Edit->clear();
+    ui->word2Edit->clear();
+    ui->word3Edit->clear();
+    ui->word1Edit->setMaximumWidth(320);
+    ui->word2Edit->setMaximumWidth(320);
+    ui->word3Edit->setMaximumWidth(320);
+    ui->word1Status->setMinimumWidth(18);
+    ui->word2Status->setMinimumWidth(18);
+    ui->word3Status->setMinimumWidth(18);
+
+    ui->word1Label->setText(tr("Word #%1:").arg(m_selected_positions[0]));
+    ui->word2Label->setText(tr("Word #%1:").arg(m_selected_positions[1]));
+    ui->word3Label->setText(tr("Word #%1:").arg(m_selected_positions[2]));
+
+    ui->word1Status->clear();
+    ui->word2Status->clear();
+    ui->word3Status->clear();
+
+    ui->buttonBox->show();
+    if (QAbstractButton* cancel = ui->buttonBox->button(QDialogButtonBox::Cancel)) {
+        cancel->show();
+        cancel->setText(tr("Back"));
+        disconnect(cancel, nullptr, nullptr, nullptr);
+        connect(cancel, &QAbstractButton::clicked, this, &MnemonicVerificationDialog::onShowMnemonicAgainClicked);
+    }
+    if (QAbstractButton* cont = ui->buttonBox->button(QDialogButtonBox::Ok)) cont->setEnabled(false);
+    if (ui->showMnemonicAgainButton) ui->showMnemonicAgainButton->hide();
+
+    // Ensure verification label has minimal top spacing
+    if (ui->verificationLabel) {
+        ui->verificationLabel->setStyleSheet("QLabel { margin-top: 0px; margin-bottom: 4px; }");
+    }
+    
+    // Hide any existing title label if present
+    if (auto titleLabel = findChild<QLabel*>("verifyTitleLabel")) {
+        titleLabel->hide();
+    }
+
+    // Align content toward top and remove any layout spacers expanding height FIRST
+    if (auto v = findChild<QVBoxLayout*>("verticalLayout_step2")) {
+        v->setAlignment(Qt::AlignTop);
+        // Minimize top padding/margin to eliminate gap at top
+        QMargins m = v->contentsMargins();
+        v->setContentsMargins(m.left(), 2, m.right(), m.bottom());
+        for (int i = 0; i < v->count(); ++i) {
+            QLayoutItem* it = v->itemAt(i);
+            if (it && it->spacerItem()) it->spacerItem()->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+        }
+        // Force immediate layout update
+        v->invalidate();
+        v->update();
+    }
+    // Also ensure the main dialog layout has minimal top padding
+    if (auto mainLayout = findChild<QVBoxLayout*>("verticalLayout")) {
+        QMargins m = mainLayout->contentsMargins();
+        mainLayout->setContentsMargins(m.left(), 4, m.right(), m.bottom());
+        mainLayout->invalidate();
+        mainLayout->update();
+    }
+    // Force widget to recalculate layout immediately
+    updateGeometry();
+
+    // Reduce minimums for verify; open exactly at the minimum size AFTER layout is fixed
+    setMinimumSize(QSize(460, 280));
+    resize(minimumSize());
+    adjustSize();
+}
+
+void MnemonicVerificationDialog::generateRandomPositions()
+{
+    m_selected_positions.clear();
+    const int n = std::max(1, getWordCount());
+    QSet<int> used;
+    QRandomGenerator* rng = QRandomGenerator::global();
+    while (m_selected_positions.size() < 3) {
+        int pos = rng->bounded(1, n + 1);
+        if (!used.contains(pos)) { used.insert(pos); m_selected_positions.append(pos); }
+    }
+    std::sort(m_selected_positions.begin(), m_selected_positions.end());
+}
+
+void MnemonicVerificationDialog::onShowMnemonicClicked()
+{
+    buildMnemonicGrid(true);
+    ui->showMnemonicButton->hide();
+    ui->hideMnemonicButton->show();
+    ui->writtenDownCheckbox->setEnabled(true);
+    m_mnemonic_revealed = true;
+    m_has_ever_revealed = true;
+}
+
+void MnemonicVerificationDialog::onHideMnemonicClicked()
+{
+    buildMnemonicGrid(false);
+    ui->hideMnemonicButton->hide();
+    ui->showMnemonicButton->show();
+    m_mnemonic_revealed = false;
+    // Clear words from non-secure memory immediately when hiding
+    clearWordsSecurely();
+}
+
+void MnemonicVerificationDialog::onShowMnemonicAgainClicked()
+{
+    // Clear words when going back to step 1 (unless mnemonic is revealed)
+    if (!m_mnemonic_revealed) {
+        clearWordsSecurely();
+    }
+    setupStep1();
+}
+
+void MnemonicVerificationDialog::onWord1Changed() { updateWordValidation(); }
+void MnemonicVerificationDialog::onWord2Changed() { updateWordValidation(); }
+void MnemonicVerificationDialog::onWord3Changed() { updateWordValidation(); }
+
+bool MnemonicVerificationDialog::validateWord(const QString& word, int position)
+{
+    // Parse words on-demand for validation (minimizes exposure time)
+    // Words are kept in memory during step 2 (verification) and step 1 (when revealed)
+    // They are only cleared when explicitly hiding in step 1 or on dialog destruction
+    QStringList words = parseWords();
+    if (position < 1 || position > words.size()) {
+        return false;
+    }
+    return word == words[position - 1].toLower();
+}
+
+void MnemonicVerificationDialog::updateWordValidation()
+{
+    const QString t1 = ui->word1Edit->text().trimmed().toLower();
+    const QString t2 = ui->word2Edit->text().trimmed().toLower();
+    const QString t3 = ui->word3Edit->text().trimmed().toLower();
+
+    const bool ok1 = !t1.isEmpty() && validateWord(t1, m_selected_positions[0]);
+    const bool ok2 = !t2.isEmpty() && validateWord(t2, m_selected_positions[1]);
+    const bool ok3 = !t3.isEmpty() && validateWord(t3, m_selected_positions[2]);
+
+    auto setStatus = [](QLabel* lbl, bool filled, bool valid) {
+        if (!lbl) return;
+        if (!filled) { lbl->clear(); lbl->setStyleSheet(""); return; }
+        if (valid) {
+            lbl->setText("✓");
+            lbl->setStyleSheet(QString("QLabel { %1 font-weight: 700; }").arg(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS)));
+        } else {
+            lbl->setText("✗");
+            lbl->setStyleSheet(QString("QLabel { %1 font-weight: 700; }").arg(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR)));
+        }
+    };
+    setStatus(ui->word1Status, !t1.isEmpty(), ok1);
+    setStatus(ui->word2Status, !t2.isEmpty(), ok2);
+    setStatus(ui->word3Status, !t3.isEmpty(), ok3);
+    if (ui->buttonBox && ui->stackedWidget->currentIndex() == 1) {
+        ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(ok1 && ok2 && ok3);
+    }
+}
+
+void MnemonicVerificationDialog::accept()
+{
+    if (!validateWord(ui->word1Edit->text().trimmed().toLower(), m_selected_positions[0]) ||
+        !validateWord(ui->word2Edit->text().trimmed().toLower(), m_selected_positions[1]) ||
+        !validateWord(ui->word3Edit->text().trimmed().toLower(), m_selected_positions[2])) {
+        QMessageBox::warning(this, tr("Verification Failed"), tr("One or more words are incorrect. Please try again."));
+        return;
+    }
+    QDialog::accept();
+}
+
+void MnemonicVerificationDialog::clearMnemonic()
+{
+    clearWordsSecurely();
+    m_mnemonic.assign(m_mnemonic.size(), 0);
+}
+
+QStringList MnemonicVerificationDialog::parseWords()
+{
+    // If words are already parsed, reuse them (for step 2 validation or step 1 display)
+    if (!m_words.isEmpty()) {
+        return m_words;
+    }
+    
+    // Parse words from secure mnemonic string
+    QString mnemonicStr = QString::fromStdString(std::string(m_mnemonic.begin(), m_mnemonic.end()));
+    m_words = mnemonicStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    
+    // Clear the temporary QString immediately after parsing
+    mnemonicStr.clear();
+    mnemonicStr.squeeze(); // Release memory
+    
+    return m_words;
+}
+
+void MnemonicVerificationDialog::clearWordsSecurely()
+{
+    // Securely clear each word string by overwriting before clearing
+    for (QString& word : m_words) {
+        // Overwrite with zeros before clearing
+        word.fill(QChar(0));
+        word.clear();
+        word.squeeze(); // Release memory
+    }
+    m_words.clear();
+}
+
+int MnemonicVerificationDialog::getWordCount() const
+{
+    // Count words without parsing them into QStringList
+    // This avoids storing words in non-secure memory unnecessarily
+    if (m_words.isEmpty()) {
+        QString mnemonicStr = QString::fromStdString(std::string(m_mnemonic.begin(), m_mnemonic.end()));
+        QStringList words = mnemonicStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+        int count = words.size();
+        // Clear immediately
+        mnemonicStr.clear();
+        mnemonicStr.squeeze();
+        return count;
+    }
+    return m_words.size();
+}
+
+void MnemonicVerificationDialog::buildMnemonicGrid(bool reveal)
+{
+    if (!m_gridLayout) return;
+
+    QLayoutItem* child;
+    while ((child = m_gridLayout->takeAt(0)) != nullptr) {
+        if (child->widget()) child->widget()->deleteLater();
+        delete child;
+    }
+
+    // Parse words only when revealing (when needed for display)
+    QStringList words;
+    if (reveal) {
+        words = parseWords();
+    } else {
+        // For hidden view, just get count without parsing words
+        const int n = getWordCount();
+        const int columns = (n >= 24) ? 4 : 3;
+        const int rows = (n + columns - 1) / columns;
+
+        QFont mono; mono.setStyleHint(QFont::Monospace); mono.setFamily("Monospace"); mono.setPointSize(13);
+        m_gridLayout->setContentsMargins(6, 2, 6, 8);
+        m_gridLayout->setHorizontalSpacing(32);
+        m_gridLayout->setVerticalSpacing(7);
+
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < columns; ++c) {
+                int idx = r * columns + c; if (idx >= n) break;
+                const QString text = QString("%1. •••••••").arg(idx + 1, 2);
+                QLabel* lbl = new QLabel(text);
+                lbl->setFont(mono);
+                lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                m_gridLayout->addWidget(lbl, r, c);
+            }
+        }
+
+        m_gridLayout->setRowMinimumHeight(rows, 12);
+        return;
+    }
+
+    // Revealed view - words are already parsed
+    const int n = words.size();
+    const int columns = (n >= 24) ? 4 : 3;
+    const int rows = (n + columns - 1) / columns;
+
+    QFont mono; mono.setStyleHint(QFont::Monospace); mono.setFamily("Monospace"); mono.setPointSize(13);
+    m_gridLayout->setContentsMargins(6, 2, 6, 8);
+    m_gridLayout->setHorizontalSpacing(32);
+    m_gridLayout->setVerticalSpacing(7);
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < columns; ++c) {
+            int idx = r * columns + c; if (idx >= n) break;
+            const QString text = QString("%1. %2").arg(idx + 1, 2).arg(words[idx]);
+            QLabel* lbl = new QLabel(text);
+            lbl->setFont(mono);
+            lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            m_gridLayout->addWidget(lbl, r, c);
+        }
+    }
+
+    m_gridLayout->setRowMinimumHeight(rows, 12);
+}
+
+
