@@ -283,7 +283,7 @@ void CreateWalletActivity::finish()
     if (m_wallet_model) {
         // Check if wallet is HD-enabled (has mnemonic) and requires verification
         // Skip verification for blank wallets or wallets with disabled private keys
-        if (!m_wallet_model->wallet().hdEnabled() || 
+        if (!m_wallet_model->wallet().hdEnabled() ||
             m_wallet_model->wallet().privateKeysDisabled() ||
             !m_wallet_model->wallet().canGetAddresses()) {
             // Not an HD wallet - skip verification
@@ -291,7 +291,7 @@ void CreateWalletActivity::finish()
             Q_EMIT finished();
             return;
         }
-        
+
         // Unlock wallet if encrypted (needed to retrieve mnemonic)
         bool was_locked = false;
         bool was_unlocked_for_mixing = false;
@@ -301,19 +301,19 @@ void CreateWalletActivity::finish()
             was_unlocked_for_mixing = (enc_status == WalletModel::UnlockedForMixingOnly);
             // Unlock fully (not just for mixing) to retrieve mnemonic
             if (!m_wallet_model->setWalletLocked(false, m_passphrase, false)) {
-                QMessageBox::warning(m_parent_widget, tr("Unlock failed"), 
+                QMessageBox::warning(m_parent_widget, tr("Unlock failed"),
                     tr("Failed to unlock wallet for mnemonic verification. Wallet creation completed but verification skipped."));
                 Q_EMIT created(m_wallet_model);
                 Q_EMIT finished();
                 return;
             }
         }
-        
+
         // Check if wallet has a mnemonic and requires verification
         SecureString mnemonic;
         SecureString mnemonic_passphrase;
         bool has_mnemonic = m_wallet_model->wallet().getMnemonic(mnemonic, mnemonic_passphrase);
-        
+
         if (!has_mnemonic || mnemonic.empty()) {
             // No mnemonic found - log warning and skip verification
             restoreWalletLockState(was_locked, was_unlocked_for_mixing);
@@ -326,18 +326,18 @@ void CreateWalletActivity::finish()
             Q_EMIT finished();
             return;
         }
-        
+
         // Wallet has mnemonic - show verification dialog
         MnemonicVerificationDialog verify_dialog(mnemonic, m_parent_widget);
         verify_dialog.setWindowModality(Qt::ApplicationModal);
-        
+
         // Clear mnemonic from local variables after dialog has copied it
         // The dialog will manage its own copy securely
         const size_t mnemonic_size = mnemonic.size();
         const size_t passphrase_size = mnemonic_passphrase.size();
         mnemonic.assign(mnemonic_size, 0);
         mnemonic_passphrase.assign(passphrase_size, 0);
-        
+
         if (verify_dialog.exec() == QDialog::Accepted) {
             // Verification successful
             restoreWalletLockState(was_locked, was_unlocked_for_mixing);
@@ -362,11 +362,11 @@ void CreateWalletActivity::restoreWalletLockState(bool was_locked, bool was_unlo
     if (!was_locked && !was_unlocked_for_mixing) {
         return; // Wallet was not locked, nothing to restore
     }
-    
+
     if (!m_wallet_model) {
         return; // Safety check: wallet model not available
     }
-    
+
     if (was_unlocked_for_mixing) {
         // Restore previous mixing-only unlock state
         if (!m_wallet_model->setWalletLocked(true)) {

@@ -143,7 +143,7 @@ void MnemonicVerificationDialog::setupStep2()
     ui->stackedWidget->setCurrentIndex(1);
     // Parse words for validation (needed in step 2)
     parseWords();
-    
+
     // Validate mnemonic has at least 3 words before proceeding
     const int wordCount = getWordCount();
     if (wordCount < 3) {
@@ -152,9 +152,9 @@ void MnemonicVerificationDialog::setupStep2()
         reject();
         return;
     }
-    
+
     generateRandomPositions();
-    
+
     // Safety check: ensure positions were generated successfully
     if (m_selected_positions.size() < 3) {
         QMessageBox::critical(this, tr("Verification Error"),
@@ -195,7 +195,7 @@ void MnemonicVerificationDialog::setupStep2()
     if (ui->verificationLabel) {
         ui->verificationLabel->setStyleSheet("QLabel { margin-top: 0px; margin-bottom: 4px; }");
     }
-    
+
     // Hide any existing title label if present
     if (auto titleLabel = findChild<QLabel*>("verifyTitleLabel")) {
         titleLabel->hide();
@@ -345,15 +345,15 @@ QStringList MnemonicVerificationDialog::parseWords()
     if (!m_words.isEmpty()) {
         return m_words;
     }
-    
+
     // Parse words from secure mnemonic string
     QString mnemonicStr = QString::fromStdString(std::string(m_mnemonic.begin(), m_mnemonic.end()));
     m_words = mnemonicStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-    
+
     // Clear the temporary QString immediately after parsing
     mnemonicStr.clear();
     mnemonicStr.squeeze(); // Release memory
-    
+
     return m_words;
 }
 

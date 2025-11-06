@@ -528,14 +528,14 @@ public:
     bool getMnemonic(SecureString& mnemonic_out, SecureString& mnemonic_passphrase_out) override
     {
         LOCK(m_wallet->cs_wallet);
-        
+
         mnemonic_out.clear();
         mnemonic_passphrase_out.clear();
-        
+
         if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
             return false;
         }
-        
+
         if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
             // Descriptor wallet
             for (auto spk_man : m_wallet->GetActiveScriptPubKeyMans()) {
@@ -552,25 +552,25 @@ public:
             if (!spk_man) {
                 return false;
             }
-            
+
             CHDChain hdChainCurrent;
             if (!spk_man->GetHDChain(hdChainCurrent)) {
                 return false;
             }
-            
+
             // Get decrypted HD chain if wallet is encrypted
             if (m_wallet->IsCrypted()) {
                 if (!spk_man->GetDecryptedHDChain(hdChainCurrent)) {
                     return false;
                 }
             }
-            
+
             SecureString ssMnemonic;
             SecureString ssMnemonicPassphrase;
             if (!hdChainCurrent.GetMnemonic(ssMnemonic, ssMnemonicPassphrase)) {
                 return false;
             }
-            
+
             mnemonic_out = ssMnemonic;
             mnemonic_passphrase_out = ssMnemonicPassphrase;
             return true;
