@@ -353,9 +353,8 @@ class DashGovernanceTest (DashTestFramework):
         assert n > 0
 
         self.log.info("Move remaining n blocks until the next maturity window")
-        for _ in range(n):
-            self.bump_mocktime(1)
-            self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks())
+        self.bump_mocktime(n)
+        self.generate(self.nodes[0], n, sync_fun=self.sync_blocks())
 
         self.log.info("Move inside maturity window until the next Superblock")
         for _ in range(sb_maturity_window - 1):
@@ -373,9 +372,8 @@ class DashGovernanceTest (DashTestFramework):
         self.log.info("Mine and check a couple more superblocks")
         for i in range(2):
             sb_block_height = 180 + (i + 1) * sb_cycle
-            for _ in range(sb_immaturity_window):
-                self.bump_mocktime(1)
-                self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks())
+            self.bump_mocktime(sb_immaturity_window)
+            self.generate(self.nodes[0], sb_immaturity_window, sync_fun=self.sync_blocks())
             for _ in range(sb_maturity_window - 1):
                 self.bump_mocktime(1)
                 self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks())
