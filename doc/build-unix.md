@@ -145,6 +145,8 @@ Now, you can either build from self-compiled [depends](/depends/README.md) or in
 sudo dnf install libevent-devel boost-devel
 ```
 
+Note: Fedora repositories do not include libbacktrace. To build Dash Core without stack trace support, configure with `--disable-stacktraces`.
+
 SQLite is required for the descriptor wallet:
 
 ```sh
