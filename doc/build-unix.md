@@ -63,6 +63,7 @@ sudo apt-get install libbacktrace-dev libevent-dev libboost-dev
 
 Note: libbacktrace-dev is available in Debian 13 (Trixie) and Ubuntu 25.04+.
 For older releases, use the /depends/README.md which includes all required libraries.
+
 SQLite is required for the descriptor wallet:
 
 ```sh
