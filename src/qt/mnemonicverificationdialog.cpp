@@ -309,11 +309,18 @@ bool MnemonicVerificationDialog::validateWord(const QString& word, int position)
     // Parse words on-demand for validation (minimizes exposure time)
     // Words are kept in memory during step 2 (verification) and step 1 (when revealed)
     // They are only cleared when explicitly hiding in step 1 or on dialog destruction
-    QStringList words = parseWords();
-    if (position < 1 || position > words.size()) {
+    std::vector<SecureString> words = parseWords();
+    if (position < 1 || position > static_cast<int>(words.size())) {
         return false;
     }
-    return word == words[position - 1].toLower();
+    // Convert SecureString to QString temporarily for comparison
+    QString secureWord = QString::fromStdString(std::string(words[position - 1].begin(), words[position - 1].end()));
+    bool result = word == secureWord.toLower();
+    // Clear temporary QString immediately
+    secureWord.fill(QChar(0));
+    secureWord.clear();
+    secureWord.squeeze();
+    return result;
 }
 
 void MnemonicVerificationDialog::updateWordValidation()
@@ -364,20 +371,34 @@ void MnemonicVerificationDialog::clearMnemonic()
     m_mnemonic.assign(m_mnemonic.size(), 0);
 }
 
-QStringList MnemonicVerificationDialog::parseWords()
+std::vector<SecureString> MnemonicVerificationDialog::parseWords()
 {
     // If words are already parsed, reuse them (for step 2 validation or step 1 display)
-    if (!m_words.isEmpty()) {
+    if (!m_words.empty()) {
         return m_words;
     }
 
     // Parse words from secure mnemonic string
     QString mnemonicStr = QString::fromStdString(std::string(m_mnemonic.begin(), m_mnemonic.end()));
-    m_words = mnemonicStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    QStringList wordList = mnemonicStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+
+    // Convert to SecureString vector for secure storage
+    m_words.clear();
+    m_words.reserve(wordList.size());
+    for (const QString& word : wordList) {
+        std::string wordStd = word.toStdString();
+        SecureString secureWord;
+        secureWord.assign(std::string_view{wordStd});
+        m_words.push_back(secureWord);
+        // Clear temporary std::string
+        wordStd.assign(wordStd.size(), 0);
+    }
 
     // Clear the temporary QString immediately after parsing
+    mnemonicStr.fill(QChar(0));
     mnemonicStr.clear();
     mnemonicStr.squeeze(); // Release memory
+    wordList.clear();
 
     return m_words;
 }
@@ -385,26 +406,26 @@ QStringList MnemonicVerificationDialog::parseWords()
 void MnemonicVerificationDialog::clearWordsSecurely()
 {
     // Securely clear each word string by overwriting before clearing
-    for (QString& word : m_words) {
+    for (SecureString& word : m_words) {
         // Overwrite with zeros before clearing
-        word.fill(QChar(0));
+        word.assign(word.size(), 0);
         word.clear();
-        word.squeeze(); // Release memory
     }
     m_words.clear();
 }
 
 int MnemonicVerificationDialog::getWordCount() const
 {
-    // Count words without parsing them into QStringList
+    // Count words without parsing them into vector
     // This avoids storing words in non-secure memory unnecessarily
-    if (m_words.isEmpty()) {
+    if (m_words.empty()) {
         QString mnemonicStr = QString::fromStdString(std::string(m_mnemonic.begin(), m_mnemonic.end()));
         QStringList words = mnemonicStr.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
         int count = words.size();
         // Clear immediately
         mnemonicStr.clear();
         mnemonicStr.squeeze();
+        words.clear();
         return count;
     }
     return m_words.size();
@@ -421,7 +442,7 @@ void MnemonicVerificationDialog::buildMnemonicGrid(bool reveal)
     }
 
     // Parse words only when revealing (when needed for display)
-    QStringList words;
+    std::vector<SecureString> words;
     if (reveal) {
         words = parseWords();
     } else {
@@ -462,10 +483,16 @@ void MnemonicVerificationDialog::buildMnemonicGrid(bool reveal)
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < columns; ++c) {
             int idx = r * columns + c; if (idx >= n) break;
-            const QString text = QString("%1. %2").arg(idx + 1, 2).arg(words[idx]);
+            // Convert SecureString to QString temporarily for display
+            QString wordStr = QString::fromStdString(std::string(words[idx].begin(), words[idx].end()));
+            const QString text = QString("%1. %2").arg(idx + 1, 2).arg(wordStr);
             QLabel* lbl = new QLabel(text);
             lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
             m_gridLayout->addWidget(lbl, r, c);
+            // Clear temporary QString immediately after use
+            wordStr.fill(QChar(0));
+            wordStr.clear();
+            wordStr.squeeze();
         }
     }
 

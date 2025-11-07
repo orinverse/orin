@@ -9,6 +9,7 @@
 #include <QStackedWidget>
 
 #include <support/allocators/secure.h>
+#include <vector>
 
 namespace Ui {
     class MnemonicVerificationDialog;
@@ -41,13 +42,13 @@ private:
     bool validateWord(const QString& word, int position);
     void clearMnemonic();
     void buildMnemonicGrid(bool reveal);
-    QStringList parseWords();
+    std::vector<SecureString> parseWords();
     void clearWordsSecurely();
     int getWordCount() const;
 
     Ui::MnemonicVerificationDialog *ui;
     SecureString m_mnemonic;
-    QStringList m_words;
+    std::vector<SecureString> m_words;
     QList<int> m_selected_positions;
     bool m_mnemonic_revealed;
     bool m_has_ever_revealed{false};
