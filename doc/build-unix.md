@@ -139,7 +139,7 @@ sudo dnf install gcc-c++ libtool make autoconf automake python3
 Now, you can either build from self-compiled [depends](/depends/README.md) or install the required dependencies:
 
 ```sh
-sudo dnf install libbacktrace-devel libevent-devel boost-devel
+sudo dnf install libevent-devel boost-devel
 ```
 
 SQLite is required for the descriptor wallet:
