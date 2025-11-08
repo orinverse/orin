@@ -396,6 +396,16 @@ fi
 
 if test "$enable_stacktraces" != no; then
   AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
+  if test "$enable_stacktraces" != "no"; then
+    AC_CHECK_HEADERS([backtrace.h], [], [
+      if test "$enable_stacktraces" = "yes"; then
+        AC_MSG_ERROR([backtrace.h not found but --enable-stacktraces was specified. Install libbacktrace or use --disable-stacktraces.])
+      else
+        AC_MSG_WARN([backtrace.h not found. Stacktraces will be disabled.])
+        enable_stacktraces=no
+      fi
+    ])
+  fi
 fi
 
 AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
@@ -892,11 +902,17 @@ case $host in
            export PKG_CONFIG_PATH="$($BREW --prefix qt@5 2>/dev/null)/lib/pkgconfig:$PKG_CONFIG_PATH"
          fi
 
-         gmp_prefix=$($BREW --prefix gmp 2>/dev/null)
-         if test "$gmp_prefix" != ""; then
-           CORE_CPPFLAGS="$CORE_CPPFLAGS -I$gmp_prefix/include"
-           CORE_LDFLAGS="$CORE_LDFLAGS -L$gmp_prefix/lib"
-         fi
+        gmp_prefix=$($BREW --prefix gmp 2>/dev/null)
+        if test "$gmp_prefix" != ""; then
+          if test "$suppress_external_warnings" != "no"; then
+            GMP_CPPFLAGS="-isystem $gmp_prefix/include"
+          else
+            GMP_CPPFLAGS="-I$gmp_prefix/include"
+          fi
+          GMP_LDFLAGS="-L$gmp_prefix/lib"
+          CORE_CPPFLAGS="$CORE_CPPFLAGS $GMP_CPPFLAGS"
+          CORE_LDFLAGS="$CORE_LDFLAGS $GMP_LDFLAGS"
+        fi
 
          case $host in
            *aarch64*)
@@ -1669,8 +1685,14 @@ if test "$use_zmq" = "yes"; then
 fi
 
 dnl check if libgmp is present
+TEMP_CPPFLAGS="$CPPFLAGS"
+TEMP_LDFLAGS="$LDFLAGS"
+CPPFLAGS="$CPPFLAGS $GMP_CPPFLAGS"
+LDFLAGS="$LDFLAGS $GMP_LDFLAGS"
 AC_CHECK_HEADER([gmp.h],, AC_MSG_ERROR(libgmp headers missing))
 AC_CHECK_LIB([gmp],  [__gmpz_init],GMP_LIBS=-lgmp, AC_MSG_ERROR(libgmp missing))
+CPPFLAGS="$TEMP_CPPFLAGS"
+LDFLAGS="$TEMP_LDFLAGS"
 
 AM_CONDITIONAL([ENABLE_ZMQ], [test "$use_zmq" = "yes"])
 
