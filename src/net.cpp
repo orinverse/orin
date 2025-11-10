@@ -4684,7 +4684,7 @@ void CNode::MarkReceivedMsgsForProcessing()
 std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage()
 {
     LOCK(m_msg_process_queue_mutex);
-    
+
     // Prioritize quorum queue: pop from it first if non-empty
     if (!m_msg_quorum_queue.empty()) {
         std::list<CNetMessage> msgs;
@@ -4696,7 +4696,7 @@ std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage()
         // Return true for 'more' if either queue has remaining messages
         return std::make_pair(std::move(msgs.front()), !m_msg_quorum_queue.empty() || !m_msg_process_queue.empty());
     }
-    
+
     // Fall back to normal queue if quorum queue is empty
     if (m_msg_process_queue.empty()) return std::nullopt;
 
