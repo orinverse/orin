@@ -13,7 +13,6 @@
 #include <uint256.h>
 #include <unordered_lru_cache.h>
 
-#include <atomic>
 #include <deque>
 #include <map>
 #include <optional>
@@ -93,7 +92,7 @@ protected:
     mutable Mutex cs;
     std::map<uint256, CMasternodeMetaInfo> metaInfos GUARDED_BY(cs);
     // keep track of dsq count to prevent masternodes from gaming coinjoin queue
-    std::atomic<int64_t> nDsqCount{0};
+    int64_t nDsqCount{0};
     // keep track of the used Masternodes for CoinJoin across all wallets
     // Using deque for efficient FIFO removal and unordered_set for O(1) lookups
     std::deque<uint256> m_used_masternodes GUARDED_BY(cs);
