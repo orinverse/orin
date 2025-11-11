@@ -57,8 +57,8 @@ void NetInstantSend::ProcessMessage(CNode& pfrom, const std::string& msg_type, C
     }
 
     if (!m_is_manager.AlreadyHave(CInv{MSG_ISDLOCK, hash})) {
-        LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: received islock, peer=%d\n",
-                 __func__, islock->txid.ToString(), hash.ToString(), pfrom.GetId());
+        LogPrint(BCLog::INSTANTSEND, "NetInstantSend -- ISDLOCK txid=%s, islock=%s: received islock, peer=%d\n",
+                 islock->txid.ToString(), hash.ToString(), pfrom.GetId());
 
         m_is_manager.EnqueueInstantSendLock(pfrom.GetId(), hash, islock);
     }
@@ -162,9 +162,8 @@ Uint256HashSet NetInstantSend::ProcessPendingInstantSendLocks(
     batchVerifier.Verify();
     verifyTimer.stop();
 
-    LogPrint(BCLog::INSTANTSEND,
-             "CInstantSendManager::%s -- verified locks. count=%d, alreadyVerified=%d, vt=%d, nodes=%d\n", __func__,
-             verifyCount, alreadyVerified, verifyTimer.count(), batchVerifier.GetUniqueSourceCount());
+    LogPrint(BCLog::INSTANTSEND, "NetInstantSend::%s -- verified locks. count=%d, alreadyVerified=%d, vt=%d, nodes=%d\n",
+             __func__, verifyCount, alreadyVerified, verifyTimer.count(), batchVerifier.GetUniqueSourceCount());
 
     Uint256HashSet badISLocks;
 
@@ -182,7 +181,7 @@ Uint256HashSet NetInstantSend::ProcessPendingInstantSendLocks(
         const auto& islock = p.second.islock;
 
         if (batchVerifier.badMessages.count(hash)) {
-            LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: invalid sig in islock, peer=%d\n",
+            LogPrint(BCLog::INSTANTSEND, "NetInstantSend::%s -- txid=%s, islock=%s: invalid sig in islock, peer=%d\n",
                      __func__, islock->txid.ToString(), hash.ToString(), nodeId);
             badISLocks.emplace(hash);
             continue;
@@ -205,9 +204,9 @@ Uint256HashSet NetInstantSend::ProcessPendingInstantSendLocks(
         if (it != recSigs.end()) {
             auto recSig = std::make_shared<llmq::CRecoveredSig>(std::move(it->second));
             if (!m_is_manager.Sigman().HasRecoveredSigForId(llmq_params.type, recSig->getId())) {
-                LogPrint(BCLog::INSTANTSEND,
-                         "CInstantSendManager::%s -- txid=%s, islock=%s: passing reconstructed recSig to signing mgr, "
-                         "peer=%d\n",
+                LogPrint(BCLog::INSTANTSEND, /* Continued */
+                         "NetInstantSend::%s -- txid=%s, islock=%s: "
+                         "passing reconstructed recSig to signing mgr, peer=%d\n",
                          __func__, islock->txid.ToString(), hash.ToString(), nodeId);
                 m_is_manager.Sigman().PushReconstructedRecoveredSig(recSig);
             }
@@ -230,7 +229,7 @@ void NetInstantSend::ProcessPendingISLocks(std::vector<std::pair<uint256, instan
     // First check against the current active set and don't ban
     auto bad_is_locks = ProcessPendingInstantSendLocks(llmq_params, /*signOffset=*/0, /*ban=*/false, locks_to_process);
     if (!bad_is_locks.empty()) {
-        LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- doing verification on old active set\n", __func__);
+        LogPrint(BCLog::INSTANTSEND, "NetInstantSend::%s -- doing verification on old active set\n", __func__);
 
         // filter out valid IS locks from "pend" - keep only bad ones
         std::vector<std::pair<uint256, instantsend::PendingISLockFromPeer>> still_pending;
