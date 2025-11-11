@@ -805,8 +805,6 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
 
             singleMemberRecoveredSig = std::make_shared<CRecoveredSig>(quorum.params.type, quorum.qc->quorumHash, id, msgHash,
                                                       recoveredSig);
-            // Release lock before calling ProcessRecoveredSig to avoid double lock in HandleNewRecoveredSig
-            // ProcessRecoveredSig will synchronously call HandleNewRecoveredSig which requires the lock
         }
 
         sigSharesForRecovery.reserve((size_t) quorum.params.threshold);
@@ -825,7 +823,7 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
 
     // Handle single-member quorum case after releasing the lock
     if (singleMemberRecoveredSig) {
-        ProcessRecoveredSigUnlocked(singleMemberRecoveredSig);
+        sigman.ProcessRecoveredSig(singleMemberRecoveredSig, m_peerman);
         return; // end of single-quorum processing
     }
 
@@ -857,12 +855,7 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
         }
     }
 
-    ProcessRecoveredSigUnlocked(rs);
-}
-
-void CSigSharesManager::ProcessRecoveredSigUnlocked(const std::shared_ptr<const CRecoveredSig>& recoveredSig)
-{
-    sigman.ProcessRecoveredSig(recoveredSig, m_peerman);
+    sigman.ProcessRecoveredSig(rs, m_peerman);
 }
 
 CDeterministicMNCPtr CSigSharesManager::SelectMemberForRecovery(const CQuorum& quorum, const uint256 &id, int attempt)
