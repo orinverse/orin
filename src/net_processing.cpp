@@ -3578,19 +3578,6 @@ void PeerManagerImpl::PostProcessMessage(MessageProcessingResult&& result, NodeI
     for (const auto& dsq : result.m_dsq) {
         RelayDSQ(dsq);
     }
-    if (result.m_inv_filter) {
-        const auto& [inv, filter] = result.m_inv_filter.value();
-        if (std::holds_alternative<CTransactionRef>(filter)) {
-            RelayInvFiltered(inv, *std::get<CTransactionRef>(filter));
-        } else if (std::holds_alternative<uint256>(filter)) {
-            RelayInvFiltered(inv, std::get<uint256>(filter));
-        } else {
-            assert(false);
-        }
-    }
-    if (result.m_request_tx) {
-        AskPeersForTransaction(result.m_request_tx.value());
-    }
 }
 
 MessageProcessingResult PeerManagerImpl::ProcessPlatformBanMessage(NodeId node, std::string_view msg_type, CDataStream& vRecv)
@@ -5451,7 +5438,6 @@ void PeerManagerImpl::ProcessMessage(
             return; // CLSIG
         }
 
-        PostProcessMessage(m_llmq_ctx->isman->ProcessMessage(pfrom.GetId(), msg_type, vRecv), pfrom.GetId());
         for (const auto& handler : m_handlers) {
             handler->ProcessMessage(pfrom, msg_type, vRecv);
         }
