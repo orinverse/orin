@@ -780,6 +780,7 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
 
     std::vector<CBLSSignature> sigSharesForRecovery;
     std::vector<CBLSId> idsForRecovery;
+    std::shared_ptr<CRecoveredSig> singleMemberRecoveredSig;
     {
         LOCK(cs);
 
@@ -802,10 +803,10 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
             LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- recover single-node signature. id=%s, msgHash=%s\n",
                      __func__, id.ToString(), msgHash.ToString());
 
-            auto rs = std::make_shared<CRecoveredSig>(quorum.params.type, quorum.qc->quorumHash, id, msgHash,
+            singleMemberRecoveredSig = std::make_shared<CRecoveredSig>(quorum.params.type, quorum.qc->quorumHash, id, msgHash,
                                                       recoveredSig);
-            sigman.ProcessRecoveredSig(rs, m_peerman);
-            return; // end of single-quorum processing
+            // Release lock before calling ProcessRecoveredSig to avoid double lock in HandleNewRecoveredSig
+            // ProcessRecoveredSig will synchronously call HandleNewRecoveredSig which requires the lock
         }
 
         sigSharesForRecovery.reserve((size_t) quorum.params.threshold);
@@ -820,6 +821,12 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
         if (sigSharesForRecovery.size() < size_t(quorum.params.threshold)) {
             return;
         }
+    }
+
+    // Handle single-member quorum case after releasing the lock
+    if (singleMemberRecoveredSig) {
+        ProcessRecoveredSigUnlocked(singleMemberRecoveredSig);
+        return; // end of single-quorum processing
     }
 
     // now recover it
@@ -850,7 +857,12 @@ void CSigSharesManager::TryRecoverSig(const CQuorum& quorum, const uint256& id, 
         }
     }
 
-    sigman.ProcessRecoveredSig(rs, m_peerman);
+    ProcessRecoveredSigUnlocked(rs);
+}
+
+void CSigSharesManager::ProcessRecoveredSigUnlocked(const std::shared_ptr<const CRecoveredSig>& recoveredSig)
+{
+    sigman.ProcessRecoveredSig(recoveredSig, m_peerman);
 }
 
 CDeterministicMNCPtr CSigSharesManager::SelectMemberForRecovery(const CQuorum& quorum, const uint256 &id, int attempt)
