@@ -394,22 +394,8 @@ else
     fi
 fi
 
-if test "$enable_stacktraces" != "no"; then
-  AC_CHECK_HEADERS([execinfo.h], [
-    AC_CHECK_HEADERS([backtrace.h], [], [
-      if test "$enable_stacktraces" = "yes"; then
-        AC_MSG_ERROR([backtrace.h not found but --enable-stacktraces was specified. Install libbacktrace or use --disable-stacktraces.])
-      fi
-      AC_MSG_WARN([backtrace.h not found. Stacktraces will be disabled.])
-      enable_stacktraces=no
-    ])
-  ], [
-    if test "$enable_stacktraces" = "yes"; then
-      AC_MSG_ERROR([execinfo.h not found but --enable-stacktraces was specified. Stacktraces require execinfo.h. Use --disable-stacktraces.])
-    fi
-    AC_MSG_WARN([execinfo.h not found. Stacktraces will be disabled.])
-    enable_stacktraces=no
-  ])
+if test "$enable_stacktraces" != no; then
+  AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
 fi
 
 AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
