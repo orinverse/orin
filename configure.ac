@@ -394,29 +394,6 @@ else
     fi
 fi
 
-if test "$enable_stacktraces" != no; then
-  AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
-fi
-
-AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
-if test "$enable_stacktraces" = "yes"; then
-    AC_DEFINE(ENABLE_STACKTRACES, 1, [Define this symbol if stacktraces should be enabled])
-else
-    enable_crashhooks=no
-fi
-
-AM_CONDITIONAL([ENABLE_CRASH_HOOKS], [test "$enable_crashhooks" = "yes"])
-if test "$enable_crashhooks" = "yes"; then
-    AC_DEFINE(ENABLE_CRASH_HOOKS, 1, [Define this symbol if crash hooks should be enabled])
-fi
-
-AX_CHECK_LINK_FLAG([-Wl,-wrap=__cxa_allocate_exception], [LINK_WRAP_SUPPORTED=yes],,,)
-AM_CONDITIONAL([CRASH_HOOKS_WRAPPED_CXX_ABI],[test $LINK_WRAP_SUPPORTED = "yes"])
-
-if test "$LINK_WRAP_SUPPORTED" = "yes"; then
-  AC_DEFINE(CRASH_HOOKS_WRAPPED_CXX_ABI, 1, [Define this symbol to use wrapped CXX ABIs for exception stacktraces])
-fi
-
 # Needed for MinGW targets when debug symbols are enabled as compiled objects get very large
 AX_CHECK_COMPILE_FLAG([-Wa,-mbig-obj], [DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -Wa,-mbig-obj"],,,)
 
@@ -1244,6 +1221,35 @@ if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
   LDFLAGS="$TEMP_LDFLAGS"
 fi
 
+AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
+if test "$enable_stacktraces" != no; then
+  dnl ensure backtrace() is found, check -lexecinfo if necessary
+  if test "$TARGET_OS" != "windows"; then
+    AC_SEARCH_LIBS([backtrace], [execinfo], [], [
+      AC_MSG_ERROR([Unable to find backtrace()])
+    ])
+  fi
+fi
+
+AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
+if test "$enable_stacktraces" = "yes"; then
+    AC_DEFINE(ENABLE_STACKTRACES, 1, [Define this symbol if stacktraces should be enabled])
+else
+    enable_crashhooks=no
+fi
+
+AM_CONDITIONAL([ENABLE_CRASH_HOOKS], [test "$enable_crashhooks" = "yes"])
+if test "$enable_crashhooks" = "yes"; then
+    AC_DEFINE(ENABLE_CRASH_HOOKS, 1, [Define this symbol if crash hooks should be enabled])
+fi
+
+AX_CHECK_LINK_FLAG([-Wl,-wrap=__cxa_allocate_exception], [LINK_WRAP_SUPPORTED=yes],,,)
+AM_CONDITIONAL([CRASH_HOOKS_WRAPPED_CXX_ABI],[test $LINK_WRAP_SUPPORTED = "yes"])
+
+if test "$LINK_WRAP_SUPPORTED" = "yes"; then
+  AC_DEFINE(CRASH_HOOKS_WRAPPED_CXX_ABI, 1, [Define this symbol to use wrapped CXX ABIs for exception stacktraces])
+fi
+
 dnl Check for different ways of gathering OS randomness
 AC_MSG_CHECKING([for Linux getrandom syscall])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <unistd.h>
@@ -1284,15 +1290,6 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
  [ AC_MSG_RESULT([yes]); AC_DEFINE([HAVE_SYSCTL_ARND], [1], [Define this symbol if the BSD sysctl(KERN_ARND) is available]) ],
  [ AC_MSG_RESULT([no])]
 )
-
-dnl ensure backtrace() is found, check -lexecinfo if necessary
-if test "$TARGET_OS" != "windows"; then
-  if test "$enable_stacktraces" != "no"; then
-    AC_SEARCH_LIBS([backtrace], [execinfo], [], [
-      AC_MSG_ERROR([Unable to find backtrace()])
-    ])
-  fi
-fi
 
 AC_MSG_CHECKING([for fdatasync])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <unistd.h>]],
