@@ -1224,6 +1224,7 @@ if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
   LDFLAGS="$TEMP_LDFLAGS"
 fi
 
+BACKTRACE_LDFLAGS=
 BACKTRACE_LIBS=
 if test "$enable_stacktraces" != "no"; then
   AC_CHECK_HEADERS([backtrace.h], [
@@ -1242,6 +1243,15 @@ if test "$enable_stacktraces" != "no"; then
             enable_stacktraces=no
           ])
         fi
+        AX_CHECK_LINK_FLAG([-Wl,-export-dynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -Wl,-export-dynamic"], [
+          AX_CHECK_LINK_FLAG([-rdynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -rdynamic"], [
+            if test "$enable_stacktraces" = "yes"; then
+              AC_MSG_ERROR([--enable-stacktraces was specified but cannot set requisite linker flags])
+            fi
+            AC_MSG_WARN([cannot set requisite linker flags, stacktraces will be disabled])
+            enable_stacktraces=no
+          ], [$LDFLAG_WERROR])
+        ], [$LDFLAG_WERROR])
       ], [
         if test "$enable_stacktraces" = "yes"; then
           AC_MSG_ERROR([--enable-stacktraces was specified but execinfo.h was not found])
@@ -2012,6 +2022,7 @@ AC_SUBST(USE_QRCODE)
 AC_SUBST(TESTDEFS)
 AC_SUBST(MINIUPNPC_CPPFLAGS)
 AC_SUBST(MINIUPNPC_LIBS)
+AC_SUBST(BACKTRACE_LDFLAGS)
 AC_SUBST(BACKTRACE_LIBS)
 AC_SUBST(GMP_LIBS)
 AC_SUBST(NATPMP_CPPFLAGS)
@@ -2111,7 +2122,7 @@ echo "  CFLAGS              = $DEBUG_CFLAGS $PTHREAD_CFLAGS $CFLAGS"
 echo "  CPPFLAGS            = $DEBUG_CPPFLAGS $HARDENED_CPPFLAGS $CORE_CPPFLAGS $CPPFLAGS"
 echo "  CXX                 = $CXX"
 echo "  CXXFLAGS            = $DEBUG_CXXFLAGS $HARDENED_CXXFLAGS $WARN_CXXFLAGS $NOWARN_CXXFLAGS $ERROR_CXXFLAGS $GPROF_CXXFLAGS $CORE_CXXFLAGS $CXXFLAGS"
-echo "  LDFLAGS             = $PTHREAD_LIBS $HARDENED_LDFLAGS $GPROF_LDFLAGS $CORE_LDFLAGS $LDFLAGS"
+echo "  LDFLAGS             = $PTHREAD_LIBS $HARDENED_LDFLAGS $GPROF_LDFLAGS $CORE_LDFLAGS $BACKTRACE_LDFLAGS $LDFLAGS"
 echo "  AR                  = $AR"
 echo "  ARFLAGS             = $ARFLAGS"
 echo
