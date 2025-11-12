@@ -41,9 +41,9 @@ endif
 endif
 
 if TARGET_WINDOWS
-BACKTRACE_LIB = -ldbghelp -lbacktrace
+BACKTRACE_LIBS = -ldbghelp -lbacktrace
 else
-BACKTRACE_LIB = -lbacktrace
+BACKTRACE_LIBS = -lbacktrace
 endif
 endif #ENABLE_STACKTRACES
 
@@ -1028,7 +1028,7 @@ bitcoin_bin_ldadd = \
   $(LIBMEMENV) \
   $(LIBSECP256K1)
 
-bitcoin_bin_ldadd += $(BACKTRACE_LIB) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS)
+bitcoin_bin_ldadd += $(BACKTRACE_LIBS) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS)
 
 dashd_SOURCES = $(bitcoin_daemon_sources) init/bitcoind.cpp
 dashd_CPPFLAGS = $(bitcoin_bin_cppflags)
@@ -1057,7 +1057,7 @@ dash_cli_LDADD = \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_CRYPTO)
-dash_cli_LDADD += $(BACKTRACE_LIB) $(EVENT_LIBS) $(GMP_LIBS)
+dash_cli_LDADD += $(BACKTRACE_LIBS) $(EVENT_LIBS) $(GMP_LIBS)
 #
 
 # dash-tx binary #
@@ -1079,7 +1079,7 @@ dash_tx_LDADD = \
   $(LIBDASHBLS) \
   $(LIBSECP256K1)
 
-dash_tx_LDADD += $(BACKTRACE_LIB) $(GMP_LIBS)
+dash_tx_LDADD += $(BACKTRACE_LIBS) $(GMP_LIBS)
 #
 
 # dash-wallet binary #
@@ -1097,7 +1097,7 @@ dash_wallet_LDADD = \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBDASHBLS) \
   $(LIBSECP256K1) \
-  $(BACKTRACE_LIB) \
+  $(BACKTRACE_LIBS) \
   $(BOOST_LIBS) \
   $(BDB_LIBS) \
   $(SQLITE_LIBS) \
