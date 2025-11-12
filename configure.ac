@@ -1221,14 +1221,18 @@ if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
   LDFLAGS="$TEMP_LDFLAGS"
 fi
 
-AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
-if test "$enable_stacktraces" != no; then
+BACKTRACE_LIBS=
+if test "$enable_stacktraces" != "no"; then
+  AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
   dnl ensure backtrace() is found, check -lexecinfo if necessary
-  if test "$TARGET_OS" != "windows"; then
-    AC_SEARCH_LIBS([backtrace], [execinfo], [], [
-      AC_MSG_ERROR([Unable to find backtrace()])
-    ])
-  fi
+  AC_SEARCH_LIBS([backtrace], [execinfo], [
+    if test "$TARGET_OS" = "windows"; then
+      BACKTRACE_LIBS="$BACKTRACE_LIBS -ldbghelp"
+    fi
+    BACKTRACE_LIBS="$BACKTRACE_LIBS -lbacktrace"
+  ], [
+    AC_MSG_ERROR([Unable to find backtrace()])
+  ])
 fi
 
 AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
@@ -1983,6 +1987,7 @@ AC_SUBST(USE_QRCODE)
 AC_SUBST(TESTDEFS)
 AC_SUBST(MINIUPNPC_CPPFLAGS)
 AC_SUBST(MINIUPNPC_LIBS)
+AC_SUBST(BACKTRACE_LIBS)
 AC_SUBST(GMP_LIBS)
 AC_SUBST(NATPMP_CPPFLAGS)
 AC_SUBST(NATPMP_LIBS)

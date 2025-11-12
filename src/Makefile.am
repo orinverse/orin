@@ -36,16 +36,10 @@ if TARGET_WINDOWS
 LDFLAGS_WRAP_EXCEPTIONS += -Wl,-wrap,_assert -Wl,-wrap,_wassert
 else
 LDFLAGS_WRAP_EXCEPTIONS += -Wl,-wrap,__assert_fail
-endif
-endif
-endif
-
-if TARGET_WINDOWS
-BACKTRACE_LIBS = -ldbghelp -lbacktrace
-else
-BACKTRACE_LIBS = -lbacktrace
-endif
-endif #ENABLE_STACKTRACES
+endif # TARGET_WINDOWS
+endif # CRASH_HOOKS_WRAPPED_CXX_ABI
+endif # ENABLE_CRASH_HOOKS
+endif # ENABLE_STACKTRACES
 
 BITCOIN_INCLUDES=-I$(builddir) -I$(srcdir)/$(MINISKETCH_INCLUDE_DIR_INT) -I$(srcdir)/secp256k1/include -I$(srcdir)/$(UNIVALUE_INCLUDE_DIR_INT) $(LEVELDB_CPPFLAGS)
 BITCOIN_INCLUDES+=-isystem$(srcdir)/dashbls/include -isystem$(srcdir)/dashbls/depends/relic/include -isystem$(srcdir)/dashbls/depends/minialloc/include
