@@ -1224,6 +1224,7 @@ if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
   LDFLAGS="$TEMP_LDFLAGS"
 fi
 
+BACKTRACE_FLAGS=
 BACKTRACE_LDFLAGS=
 BACKTRACE_LIBS=
 if test "$enable_stacktraces" != "no"; then
@@ -1261,6 +1262,25 @@ if test "$enable_stacktraces" != "no"; then
       ])
     fi
     BACKTRACE_LIBS="$BACKTRACE_LIBS -lbacktrace"
+    dnl More modern compilers may emit DWARF 5 binaries by default, use DWARF 4 out of precaution
+    if test "$TARGET_OS" != "windows"; then
+      AX_CHECK_COMPILE_FLAG([-gdwarf-4], [BACKTRACE_FLAGS="$BACKTRACE_FLAGS -gdwarf-4"], [
+        if test "$enable_stacktraces" = "yes"; then
+          AC_MSG_ERROR([--enable-stacktraces was specified but cannot set -gdwarf-4])
+        fi
+        AC_MSG_WARN([cannot set -gdwarf-4, stacktraces will be disabled])
+        enable_stacktraces=no
+      ], [$CXXFLAG_WERROR])
+    fi
+    if test "$TARGET_OS" = "darwin"; then
+      AX_CHECK_COMPILE_FLAG([-fno-standalone-debug], [BACKTRACE_FLAGS="$BACKTRACE_FLAGS -fno-standalone-debug"], [
+        if test "$enable_stacktraces" = "yes"; then
+          AC_MSG_ERROR([--enable-stacktraces was specified but cannot set -fno-standalone-debug])
+        fi
+        AC_MSG_WARN([cannot set -fno-standalone-debug, stacktraces will be disabled])
+        enable_stacktraces=no
+      ], [$CXXFLAG_WERROR])
+    fi
   ], [
     if test "$enable_stacktraces" = "yes"; then
       AC_MSG_ERROR([--enable-stacktraces was specified but backtrace.h was not found])
@@ -2022,6 +2042,7 @@ AC_SUBST(USE_QRCODE)
 AC_SUBST(TESTDEFS)
 AC_SUBST(MINIUPNPC_CPPFLAGS)
 AC_SUBST(MINIUPNPC_LIBS)
+AC_SUBST(BACKTRACE_FLAGS)
 AC_SUBST(BACKTRACE_LDFLAGS)
 AC_SUBST(BACKTRACE_LIBS)
 AC_SUBST(GMP_LIBS)
@@ -2118,10 +2139,10 @@ echo "  target os           = $host_os"
 echo "  build os            = $build_os"
 echo
 echo "  CC                  = $CC"
-echo "  CFLAGS              = $DEBUG_CFLAGS $PTHREAD_CFLAGS $CFLAGS"
+echo "  CFLAGS              = $DEBUG_CFLAGS $PTHREAD_CFLAGS $BACKTRACE_FLAGS $CFLAGS"
 echo "  CPPFLAGS            = $DEBUG_CPPFLAGS $HARDENED_CPPFLAGS $CORE_CPPFLAGS $CPPFLAGS"
 echo "  CXX                 = $CXX"
-echo "  CXXFLAGS            = $DEBUG_CXXFLAGS $HARDENED_CXXFLAGS $WARN_CXXFLAGS $NOWARN_CXXFLAGS $ERROR_CXXFLAGS $GPROF_CXXFLAGS $CORE_CXXFLAGS $CXXFLAGS"
+echo "  CXXFLAGS            = $DEBUG_CXXFLAGS $HARDENED_CXXFLAGS $WARN_CXXFLAGS $NOWARN_CXXFLAGS $ERROR_CXXFLAGS $GPROF_CXXFLAGS $CORE_CXXFLAGS $BACKTRACE_FLAGS $CXXFLAGS"
 echo "  LDFLAGS             = $PTHREAD_LIBS $HARDENED_LDFLAGS $GPROF_LDFLAGS $CORE_LDFLAGS $BACKTRACE_LDFLAGS $LDFLAGS"
 echo "  AR                  = $AR"
 echo "  ARFLAGS             = $ARFLAGS"
