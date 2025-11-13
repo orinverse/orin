@@ -199,6 +199,7 @@ void ProposalWizard::onNextFromDetails()
 {
     buildJsonAndHex();
     m_ui->stackedWidget->setCurrentIndex(1);
+    onValidateJson();  // Automatically validate when entering the review page
 }
 
 void ProposalWizard::onBackToDetails() { m_ui->stackedWidget->setCurrentIndex(0); }
