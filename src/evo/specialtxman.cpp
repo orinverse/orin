@@ -177,10 +177,10 @@ bool CSpecialTxProcessor::BuildNewListFromBlock(const CBlock& block, gsl::not_nu
 {
     AssertLockHeld(cs_main);
     CDeterministicMNList oldList = m_dmnman.GetListForBlock(pindexPrev);
-    return BuildNewListFromBlock(block, pindexPrev, oldList, view, debugLogs, state, mnListRet);
+    return RebuildListFromBlock(block, pindexPrev, oldList, view, debugLogs, state, mnListRet);
 }
 
-bool CSpecialTxProcessor::BuildNewListFromBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
                                                 const CDeterministicMNList& prevList, const CCoinsViewCache& view,
                                                 bool debugLogs, BlockValidationState& state,
                                                 CDeterministicMNList& mnListRet)

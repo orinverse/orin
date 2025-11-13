@@ -1808,7 +1808,7 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
                                            const CDeterministicMNList& prevList, const CCoinsViewCache& view,
                                            bool debugLogs, BlockValidationState& state,
                                            CDeterministicMNList& mnListRet) NO_THREAD_SAFETY_ANALYSIS -> bool {
-        return chain_helper.special_tx->BuildNewListFromBlock(block, pindexPrev, prevList, view, debugLogs, state, mnListRet);
+        return chain_helper.special_tx->RebuildListFromBlock(block, pindexPrev, prevList, view, debugLogs, state, mnListRet);
     };
 
     // Call the dmnman method to do the work

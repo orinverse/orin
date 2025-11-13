@@ -81,7 +81,7 @@ public:
 
     // Variant that takes an explicit starting list instead of loading from GetListForBlock
     // Used for rebuilding diffs from trusted snapshots
-    bool BuildNewListFromBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+    bool RebuildListFromBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
                                const CDeterministicMNList& prevList, const CCoinsViewCache& view, bool debugLogs,
                                BlockValidationState& state, CDeterministicMNList& mnListRet)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main);
