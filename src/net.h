@@ -1096,6 +1096,7 @@ private:
     size_t m_msg_process_queue_size GUARDED_BY(m_msg_process_queue_mutex){0};
     std::list<CNetMessage> m_msg_quorum_queue GUARDED_BY(m_msg_process_queue_mutex);
     size_t m_msg_quorum_queue_size GUARDED_BY(m_msg_process_queue_mutex){0};
+    size_t m_quorum_msg_count_since_normal GUARDED_BY(m_msg_process_queue_mutex){0};
 
     // Our address, as reported by the peer
     CService addrLocal GUARDED_BY(m_addr_local_mutex);
