@@ -17,6 +17,7 @@
 #include <saltedhasher.h>
 #include <sync.h>
 #include <util/threadinterrupt.h>
+#include <util/time.h>
 
 #include <gsl/pointers.h>
 
@@ -177,7 +178,7 @@ private:
 
     FastRandomContext rnd GUARDED_BY(cs_pending);
 
-    int64_t lastCleanupTime{0};
+    std::chrono::time_point<SystemClock> nextCleanupTime{};
 
     mutable Mutex cs_listeners;
     std::vector<CRecoveredSigsListener*> recoveredSigsListeners GUARDED_BY(cs_listeners);
