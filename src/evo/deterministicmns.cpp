@@ -1634,13 +1634,8 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
         CDeterministicMNList from_snapshot;
         CDeterministicMNList to_snapshot;
 
-        bool has_from_snapshot;
-        bool has_to_snapshot;
-        {
-            LOCK(cs);
-            has_from_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, from_index->GetBlockHash()), from_snapshot);
-            has_to_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, to_index->GetBlockHash()), to_snapshot);
-        }
+        bool has_from_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, from_index->GetBlockHash()), from_snapshot);
+        bool has_to_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, to_index->GetBlockHash()), to_snapshot);
 
         // Handle missing snapshots
         if (!has_from_snapshot) {
@@ -1667,11 +1662,7 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
         }
 
         // Verify this snapshot pair
-        bool is_snapshot_pair_valid;
-        {
-            LOCK(cs);
-            is_snapshot_pair_valid = VerifySnapshotPair(from_index, to_index, from_snapshot, to_snapshot, result, i, snapshot_blocks.size() - 1);
-        }
+        bool is_snapshot_pair_valid = VerifySnapshotPair(from_index, to_index, from_snapshot, to_snapshot, result, i, snapshot_blocks.size() - 1);
 
         // If repair mode is enabled and verification failed, recalculate diffs from blockchain
         if (repair && !is_snapshot_pair_valid) {
@@ -1688,7 +1679,6 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
 
     // Write repaired diffs to database
     if (repair) {
-        LOCK(cs);
         WriteRepairedDiffs(recalculated_diffs, result);
     }
 
@@ -1751,7 +1741,6 @@ bool CDeterministicMNManager::VerifySnapshotPair(
     const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
     const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result, size_t pair_index, size_t total_pairs)
 {
-    AssertLockHeld(cs);
     AssertLockHeld(::cs_main);
 
     // Log progress periodically (every 100 snapshot pairs) to avoid spam
@@ -1879,7 +1868,7 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
 void CDeterministicMNManager::WriteRepairedDiffs(
     const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs, RecalcDiffsResult& result)
 {
-    AssertLockHeld(cs);
+    AssertLockNotHeld(cs);
 
     if (recalculated_diffs.empty()) {
         return;
@@ -1914,6 +1903,7 @@ void CDeterministicMNManager::WriteRepairedDiffs(
 
     // Clear caches for repaired diffs so next read gets fresh data from disk
     // Must clear both diff cache and list cache since lists were built from old diffs
+    LOCK(cs);
     for (const auto& [block_hash, diff] : recalculated_diffs) {
         mnListDiffsCache.erase(block_hash);
         mnListsCache.erase(block_hash);

@@ -758,13 +758,13 @@ private:
                                                            const Consensus::Params& consensus_params) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool VerifySnapshotPair(const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
                             const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result, size_t pair_index,
-                            size_t total_pairs) EXCLUSIVE_LOCKS_REQUIRED(cs, ::cs_main);
+                            size_t total_pairs) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     std::vector<std::pair<uint256, CDeterministicMNListDiff>> RepairSnapshotPair(
         const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
         const CDeterministicMNList& to_snapshot, BuildListFromBlockFunc build_list_func, RecalcDiffsResult& result)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void WriteRepairedDiffs(const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs,
-                            RecalcDiffsResult& result) EXCLUSIVE_LOCKS_REQUIRED(cs);
+                            RecalcDiffsResult& result) EXCLUSIVE_LOCKS_REQUIRED(!cs);
 };
 
 bool CheckProRegTx(CDeterministicMNManager& dmnman, const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state, const CCoinsViewCache& view, bool check_sigs);
