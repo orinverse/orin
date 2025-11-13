@@ -1223,15 +1223,25 @@ fi
 
 BACKTRACE_LIBS=
 if test "$enable_stacktraces" != "no"; then
-  AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
-  dnl ensure backtrace() is found, check -lexecinfo if necessary
-  AC_SEARCH_LIBS([backtrace], [execinfo], [
+  AC_CHECK_HEADERS([backtrace.h], [
     if test "$TARGET_OS" = "windows"; then
       BACKTRACE_LIBS="$BACKTRACE_LIBS -ldbghelp"
+    else
+      AC_CHECK_HEADERS([execinfo.h], [], [
+        if test "$enable_stacktraces" = "yes"; then
+          AC_MSG_ERROR([--enable-stacktraces was specified but execinfo.h was not found])
+        fi
+        AC_MSG_WARN([execinfo.h was not found, stacktraces will be disabled])
+        enable_stacktraces=no
+      ])
     fi
     BACKTRACE_LIBS="$BACKTRACE_LIBS -lbacktrace"
   ], [
-    AC_MSG_ERROR([Unable to find backtrace()])
+    if test "$enable_stacktraces" = "yes"; then
+      AC_MSG_ERROR([--enable-stacktraces was specified but backtrace.h was not found])
+    fi
+    AC_MSG_WARN([backtrace.h was not found, stacktraces will be disabled])
+    enable_stacktraces=no
   ])
 fi
 
