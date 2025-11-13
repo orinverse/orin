@@ -1661,8 +1661,14 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
             return result;
         }
 
+        // Log progress periodically (every 100 snapshot pairs) to avoid spam
+        if (i % 100 == 0) {
+            LogPrintf("CDeterministicMNManager::%s -- Progress: verifying snapshot pair %d/%d (heights %d-%d)\n",
+                      __func__, i + 1, snapshot_blocks.size() - 1, from_index->nHeight, to_index->nHeight);
+        }
+
         // Verify this snapshot pair
-        bool is_snapshot_pair_valid = VerifySnapshotPair(from_index, to_index, from_snapshot, to_snapshot, result, i, snapshot_blocks.size() - 1);
+        bool is_snapshot_pair_valid = VerifySnapshotPair(from_index, to_index, from_snapshot, to_snapshot, result);
 
         // If repair mode is enabled and verification failed, recalculate diffs from blockchain
         if (repair && !is_snapshot_pair_valid) {
@@ -1739,15 +1745,9 @@ std::vector<const CBlockIndex*> CDeterministicMNManager::CollectSnapshotBlocks(
 
 bool CDeterministicMNManager::VerifySnapshotPair(
     const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
-    const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result, size_t pair_index, size_t total_pairs)
+    const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result)
 {
     AssertLockHeld(::cs_main);
-
-    // Log progress periodically (every 100 snapshot pairs) to avoid spam
-    if (pair_index % 100 == 0) {
-        LogPrintf("CDeterministicMNManager::%s -- Progress: verifying snapshot pair %d/%d (heights %d-%d)\n",
-                  __func__, pair_index + 1, total_pairs, from_index->nHeight, to_index->nHeight);
-    }
 
     // Verify this snapshot pair by applying all stored diffs sequentially
     CDeterministicMNList test_list = from_snapshot;

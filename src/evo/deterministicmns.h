@@ -757,8 +757,8 @@ private:
     std::vector<const CBlockIndex*> CollectSnapshotBlocks(const CBlockIndex* start_index, const CBlockIndex* stop_index,
                                                            const Consensus::Params& consensus_params) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     bool VerifySnapshotPair(const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
-                            const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result, size_t pair_index,
-                            size_t total_pairs) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+                            const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result)
+        EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     std::vector<std::pair<uint256, CDeterministicMNListDiff>> RepairSnapshotPair(
         const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
         const CDeterministicMNList& to_snapshot, BuildListFromBlockFunc build_list_func, RecalcDiffsResult& result)
