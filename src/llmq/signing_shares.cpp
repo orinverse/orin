@@ -568,6 +568,8 @@ bool CSigSharesManager::CollectPendingSigSharesToVerify(
     size_t maxUniqueSessions, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
     std::unordered_map<std::pair<Consensus::LLMQType, uint256>, CQuorumCPtr, StaticSaltedHasher>& retQuorums)
 {
+    bool more_work{false};
+
     {
         LOCK(cs);
         if (nodeStates.empty()) {
@@ -606,6 +608,13 @@ bool CSigSharesManager::CollectPendingSigSharesToVerify(
         if (retSigShares.empty()) {
             return false;
         }
+
+        // Determine if there is still work left in any node state after pulling this batch
+        more_work = std::any_of(nodeStates.begin(), nodeStates.end(),
+                                [](const auto& entry) {
+                                    const auto& ns = entry.second;
+                                    return !ns.pendingIncomingSigShares.Empty();
+                                });
     }
 
     // For the convenience of the caller, also build a map of quorumHash -> quorum
@@ -632,7 +641,7 @@ bool CSigSharesManager::CollectPendingSigSharesToVerify(
         }
     }
 
-    return true;
+    return more_work;
 }
 
 bool CSigSharesManager::ProcessPendingSigShares()
@@ -641,8 +650,8 @@ bool CSigSharesManager::ProcessPendingSigShares()
     std::unordered_map<std::pair<Consensus::LLMQType, uint256>, CQuorumCPtr, StaticSaltedHasher> quorums;
 
     const size_t nMaxBatchSize{32};
-    bool collect_status = CollectPendingSigSharesToVerify(nMaxBatchSize, sigSharesByNodes, quorums);
-    if (!collect_status || sigSharesByNodes.empty()) {
+    bool more_work = CollectPendingSigSharesToVerify(nMaxBatchSize, sigSharesByNodes, quorums);
+    if (sigSharesByNodes.empty()) {
         return false;
     }
 
@@ -703,7 +712,7 @@ bool CSigSharesManager::ProcessPendingSigShares()
         ProcessPendingSigShares(v, quorums);
     }
 
-    return sigSharesByNodes.size() >= nMaxBatchSize;
+    return more_work;
 }
 
 // It's ensured that no duplicates are passed to this method
