@@ -341,6 +341,61 @@ mkdir -p "$DISTSRC"
                     find "${DISTNAME}/bin" -type f -executable -print0
                     find "${DISTNAME}/lib" -type f -print0
                 } | xargs -0 -P"$JOBS" -I{} "${DISTSRC}/contrib/devtools/split-debug.sh" {} {} {}.dbg
+
+                case "$HOST" in
+                    *linux*)
+                        # Compress DWARF sections in debug files and set proper permissions
+                        find "${DISTNAME}" -name "*.dbg" -type f -print0 | xargs -0 -P"$JOBS" -I{} sh -c '
+                            objcopy --compress-debug-sections=zlib "$1" "$1.tmp" && mv "$1.tmp" "$1"
+                            chmod 644 "$1"
+                        ' _ {}
+
+                        # Create .build-id tree for perf auto-discovery
+                        mkdir -p "${DISTNAME}/usr/lib/debug/.build-id"
+                        {
+                            find "${DISTNAME}/bin" -type f -executable -print0
+                            find "${DISTNAME}/lib" -type f -print0
+                        } | while IFS= read -r -d '' elf; do
+                            if file "$elf" | grep -q "ELF.*executable\|ELF.*shared object"; then
+                                build_id=$(readelf -n "$elf" 2>/dev/null | awk '/Build ID/ {print $3; exit}')
+                                if [ -n "$build_id" ] && [ -f "${elf}.dbg" ]; then
+                                    dir="${DISTNAME}/usr/lib/debug/.build-id/${build_id:0:2}"
+                                    mkdir -p "$dir"
+                                    cp "${elf}.dbg" "${dir}/${build_id:2}.debug"
+                                    chmod 644 "${dir}/${build_id:2}.debug"
+                                fi
+                            fi
+                        done
+
+                        # Verify build-ids and debug links
+                        {
+                            find "${DISTNAME}/bin" -type f -executable -print0
+                            find "${DISTNAME}/lib" -type f -print0
+                        } | {
+                            verification_failed=0
+                            while IFS= read -r -d '' elf; do
+                                if file "$elf" | grep -q "ELF.*executable\|ELF.*shared object"; then
+                                    # Check for build-id
+                                    if ! readelf -n "$elf" 2>/dev/null | grep -q "Build ID"; then
+                                        echo "ERROR: No build-id found in $elf" >&2
+                                        verification_failed=1
+                                    fi
+
+                                    # Check for .gnu_debuglink
+                                    if ! readelf --string-dump=.gnu_debuglink "$elf" >/dev/null 2>&1; then
+                                        echo "ERROR: No .gnu_debuglink found in $elf" >&2
+                                        verification_failed=1
+                                    fi
+                                fi
+                            done
+
+                            if [ "$verification_failed" -eq 1 ]; then
+                                echo "ERROR: Verification failed - some ELF files are missing build-ids or debug links" >&2
+                                exit 1
+                            fi
+                        }
+                        ;;
+                esac
                 ;;
         esac
 
