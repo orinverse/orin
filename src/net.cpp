@@ -4689,10 +4689,10 @@ std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage()
     // This ensures forward progress for both queues while strongly prioritizing quorum messages
     // However, if normal queue is empty, process quorum messages in bursts (like old algorithm)
     constexpr size_t QUORUM_TO_NORMAL_RATIO = 100;
-    
+
     // Check if we should process normal queue for forward progress
     // Only apply ratio when both queues have messages to allow burst processing when normal queue is empty
-    bool skip_quorum_processing = !m_msg_process_queue.empty() && 
+    bool skip_quorum_processing = !m_msg_process_queue.empty() &&
                                   m_quorum_msg_count_since_normal >= QUORUM_TO_NORMAL_RATIO;
 
     // Prioritize quorum queue: pop from it first if non-empty and ratio not reached
