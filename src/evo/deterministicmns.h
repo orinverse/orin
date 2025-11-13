@@ -436,6 +436,46 @@ public:
         return GetMN(p->first);
     }
 
+    // Compare two masternode lists for equality, ignoring non-deterministic members.
+    // Non-deterministic members (nTotalRegisteredCount, internalId) can differ between
+    // nodes due to different sync histories, but don't affect consensus validity.
+    bool IsEqual(const CDeterministicMNList& rhs) const
+    {
+        // Compare deterministic metadata
+        if (blockHash != rhs.blockHash ||
+            nHeight != rhs.nHeight ||
+            mnUniquePropertyMap != rhs.mnUniquePropertyMap) {
+            return false;
+        }
+
+        // Compare map sizes (actual entries compared below)
+        // Note: Not comparing nTotalRegisteredCount (non-deterministic)
+        if (mnMap.size() != rhs.mnMap.size() ||
+            mnInternalIdMap.size() != rhs.mnInternalIdMap.size()) {
+            return false;
+        }
+
+        // Compare each masternode entry
+        for (const auto& [proTxHash, dmn] : mnMap) {
+            auto dmn_rhs = rhs.mnMap.find(proTxHash);
+            if (dmn_rhs == nullptr) {
+                return false;
+            }
+
+            // Compare deterministic masternode fields
+            // Note: Not comparing internalId (non-deterministic)
+            if (dmn->proTxHash != dmn_rhs->get()->proTxHash ||
+                dmn->collateralOutpoint != dmn_rhs->get()->collateralOutpoint ||
+                dmn->nOperatorReward != dmn_rhs->get()->nOperatorReward ||
+                dmn->nType != dmn_rhs->get()->nType ||
+                // Use SerializeHash for pdmnState to avoid enumerating all state fields
+                SerializeHash(*dmn->pdmnState) != SerializeHash(*dmn_rhs->get()->pdmnState)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
 private:
     template <typename T>
     [[nodiscard]] uint256 GetUniquePropertyHash(const T& v) const
