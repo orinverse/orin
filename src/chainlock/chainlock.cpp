@@ -32,7 +32,6 @@ using node::GetTransaction;
 
 namespace llmq {
 namespace {
-static constexpr auto CLEANUP_INTERVAL{30s};
 static constexpr auto CLEANUP_SEEN_TIMEOUT{24h};
 //! How long to wait for islocks until we consider a block with non-islocked TXs to be safe to sign
 static constexpr auto WAIT_FOR_ISLOCK_TIMEOUT{10min};
@@ -438,14 +437,21 @@ bool CChainLocksHandler::HasConflictingChainLock(int nHeight, const uint256& blo
 
 void CChainLocksHandler::Cleanup()
 {
+    constexpr auto CLEANUP_INTERVAL{30s};
     if (!m_mn_sync.IsBlockchainSynced()) {
         return;
     }
 
-    if (GetTime<std::chrono::seconds>() - lastCleanupTime.load() < CLEANUP_INTERVAL) {
+    auto now = GetTime<std::chrono::seconds>();
+    auto expected = nextCleanup.load(std::memory_order_relaxed);
+    // cleanup is due
+    if (now < expected) {
         return;
     }
-    lastCleanupTime = GetTime<std::chrono::seconds>();
+    // try to claim the cleanup slot atomically, if it fails, another thread is already cleaning up
+    if (!nextCleanup.compare_exchange_strong(expected, now + CLEANUP_INTERVAL, std::memory_order_relaxed)) {
+        return;
+    }
 
     {
         LOCK(cs);

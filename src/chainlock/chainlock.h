@@ -67,7 +67,7 @@ private:
 
     std::map<uint256, std::chrono::seconds> seenChainLocks GUARDED_BY(cs);
 
-    std::atomic<std::chrono::seconds> lastCleanupTime{0s};
+    std::atomic<std::chrono::seconds> nextCleanup{0s};
 
 public:
     CChainLocksHandler() = delete;
