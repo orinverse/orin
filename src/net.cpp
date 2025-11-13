@@ -4705,7 +4705,7 @@ std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage()
         // Only increment counter if normal queue has messages (to track ratio)
         // If normal queue is empty, don't increment so we can process bursts quickly
         if (!m_msg_process_queue.empty()) {
-            m_quorum_msg_count_since_normal++;
+            ++m_quorum_msg_count_since_normal;
         }
         // Compute backpressure over combined size of both queues
         fPauseRecv = (m_msg_quorum_queue_size + m_msg_process_queue_size) > m_recv_flood_size;
