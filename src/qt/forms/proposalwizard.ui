@@ -330,12 +330,18 @@
          <property name="maximumHeight">
           <number>120</number>
          </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
         </widget>
        </item>
        <item>
         <widget class="QLineEdit" name="editHex">
          <property name="placeholderText">
           <string>Hex-encoded JSON</string>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
          </property>
         </widget>
        </item>
