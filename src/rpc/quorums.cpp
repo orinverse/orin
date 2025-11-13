@@ -251,7 +251,7 @@ static RPCHelpMan quorum_info()
                 GetRpcResult("quorumHash"),
                 GetRpcResult("quorumIndex"),
                 {RPCResult::Type::STR_HEX, "minedBlock", "Blockhash where the commitment was mined."},
-                {RPCResult::Type::NUM, "previousConsecutiveDKGFailures", "Number of previous consecutive DKG failures."},
+                {RPCResult::Type::NUM, "previousConsecutiveDKGFailures", "Number of previous consecutive DKG failures. Only present for rotation-enabled quorums."},
                 {RPCResult::Type::ARR, "members", "Members of quorum",
                     {
                         {RPCResult::Type::OBJ, "", "",
@@ -260,7 +260,8 @@ static RPCHelpMan quorum_info()
                             GetRpcResult("service"),
                             GetRpcResult("addresses"),
                             GetRpcResult("pubKeyOperator"),
-                            {RPCResult::Type::BOOL, "valid", "True is member valid for this DKG"}
+                            {RPCResult::Type::BOOL, "valid", "True if member is valid for this DKG"},
+                            {RPCResult::Type::STR_HEX, "pubKeyShare", /*optional=*/true, "Share of BLS public key of the member. Only present if member is valid."}
                         }},
                     },
                 },
