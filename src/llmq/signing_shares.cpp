@@ -1387,8 +1387,8 @@ CSigShare CSigSharesManager::RebuildSigShare(const CSigSharesNodeState::SessionI
 
 void CSigSharesManager::Cleanup()
 {
-    int64_t now = GetTime<std::chrono::seconds>().count();
-    if (now - lastCleanupTime < 5) {
+    constexpr auto CLEANUP_INTERVAL{5s};
+    if (!cleanupThrottler.TryCleanup(CLEANUP_INTERVAL)) {
         return;
     }
 
@@ -1451,6 +1451,7 @@ void CSigSharesManager::Cleanup()
 
         // Remove sessions which timed out
         Uint256HashSet timeoutSessions;
+        int64_t now = GetTime<std::chrono::seconds>().count();
         for (const auto& [signHash, lastSeenTime] : timeSeenForSessions) {
             if (now - lastSeenTime >= SESSION_NEW_SHARES_TIMEOUT) {
                 timeoutSessions.emplace(signHash);
@@ -1517,8 +1518,6 @@ void CSigSharesManager::Cleanup()
         });
         nodeStates.erase(nodeId);
     }
-
-    lastCleanupTime = GetTime<std::chrono::seconds>().count();
 }
 
 void CSigSharesManager::RemoveSigSharesForSession(const uint256& signHash)
