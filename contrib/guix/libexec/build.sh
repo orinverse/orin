@@ -432,12 +432,14 @@ mkdir -p "$DISTSRC"
                     || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST//x86_64-w64-mingw32/win64}-debug.zip" && exit 1 )
                 ;;
             *linux*)
-                find "${DISTNAME}" -not -name "*.dbg" -print0 \
+                # Main (non-debug) tarball: exclude separate debug files and the build-id debug tree
+                find "${DISTNAME}" -not -name "*.dbg" -not -path "${DISTNAME}/usr/lib/debug/*" -print0 \
                     | sort --zero-terminated \
                     | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
                     | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}.tar.gz" \
                     || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}.tar.gz" && exit 1 )
-                find "${DISTNAME}" -name "*.dbg" -print0 \
+                # Debug tarball: include .dbg files and the build-id debug tree
+                find "${DISTNAME}" \( -name "*.dbg" -o -path "${DISTNAME}/usr/lib/debug/*" \) -print0 \
                     | sort --zero-terminated \
                     | tar --create --no-recursion --mode='u+rw,go+r-w,a+X' --null --files-from=- \
                     | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}-debug.tar.gz" \
