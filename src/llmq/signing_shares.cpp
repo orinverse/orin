@@ -1387,7 +1387,7 @@ CSigShare CSigSharesManager::RebuildSigShare(const CSigSharesNodeState::SessionI
 
 void CSigSharesManager::Cleanup()
 {
-    static constexpr auto CLEANUP_INTERVAL{5s};
+    constexpr auto CLEANUP_INTERVAL{5s};
     if (!cleanupThrottler.TryCleanup(CLEANUP_INTERVAL)) {
         return;
     }
