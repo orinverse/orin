@@ -14,9 +14,9 @@
 #include <saltedhasher.h>
 #include <serialize.h>
 #include <sync.h>
+#include <uint256.h>
 #include <util/threadinterrupt.h>
 #include <util/time.h>
-#include <uint256.h>
 
 #include <atomic>
 #include <limits>
