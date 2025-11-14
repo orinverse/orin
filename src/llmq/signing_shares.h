@@ -15,6 +15,7 @@
 #include <serialize.h>
 #include <sync.h>
 #include <util/threadinterrupt.h>
+#include <util/time.h>
 #include <uint256.h>
 
 #include <atomic>
@@ -412,7 +413,7 @@ private:
     const CQuorumManager& qman;
     const CSporkManager& m_sporkman;
 
-    int64_t lastCleanupTime{0};
+    CleanupThrottler<NodeClock> cleanupThrottler;
     std::atomic<uint32_t> recoveredSigsCounter{0};
 
 public:

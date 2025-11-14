@@ -178,7 +178,7 @@ private:
 
     FastRandomContext rnd GUARDED_BY(cs_pending);
 
-    std::chrono::time_point<SystemClock> nextCleanupTime{};
+    CleanupThrottler<NodeClock> cleanupThrottler;
 
     mutable Mutex cs_listeners;
     std::vector<CRecoveredSigsListener*> recoveredSigsListeners GUARDED_BY(cs_listeners);

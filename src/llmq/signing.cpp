@@ -638,8 +638,7 @@ void CSigningManager::TruncateRecoveredSig(Consensus::LLMQType llmqType, const u
 void CSigningManager::Cleanup()
 {
     constexpr auto CLEANUP_INTERVAL{5000ms};
-    auto now = SystemClock::now();
-    if (now < nextCleanupTime) {
+    if (!cleanupThrottler.TryCleanup(CLEANUP_INTERVAL)) {
         return;
     }
 
@@ -647,8 +646,6 @@ void CSigningManager::Cleanup()
 
     db.CleanupOldRecoveredSigs(maxAge);
     db.CleanupOldVotes(maxAge);
-
-    nextCleanupTime = now + CLEANUP_INTERVAL;
 }
 
 void CSigningManager::RegisterRecoveredSigsListener(CRecoveredSigsListener* l)

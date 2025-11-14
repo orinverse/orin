@@ -442,14 +442,7 @@ void CChainLocksHandler::Cleanup()
         return;
     }
 
-    auto now = GetTime<std::chrono::seconds>();
-    auto expected = nextCleanup.load(std::memory_order_relaxed);
-    // cleanup is due
-    if (now < expected) {
-        return;
-    }
-    // try to claim the cleanup slot atomically, if it fails, another thread is already cleaning up
-    if (!nextCleanup.compare_exchange_strong(expected, now + CLEANUP_INTERVAL, std::memory_order_relaxed)) {
+    if (!cleanupThrottler.TryCleanup(CLEANUP_INTERVAL)) {
         return;
     }
 
