@@ -285,7 +285,8 @@ def check_ELF_ABI(binary) -> bool:
 CHECKS = {
 lief.EXE_FORMATS.ELF: [
     ('IMPORTED_SYMBOLS', check_imported_symbols),
-    ('EXPORTED_SYMBOLS', check_exported_symbols),
+    # Dash: We export symbols aggressively to aid in backtrace generation
+    # ('EXPORTED_SYMBOLS', check_exported_symbols),
     ('LIBRARY_DEPENDENCIES', check_ELF_libraries),
     ('INTERPRETER_NAME', check_ELF_interpreter),
     ('ABI', check_ELF_ABI),
