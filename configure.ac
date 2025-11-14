@@ -395,29 +395,6 @@ else
     fi
 fi
 
-if test "$enable_stacktraces" != no; then
-  AC_CHECK_HEADERS([execinfo.h], [], [enable_stacktraces=no])
-fi
-
-AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
-if test "$enable_stacktraces" = "yes"; then
-    AC_DEFINE(ENABLE_STACKTRACES, 1, [Define this symbol if stacktraces should be enabled])
-else
-    enable_crashhooks=no
-fi
-
-AM_CONDITIONAL([ENABLE_CRASH_HOOKS], [test "$enable_crashhooks" = "yes"])
-if test "$enable_crashhooks" = "yes"; then
-    AC_DEFINE(ENABLE_CRASH_HOOKS, 1, [Define this symbol if crash hooks should be enabled])
-fi
-
-AX_CHECK_LINK_FLAG([-Wl,-wrap=__cxa_allocate_exception], [LINK_WRAP_SUPPORTED=yes],,,)
-AM_CONDITIONAL([CRASH_HOOKS_WRAPPED_CXX_ABI],[test $LINK_WRAP_SUPPORTED = "yes"])
-
-if test "$LINK_WRAP_SUPPORTED" = "yes"; then
-  AC_DEFINE(CRASH_HOOKS_WRAPPED_CXX_ABI, 1, [Define this symbol to use wrapped CXX ABIs for exception stacktraces])
-fi
-
 # Needed for MinGW targets when debug symbols are enabled as compiled objects get very large
 AX_CHECK_COMPILE_FLAG([-Wa,-mbig-obj], [DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -Wa,-mbig-obj"],,,)
 
@@ -975,6 +952,9 @@ case $host in
    *linux*)
      TARGET_OS=linux
      ;;
+   *bsd*)
+     TARGET_OS=bsd
+     ;;
 esac
 
 if test "$use_extended_functional_tests" != "no"; then
@@ -1251,6 +1231,91 @@ if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
   LDFLAGS="$TEMP_LDFLAGS"
 fi
 
+BACKTRACE_FLAGS=
+BACKTRACE_LDFLAGS=
+BACKTRACE_LIBS=
+if test "$enable_stacktraces" != "no"; then
+  AC_CHECK_HEADERS([backtrace.h], [
+    if test "$TARGET_OS" = "windows"; then
+      BACKTRACE_LIBS="$BACKTRACE_LIBS -ldbghelp"
+    else
+      AC_CHECK_HEADERS([execinfo.h], [
+        if test "$TARGET_OS" = "bsd"; then
+          AC_SEARCH_LIBS([backtrace], [execinfo], [
+            BACKTRACE_LIBS="$BACKTRACE_LIBS -lexecinfo"
+          ], [
+            if test "$enable_stacktraces" = "yes"; then
+              AC_MSG_ERROR([--enable-stacktraces was specified but cannot locate libexecinfo])
+            fi
+            AC_MSG_WARN([cannot locate libexecinfo, stacktraces will be disabled])
+            enable_stacktraces=no
+          ])
+        fi
+        AX_CHECK_LINK_FLAG([-Wl,-export-dynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -Wl,-export-dynamic"], [
+          AX_CHECK_LINK_FLAG([-rdynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -rdynamic"], [
+            if test "$enable_stacktraces" = "yes"; then
+              AC_MSG_ERROR([--enable-stacktraces was specified but cannot set requisite linker flags])
+            fi
+            AC_MSG_WARN([cannot set requisite linker flags, stacktraces will be disabled])
+            enable_stacktraces=no
+          ], [$LDFLAG_WERROR])
+        ], [$LDFLAG_WERROR])
+      ], [
+        if test "$enable_stacktraces" = "yes"; then
+          AC_MSG_ERROR([--enable-stacktraces was specified but execinfo.h was not found])
+        fi
+        AC_MSG_WARN([execinfo.h was not found, stacktraces will be disabled])
+        enable_stacktraces=no
+      ])
+    fi
+    BACKTRACE_LIBS="$BACKTRACE_LIBS -lbacktrace"
+    dnl More modern compilers may emit DWARF 5 binaries by default, use DWARF 4 out of precaution
+    if test "$TARGET_OS" != "windows"; then
+      AX_CHECK_COMPILE_FLAG([-gdwarf-4], [BACKTRACE_FLAGS="$BACKTRACE_FLAGS -gdwarf-4"], [
+        if test "$enable_stacktraces" = "yes"; then
+          AC_MSG_ERROR([--enable-stacktraces was specified but cannot set -gdwarf-4])
+        fi
+        AC_MSG_WARN([cannot set -gdwarf-4, stacktraces will be disabled])
+        enable_stacktraces=no
+      ], [$CXXFLAG_WERROR])
+    fi
+    if test "$TARGET_OS" = "darwin"; then
+      AX_CHECK_COMPILE_FLAG([-fno-standalone-debug], [BACKTRACE_FLAGS="$BACKTRACE_FLAGS -fno-standalone-debug"], [
+        if test "$enable_stacktraces" = "yes"; then
+          AC_MSG_ERROR([--enable-stacktraces was specified but cannot set -fno-standalone-debug])
+        fi
+        AC_MSG_WARN([cannot set -fno-standalone-debug, stacktraces will be disabled])
+        enable_stacktraces=no
+      ], [$CXXFLAG_WERROR])
+    fi
+  ], [
+    if test "$enable_stacktraces" = "yes"; then
+      AC_MSG_ERROR([--enable-stacktraces was specified but backtrace.h was not found])
+    fi
+    AC_MSG_WARN([backtrace.h was not found, stacktraces will be disabled])
+    enable_stacktraces=no
+  ])
+fi
+
+AM_CONDITIONAL([ENABLE_STACKTRACES], [test "$enable_stacktraces" = "yes"])
+if test "$enable_stacktraces" = "yes"; then
+    AC_DEFINE(ENABLE_STACKTRACES, 1, [Define this symbol if stacktraces should be enabled])
+else
+    enable_crashhooks=no
+fi
+
+AM_CONDITIONAL([ENABLE_CRASH_HOOKS], [test "$enable_crashhooks" = "yes"])
+if test "$enable_crashhooks" = "yes"; then
+    AC_DEFINE(ENABLE_CRASH_HOOKS, 1, [Define this symbol if crash hooks should be enabled])
+fi
+
+AX_CHECK_LINK_FLAG([-Wl,-wrap=__cxa_allocate_exception], [LINK_WRAP_SUPPORTED=yes],,,)
+AM_CONDITIONAL([CRASH_HOOKS_WRAPPED_CXX_ABI],[test $LINK_WRAP_SUPPORTED = "yes"])
+
+if test "$LINK_WRAP_SUPPORTED" = "yes"; then
+  AC_DEFINE(CRASH_HOOKS_WRAPPED_CXX_ABI, 1, [Define this symbol to use wrapped CXX ABIs for exception stacktraces])
+fi
+
 dnl Check for different ways of gathering OS randomness
 AC_MSG_CHECKING([for Linux getrandom syscall])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <unistd.h>
@@ -1291,15 +1356,6 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
  [ AC_MSG_RESULT([yes]); AC_DEFINE([HAVE_SYSCTL_ARND], [1], [Define this symbol if the BSD sysctl(KERN_ARND) is available]) ],
  [ AC_MSG_RESULT([no])]
 )
-
-dnl ensure backtrace() is found, check -lexecinfo if necessary
-if test "$TARGET_OS" != "windows"; then
-  if test "$enable_stacktraces" != "no"; then
-    AC_SEARCH_LIBS([backtrace], [execinfo], [], [
-      AC_MSG_ERROR([Unable to find backtrace()])
-    ])
-  fi
-fi
 
 AC_MSG_CHECKING([for fdatasync])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <unistd.h>]],
@@ -1999,6 +2055,9 @@ AC_SUBST(USE_QRCODE)
 AC_SUBST(TESTDEFS)
 AC_SUBST(MINIUPNPC_CPPFLAGS)
 AC_SUBST(MINIUPNPC_LIBS)
+AC_SUBST(BACKTRACE_FLAGS)
+AC_SUBST(BACKTRACE_LDFLAGS)
+AC_SUBST(BACKTRACE_LIBS)
 AC_SUBST(GMP_LIBS)
 AC_SUBST(NATPMP_CPPFLAGS)
 AC_SUBST(NATPMP_LIBS)
@@ -2093,11 +2152,11 @@ echo "  target os           = $host_os"
 echo "  build os            = $build_os"
 echo
 echo "  CC                  = $CC"
-echo "  CFLAGS              = $DEBUG_CFLAGS $PTHREAD_CFLAGS $CFLAGS"
+echo "  CFLAGS              = $DEBUG_CFLAGS $PTHREAD_CFLAGS $BACKTRACE_FLAGS $CFLAGS"
 echo "  CPPFLAGS            = $DEBUG_CPPFLAGS $HARDENED_CPPFLAGS $CORE_CPPFLAGS $CPPFLAGS"
 echo "  CXX                 = $CXX"
-echo "  CXXFLAGS            = $DEBUG_CXXFLAGS $HARDENED_CXXFLAGS $WARN_CXXFLAGS $NOWARN_CXXFLAGS $ERROR_CXXFLAGS $GPROF_CXXFLAGS $CORE_CXXFLAGS $CXXFLAGS"
-echo "  LDFLAGS             = $PTHREAD_LIBS $HARDENED_LDFLAGS $GPROF_LDFLAGS $CORE_LDFLAGS $LDFLAGS"
+echo "  CXXFLAGS            = $DEBUG_CXXFLAGS $HARDENED_CXXFLAGS $WARN_CXXFLAGS $NOWARN_CXXFLAGS $ERROR_CXXFLAGS $GPROF_CXXFLAGS $CORE_CXXFLAGS $BACKTRACE_FLAGS $CXXFLAGS"
+echo "  LDFLAGS             = $PTHREAD_LIBS $HARDENED_LDFLAGS $GPROF_LDFLAGS $CORE_LDFLAGS $BACKTRACE_LDFLAGS $LDFLAGS"
 echo "  AR                  = $AR"
 echo "  ARFLAGS             = $ARFLAGS"
 echo

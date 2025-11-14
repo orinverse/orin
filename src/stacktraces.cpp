@@ -131,7 +131,7 @@ static backtrace_state* GetLibBacktraceState()
     // libbacktrace is not able to handle the DWARF debuglink in the .exe
     // but luckily we can just specify the .dbg file here as it's a valid PE/XCOFF file
     static std::string debugFileName = g_exeFileName + ".dbg";
-    static const char* exeFileNamePtr = fs::exists(debugFileName) ? debugFileName.c_str() : g_exeFileName.c_str();
+    static const char* exeFileNamePtr = fs::exists(fs::absolute(fs::PathFromString(debugFileName))) ? debugFileName.c_str() : g_exeFileName.c_str();
 #else
     static const char* exeFileNamePtr = g_exeFileName.empty() ? nullptr : g_exeFileName.c_str();
 #endif
@@ -168,8 +168,6 @@ static __attribute__((noinline)) std::vector<uint64_t> GetStackFrames(size_t ski
 {
 #ifdef ENABLE_STACKTRACES
     // We can't use libbacktrace for stack unwinding on Windows as it returns invalid addresses (like 0x1 or 0xffffffff)
-    static BOOL symInitialized = SymInitialize(GetCurrentProcess(), nullptr, TRUE);
-
     // dbghelp is not thread safe
     static StdMutex m;
     StdLockGuard l(m);
