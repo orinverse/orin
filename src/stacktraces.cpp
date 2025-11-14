@@ -472,14 +472,8 @@ static std::string GetCrashInfoStr(const crash_info& ci, size_t spaces)
     // Check if we have any useful debug information at all
     // libbacktrace may return stackframe_info entries but with empty filenames and functions
     // when it can find the binary but can't resolve symbols
-    bool hasUsefulInfo = [&ci]() {
-        for (const auto& si : ci.stackframeInfos) {
-            if (!si.filename.empty() || !si.function.empty()) {
-                return true;
-            }
-        }
-        return false;
-    }();
+    bool hasUsefulInfo = std::any_of(ci.stackframeInfos.begin(), ci.stackframeInfos.end(),
+                                     [](const auto& si) { return !si.filename.empty() || !si.function.empty(); });
 
     if (!hasUsefulInfo) {
         return GetCrashInfoStrNoDebugInfo(ci);
