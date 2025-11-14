@@ -163,7 +163,8 @@ PE_ALLOWED_LIBRARIES = {
 'msvcrt.dll', # C standard library for MSVC
 'SHELL32.dll', # shell API
 'WS2_32.dll', # sockets
-'bcrypt.dll',
+'bcrypt.dll', # crypto API
+'dbghelp.dll', # debugging routines
 # bitcoin-qt only
 'dwmapi.dll', # desktop window manager
 'GDI32.dll', # graphics device interface
