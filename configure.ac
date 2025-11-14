@@ -952,9 +952,6 @@ case $host in
    *linux*)
      TARGET_OS=linux
      ;;
-   *bsd*)
-     TARGET_OS=bsd
-     ;;
 esac
 
 if test "$use_extended_functional_tests" != "no"; then
@@ -1240,17 +1237,19 @@ if test "$enable_stacktraces" != "no"; then
       BACKTRACE_LIBS="$BACKTRACE_LIBS -ldbghelp"
     else
       AC_CHECK_HEADERS([execinfo.h], [
-        if test "$TARGET_OS" = "bsd"; then
-          AC_SEARCH_LIBS([backtrace], [execinfo], [
-            BACKTRACE_LIBS="$BACKTRACE_LIBS -lexecinfo"
-          ], [
-            if test "$enable_stacktraces" = "yes"; then
-              AC_MSG_ERROR([--enable-stacktraces was specified but cannot locate libexecinfo])
-            fi
-            AC_MSG_WARN([cannot locate libexecinfo, stacktraces will be disabled])
-            enable_stacktraces=no
-          ])
-        fi
+        case $host in
+          *bsd*)
+            AC_SEARCH_LIBS([backtrace], [execinfo], [
+              BACKTRACE_LIBS="$BACKTRACE_LIBS -lexecinfo"
+            ], [
+              if test "$enable_stacktraces" = "yes"; then
+                AC_MSG_ERROR([--enable-stacktraces was specified but cannot locate libexecinfo])
+              fi
+              AC_MSG_WARN([cannot locate libexecinfo, stacktraces will be disabled])
+              enable_stacktraces=no
+            ])
+            ;;
+        esac
         AX_CHECK_LINK_FLAG([-Wl,-export-dynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -Wl,-export-dynamic"], [
           AX_CHECK_LINK_FLAG([-rdynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -rdynamic"], [
             if test "$enable_stacktraces" = "yes"; then
