@@ -469,7 +469,19 @@ std::string GetCrashInfoStrFromSerializedStr(const std::string& ciStr)
 
 static std::string GetCrashInfoStr(const crash_info& ci, size_t spaces)
 {
-    if (ci.stackframeInfos.empty()) {
+    // Check if we have any useful debug information at all
+    // libbacktrace may return stackframe_info entries but with empty filenames and functions
+    // when it can find the binary but can't resolve symbols
+    bool hasUsefulInfo = [&ci]() {
+        for (const auto& si : ci.stackframeInfos) {
+            if (!si.filename.empty() || !si.function.empty()) {
+                return true;
+            }
+        }
+        return false;
+    }();
+
+    if (!hasUsefulInfo) {
         return GetCrashInfoStrNoDebugInfo(ci);
     }
 
