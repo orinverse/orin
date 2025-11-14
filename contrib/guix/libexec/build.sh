@@ -345,10 +345,7 @@ mkdir -p "$DISTSRC"
                 case "$HOST" in
                     *linux*)
                         # Compress DWARF sections in debug files and set proper permissions
-                        find "${DISTNAME}" -name "*.dbg" -type f -print0 | xargs -0 -P"$JOBS" -I{} sh -c '
-                            objcopy --compress-debug-sections=zlib "$1" "$1.tmp" && mv "$1.tmp" "$1"
-                            chmod 644 "$1"
-                        ' _ {}
+                        find "${DISTNAME}" -name "*.dbg" -type f -print0 | xargs -0 -P"$JOBS" -I{} sh -c "objcopy --compress-debug-sections=zlib \"\$1\" \"\$1.tmp\" && mv \"\$1.tmp\" \"\$1\"; chmod 644 \"\$1\"" _ {}
 
                         # Create .build-id tree for perf auto-discovery
                         mkdir -p "${DISTNAME}/usr/lib/debug/.build-id"
