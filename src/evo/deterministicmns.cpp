@@ -722,8 +722,10 @@ bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<co
         }
         LogPrintf("CDeterministicMNManager::%s -- DIP3 is enforced now. nHeight=%d\n", __func__, nHeight);
     }
-    if (nHeight > to_cleanup) to_cleanup = nHeight;
-
+    int current = to_cleanup.load();
+    while (nHeight > current && !to_cleanup.compare_exchange_weak(current, nHeight)) {
+        // Loop continues if compare_exchange_weak failed (another thread changed it) (current is updated to the new value in to_cleanup)
+    }
     return true;
 }
 
