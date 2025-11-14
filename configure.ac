@@ -237,12 +237,6 @@ AC_ARG_ENABLE([lcov-branch-coverage],
   [use_lcov_branch=yes],
   [use_lcov_branch=no])
 
-AC_ARG_ENABLE([threadlocal],
-  [AS_HELP_STRING([--enable-threadlocal],
-  [enable features that depend on the c++ thread_local keyword (currently just thread names in debug logs). (default is to enable if there is platform support)])],
-  [use_thread_local=$enableval],
-  [use_thread_local=auto])
-
 AC_ARG_ENABLE([zmq],
   [AS_HELP_STRING([--disable-zmq],
   [disable ZMQ notifications])],
@@ -952,8 +946,8 @@ case $host in
    *linux*)
      TARGET_OS=linux
      ;;
-   *bsd*)
-     TARGET_OS=bsd
+   *freebsd*)
+     TARGET_OS=freebsd
      ;;
 esac
 
@@ -1192,45 +1186,6 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([
   [AC_MSG_RESULT([no])]
 )
 
-if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
-  TEMP_LDFLAGS="$LDFLAGS"
-  LDFLAGS="$TEMP_LDFLAGS $PTHREAD_CFLAGS"
-  AC_MSG_CHECKING([for thread_local support])
-  AC_LINK_IFELSE([AC_LANG_SOURCE([
-    #include <thread>
-    static thread_local int foo = 0;
-    static void run_thread() { foo++;}
-    int main(){
-    for(int i = 0; i < 10; i++) { std::thread(run_thread).detach();}
-    return foo;
-    }
-    ])],
-    [
-     case $host in
-       *mingw*)
-          dnl mingw32's implementation of thread_local has also been shown to behave
-          dnl erroneously under concurrent usage; see:
-          dnl https://gist.github.com/jamesob/fe9a872051a88b2025b1aa37bfa98605
-          AC_MSG_RESULT([no])
-          ;;
-        *freebsd*)
-          dnl FreeBSD's implementation of thread_local is also buggy (per
-          dnl https://groups.google.com/d/msg/bsdmailinglist/22ncTZAbDp4/Dii_pII5AwAJ)
-          AC_MSG_RESULT([no])
-          ;;
-        *)
-          AC_DEFINE([HAVE_THREAD_LOCAL], [1], [Define if thread_local is supported.])
-          AC_MSG_RESULT([yes])
-          ;;
-      esac
-    ],
-    [
-      AC_MSG_RESULT([no])
-    ]
-  )
-  LDFLAGS="$TEMP_LDFLAGS"
-fi
-
 BACKTRACE_FLAGS=
 BACKTRACE_LDFLAGS=
 BACKTRACE_LIBS=
@@ -1240,17 +1195,19 @@ if test "$enable_stacktraces" != "no"; then
       BACKTRACE_LIBS="$BACKTRACE_LIBS -ldbghelp"
     else
       AC_CHECK_HEADERS([execinfo.h], [
-        if test "$TARGET_OS" = "bsd"; then
-          AC_SEARCH_LIBS([backtrace], [execinfo], [
-            BACKTRACE_LIBS="$BACKTRACE_LIBS -lexecinfo"
-          ], [
-            if test "$enable_stacktraces" = "yes"; then
-              AC_MSG_ERROR([--enable-stacktraces was specified but cannot locate libexecinfo])
-            fi
-            AC_MSG_WARN([cannot locate libexecinfo, stacktraces will be disabled])
-            enable_stacktraces=no
-          ])
-        fi
+        case $host in
+          *bsd*)
+            AC_SEARCH_LIBS([backtrace], [execinfo], [
+              BACKTRACE_LIBS="$BACKTRACE_LIBS -lexecinfo"
+            ], [
+              if test "$enable_stacktraces" = "yes"; then
+                AC_MSG_ERROR([--enable-stacktraces was specified but cannot locate libexecinfo])
+              fi
+              AC_MSG_WARN([cannot locate libexecinfo, stacktraces will be disabled])
+              enable_stacktraces=no
+            ])
+            ;;
+        esac
         AX_CHECK_LINK_FLAG([-Wl,-export-dynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -Wl,-export-dynamic"], [
           AX_CHECK_LINK_FLAG([-rdynamic], [BACKTRACE_LDFLAGS="$BACKTRACE_LDFLAGS -rdynamic"], [
             if test "$enable_stacktraces" = "yes"; then
