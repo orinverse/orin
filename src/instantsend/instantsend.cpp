@@ -66,7 +66,7 @@ CInstantSendManager::~CInstantSendManager() = default;
 bool ShouldReportISLockTiming() { return g_stats_client->active() || LogAcceptDebug(BCLog::INSTANTSEND); }
 
 void CInstantSendManager::EnqueueInstantSendLock(NodeId from, const uint256& hash,
-                                                 const std::shared_ptr<instantsend::InstantSendLock>& islock)
+                                                 std::shared_ptr<instantsend::InstantSendLock> islock)
 {
     if (ShouldReportISLockTiming()) {
         auto time_diff = [&]() -> int64_t {
@@ -86,7 +86,7 @@ void CInstantSendManager::EnqueueInstantSendLock(NodeId from, const uint256& has
     }
 
     LOCK(cs_pendingLocks);
-    pendingInstantSendLocks.emplace(hash, instantsend::PendingISLockFromPeer{from, islock});
+    pendingInstantSendLocks.emplace(hash, instantsend::PendingISLockFromPeer{from, std::move(islock)});
 }
 
 instantsend::PendingState CInstantSendManager::FetchPendingLocks()

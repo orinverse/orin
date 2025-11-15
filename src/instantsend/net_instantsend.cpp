@@ -22,7 +22,7 @@ void NetInstantSend::ProcessMessage(CNode& pfrom, const std::string& msg_type, C
 
     if (!m_is_manager.IsInstantSendEnabled()) return;
 
-    const auto islock = std::make_shared<instantsend::InstantSendLock>();
+    auto islock = std::make_shared<instantsend::InstantSendLock>();
     vRecv >> *islock;
 
     uint256 hash = ::SerializeHash(*islock);
@@ -60,7 +60,7 @@ void NetInstantSend::ProcessMessage(CNode& pfrom, const std::string& msg_type, C
         LogPrint(BCLog::INSTANTSEND, "NetInstantSend -- ISDLOCK txid=%s, islock=%s: received islock, peer=%d\n",
                  islock->txid.ToString(), hash.ToString(), pfrom.GetId());
 
-        m_is_manager.EnqueueInstantSendLock(pfrom.GetId(), hash, islock);
+        m_is_manager.EnqueueInstantSendLock(pfrom.GetId(), hash, std::move(islock));
     }
 }
 

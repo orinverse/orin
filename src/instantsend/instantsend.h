@@ -135,7 +135,7 @@ public:
     /* Helpers for communications between CInstantSendManager & NetInstantSend */
     // This helper returns up to 32 pending locks and remove them from queue of pending
     [[nodiscard]] instantsend::PendingState FetchPendingLocks() EXCLUSIVE_LOCKS_REQUIRED(!cs_pendingLocks);
-    void EnqueueInstantSendLock(NodeId from, const uint256& hash, const std::shared_ptr<instantsend::InstantSendLock>& islock)
+    void EnqueueInstantSendLock(NodeId from, const uint256& hash, std::shared_ptr<instantsend::InstantSendLock> islock)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_pendingLocks);
     [[nodiscard]] std::vector<CTransactionRef> PrepareTxToRetry()
         EXCLUSIVE_LOCKS_REQUIRED(!cs_nonLocked, !cs_pendingRetry);
