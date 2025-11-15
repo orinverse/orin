@@ -168,7 +168,6 @@ Uint256HashSet NetInstantSend::ProcessPendingInstantSendLocks(
     Uint256HashSet badISLocks;
 
     if (ban && !batchVerifier.badSources.empty()) {
-        LOCK(::cs_main);
         for (const auto& nodeId : batchVerifier.badSources) {
             // Let's not be too harsh, as the peer might simply be unlucky and might have sent us an old lock which
             // does not validate anymore due to changed quorums
