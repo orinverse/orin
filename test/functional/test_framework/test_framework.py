@@ -624,11 +624,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             if entry not in ['chainstate', 'blocks', 'indexes', 'evodb']:
                 os.remove(os.path.join(new_data_dir, self.chain, entry))
 
-        write_config(os.path.join(new_data_dir, "dash.conf"), extra_config=
-                "dip3params=2:2\n"
-                f"testactivationheight=v20@{self.v20_height}\n"
-                f"testactivationheight=mn_rr@{self.mn_rr_height}\n",
+        write_config(os.path.join(new_data_dir, "dash.conf"),
                 n=mnidx, chain=self.chain, disable_autoconnect=self.disable_autoconnect)
+        self.append_dip3_config(new_data_dir)
 
         os.makedirs(os.path.join(new_data_dir, 'stderr'), exist_ok=True)
         os.makedirs(os.path.join(new_data_dir, 'stdout'), exist_ok=True)
@@ -1464,11 +1462,7 @@ class DashTestFramework(BitcoinTestFramework):
         old_num_nodes = len(self.nodes)
         super().add_nodes(num_nodes, extra_args, rpchost=rpchost, binary=binary, binary_cli=binary_cli, versions=versions)
         for i in range(old_num_nodes, old_num_nodes + num_nodes):
-            append_config(self.nodes[i].datadir, [
-                "dip3params=2:2",
-                f"testactivationheight=v20@{self.v20_height}",
-                f"testactivationheight=mn_rr@{self.mn_rr_height}",
-            ])
+            self.append_dip3_config(self.nodes[i].datadir)
         if old_num_nodes == 0:
             # controller node is the only node that has an extra option allowing it to submit sporks
             append_config(self.nodes[0].datadir, ["sporkkey=cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"])
@@ -1481,6 +1475,13 @@ class DashTestFramework(BitcoinTestFramework):
         for mn2 in self.mninfo: # type: MasternodeInfo
             if mn2.nodeIdx is not None:
                 mn2.get_node(self).setmnthreadactive(True)
+
+    def append_dip3_config(self, datadir):
+            append_config(datadir, [
+                "dip3params=2:2",
+                f"testactivationheight=v20@{self.v20_height}",
+                f"testactivationheight=mn_rr@{self.mn_rr_height}",
+            ])
 
     def set_dash_test_params(self, num_nodes, masterodes_count, extra_args=None, evo_count=0):
         self.mn_count = masterodes_count
