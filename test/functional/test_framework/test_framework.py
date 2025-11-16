@@ -48,7 +48,6 @@ from .util import (
     check_json_precision,
     copy_datadir,
     force_finish_mnsync,
-    get_chain_conf_names,
     get_datadir_path,
     initialize_datadir,
     p2p_port,
@@ -56,7 +55,8 @@ from .util import (
     satoshi_round,
     softfork_active,
     wait_until_helper,
-    get_chain_folder, rpc_port,
+    get_chain_folder,
+    write_config,
 )
 
 
@@ -607,7 +607,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         return t_node
 
     # TODO: move it to DashTestFramework where it belongs
-    def dynamically_initialize_datadir(self, node_p2p_port, node_rpc_port):
+    def dynamically_initialize_datadir(self, mnidx):
         source_data_dir = get_datadir_path(self.options.tmpdir, 0)  # use node0 as a source
         new_data_dir = get_datadir_path(self.options.tmpdir, len(self.nodes))
 
@@ -624,33 +624,15 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             if entry not in ['chainstate', 'blocks', 'indexes', 'evodb']:
                 os.remove(os.path.join(new_data_dir, self.chain, entry))
 
-        (chain_name_conf_arg, chain_name_conf_arg_value, chain_name_conf_section) = get_chain_conf_names(self.chain)
+        write_config(os.path.join(new_data_dir, "dash.conf"), extra_config=
+                "dip3params=2:2\n"
+                f"testactivationheight=v20@{self.v20_height}\n"
+                f"testactivationheight=mn_rr@{self.mn_rr_height}\n",
+                n=mnidx, chain=self.chain, disable_autoconnect=self.disable_autoconnect)
 
-        with open(os.path.join(new_data_dir, "dash.conf"), 'w', encoding='utf8') as f:
-            f.write("{}={}\n".format(chain_name_conf_arg, chain_name_conf_arg_value))
-            f.write("[{}]\n".format(chain_name_conf_section))
-            f.write("port=" + str(node_p2p_port) + "\n")
-            f.write("rpcport=" + str(node_rpc_port) + "\n")
-            f.write("server=1\n")
-            f.write("rpcdoccheck=1\n")
-            f.write("fallbackfee=0.00001\n")
-            f.write("server=1\n")
-            f.write("keypool=1\n")
-            f.write("discover=0\n")
-            f.write("dnsseed=0\n")
-            f.write("fixedseeds=0\n")
-            f.write("listenonion=0\n")
-            f.write("peertimeout=999999999\n")
-            f.write("printtoconsole=0\n")
-            f.write("upnp=0\n")
-            f.write("natpmp=0\n")
-            f.write("shrinkdebugfile=0\n")
-            f.write("unsafesqlitesync=1\n")
-            f.write("dip3params=2:2\n")
-            f.write(f"testactivationheight=v20@{self.v20_height}\n")
-            f.write(f"testactivationheight=mn_rr@{self.mn_rr_height}\n")
-            os.makedirs(os.path.join(new_data_dir, 'stderr'), exist_ok=True)
-            os.makedirs(os.path.join(new_data_dir, 'stdout'), exist_ok=True)
+        os.makedirs(os.path.join(new_data_dir, 'stderr'), exist_ok=True)
+        os.makedirs(os.path.join(new_data_dir, 'stdout'), exist_ok=True)
+        return new_data_dir
 
     def start_node(self, i, *args, **kwargs):
         """Start a dashd"""
@@ -1600,7 +1582,6 @@ class DashTestFramework(BitcoinTestFramework):
         mn_idx = len(self.nodes)
 
         node_p2p_port = p2p_port(mn_idx)
-        node_rpc_port = rpc_port(mn_idx)
 
         protx_success = False
         try:
@@ -1615,7 +1596,7 @@ class DashTestFramework(BitcoinTestFramework):
             # nothing to do
             return None
 
-        self.dynamically_initialize_datadir(node_p2p_port, node_rpc_port)
+        self.dynamically_initialize_datadir(mn_idx)
         node_info = self.add_dynamically_node(self.extra_args[0])
 
         args = ['-masternodeblsprivkey=%s' % created_mn_info.keyOperator] + node_info.extra_args
