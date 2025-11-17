@@ -595,6 +595,11 @@ public:
                     const std::unique_ptr<ActiveContext>& active_ctx, CJWalletManager* const cj_walletman,
                     const std::unique_ptr<LLMQContext>& llmq_ctx, bool ignore_incoming_txs);
 
+    ~PeerManagerImpl()
+    {
+        RemoveHandlers();
+    }
+
     /** Overridden from CValidationInterface. */
     void BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_recent_confirmed_transactions_mutex);
