@@ -1582,11 +1582,9 @@ class DashTestFramework(BitcoinTestFramework):
     def dynamically_add_masternode(self, evo=False, rnd=None, should_be_rejected=False) -> Optional[MasternodeInfo]:
         mn_idx = len(self.nodes)
 
-        node_p2p_port = p2p_port(mn_idx)
-
         protx_success = False
         try:
-            created_mn_info = self.dynamically_prepare_masternode(mn_idx, node_p2p_port, evo, rnd)
+            created_mn_info = self.dynamically_prepare_masternode(mn_idx, evo, rnd)
             protx_success = True
         except:
             self.log.info("dynamically_prepare_masternode failed")
@@ -1616,10 +1614,11 @@ class DashTestFramework(BitcoinTestFramework):
         self.log.info("Successfully started and synced proTx:"+str(created_mn_info.proTxHash))
         return created_mn_info
 
-    def dynamically_prepare_masternode(self, idx, node_p2p_port, evo=False, rnd=None) -> MasternodeInfo:
+    def dynamically_prepare_masternode(self, idx, evo=False, rnd=None) -> MasternodeInfo:
         mn = MasternodeInfo(evo=evo, legacy=(not softfork_active(self.nodes[0], 'v19')))
         mn.generate_addresses(self.nodes[0])
 
+        node_p2p_port = p2p_port(idx)
         platform_node_id = hash160(b'%d' % rnd).hex() if rnd is not None else hash160(b'%d' % node_p2p_port).hex()
         addrs_platform_p2p = node_p2p_port + 101
         addrs_platform_https = node_p2p_port + 102
