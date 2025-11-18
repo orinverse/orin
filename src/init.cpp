@@ -87,6 +87,7 @@
 #include <flat-database.h>
 #include <governance/governance.h>
 #include <instantsend/instantsend.h>
+#include <instantsend/net_instantsend.h>
 #include <llmq/context.h>
 #include <llmq/dkgsessionmgr.h>
 #include <llmq/options.h>
@@ -250,6 +251,9 @@ void Interrupt(NodeContext& node)
     if (node.active_ctx) {
         node.active_ctx->Interrupt();
     }
+    if (node.peerman) {
+        node.peerman->InterruptHandlers();
+    }
     if (node.llmq_ctx) {
         node.llmq_ctx->Interrupt();
     }
@@ -285,7 +289,9 @@ void PrepareShutdown(NodeContext& node)
     StopREST();
     StopRPC();
     StopHTTPServer();
+
     if (node.active_ctx) node.active_ctx->Stop();
+    if (node.peerman) node.peerman->StopHandlers();
     if (node.llmq_ctx) node.llmq_ctx->Stop();
 
     for (const auto& client : node.chain_clients) {
@@ -2193,6 +2199,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         g_active_notification_interface = std::make_unique<ActiveNotificationInterface>(*node.active_ctx, *node.mn_activeman);
         RegisterValidationInterface(g_active_notification_interface.get());
     }
+    node.peerman->AddExtraHandler(std::make_unique<NetInstantSend>(node.peerman.get(), *node.llmq_ctx->isman, *node.llmq_ctx->qman, chainman.ActiveChainstate()));
 
     // ********************************************************* Step 7d: Setup other Dash services
 
@@ -2288,6 +2295,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // ********************************************************* Step 10a: schedule Dash-specific tasks
 
     node.llmq_ctx->Start(*node.peerman);
+    node.peerman->StartHandlers();
     if (node.active_ctx) node.active_ctx->Start(*node.connman, *node.peerman);
 
     node.scheduler->scheduleEvery(std::bind(&CNetFulfilledRequestManager::DoMaintenance, std::ref(*node.netfulfilledman)), std::chrono::minutes{1});
