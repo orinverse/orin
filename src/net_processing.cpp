@@ -1188,6 +1188,13 @@ static void PushInv(Peer& peer, const CInv& inv)
         return;
     }
 
+    // Skip ISDLOCK inv announcements for peers that want recsigs, as they can reconstruct
+    // the islock from the recsig
+    if (inv.type == MSG_ISDLOCK && peer.m_wants_recsigs) {
+        LogPrint(BCLog::NET, "%s -- skipping ISDLOCK inv (peer wants recsigs): %s peer=%d\n", __func__, inv.ToString(), peer.m_id);
+        return;
+    }
+
     LOCK(inv_relay->m_tx_inventory_mutex);
     if (inv_relay->m_tx_inventory_known_filter.contains(inv.hash)) {
         LogPrint(BCLog::NET, "%s -- skipping known inv: %s peer=%d\n", __func__, inv.ToString(), peer.m_id);
@@ -6258,7 +6265,11 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                     if (islock == nullptr) continue;
                     uint256 isLockHash{::SerializeHash(*islock)};
                     tx_relay->m_tx_inventory_known_filter.insert(isLockHash);
-                    queueAndMaybePushInv(CInv(MSG_ISDLOCK, isLockHash));
+                    // Skip ISDLOCK inv announcements for peers that want recsigs, as they can reconstruct
+                    // the islock from the recsig
+                    if (!peer->m_wants_recsigs) {
+                        queueAndMaybePushInv(CInv(MSG_ISDLOCK, isLockHash));
+                    }
                 }
 
                 // Send an inv for the best ChainLock we have
