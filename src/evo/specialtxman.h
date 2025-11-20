@@ -83,8 +83,7 @@ public:
     // Used for rebuilding diffs from trusted snapshots
     bool RebuildListFromBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
                                const CDeterministicMNList& prevList, const CCoinsViewCache& view, bool debugLogs,
-                               BlockValidationState& state, CDeterministicMNList& mnListRet)
-        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+                               BlockValidationState& state, CDeterministicMNList& mnListRet);
 
 private:
     bool CheckCreditPoolDiffForBlock(const CBlock& block, const CBlockIndex* pindex, const CCbTx& cbTx,
