@@ -219,7 +219,7 @@ public:
     // MN's threshold is calculated as the last dsq count this specific masternode was used in a mixing
     // session plus a margin of 20% of masternode count. In other words we expect at least 20% of unique
     // masternodes before we ever see a masternode that we know already mixed someone's funds earlier.
-    bool IsDsqOver(const uint256& protx_hash, int mn_count) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    bool IsMixingThresholdExceeded(const uint256& protx_hash, int mn_count) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
 
     void AllowMixing(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void DisallowMixing(const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(!cs);

@@ -124,7 +124,7 @@ MessageProcessingResult CCoinJoinClientQueueManager::ProcessMessage(NodeId from,
             LogPrint(BCLog::COINJOIN, "DSQUEUE -- CoinJoin queue is ready, masternode=%s, queue=%s\n", dmn->proTxHash.ToString(), dsq.ToString());
             return ret;
         } else {
-            if (m_mn_metaman.IsDsqOver(dmn->proTxHash, tip_mn_list.GetValidMNsCount())) {
+            if (m_mn_metaman.IsMixingThresholdExceeded(dmn->proTxHash, tip_mn_list.GetValidMNsCount())) {
                 LogPrint(BCLog::COINJOIN, "DSQUEUE -- Masternode %s is sending too many dsq messages\n",
                          dmn->proTxHash.ToString());
                 return ret;
@@ -1174,7 +1174,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
             continue;
         }
 
-        if (m_mn_metaman.IsDsqOver(dmn->proTxHash, nMnCount)) {
+        if (m_mn_metaman.IsMixingThresholdExceeded(dmn->proTxHash, nMnCount)) {
             WalletCJLogPrint(m_wallet, /* Continued */
                              "CCoinJoinClientSession::StartNewQueue -- too early to mix with node masternode=%s\n",
                              dmn->proTxHash.ToString());

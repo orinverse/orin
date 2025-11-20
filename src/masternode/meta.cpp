@@ -90,7 +90,7 @@ CMasternodeMetaInfo& CMasternodeMetaMan::GetMetaInfo(const uint256& proTxHash)
     return it->second;
 }
 
-bool CMasternodeMetaMan::IsDsqOver(const uint256& protx_hash, int mn_count) const
+bool CMasternodeMetaMan::IsMixingThresholdExceeded(const uint256& protx_hash, int mn_count) const
 {
     LOCK(cs);
     auto it = metaInfos.find(protx_hash);
