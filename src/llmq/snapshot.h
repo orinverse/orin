@@ -1,11 +1,11 @@
-// Copyright (c) 2021-2025 The Dash Core developers
+// Copyright (c) 2021-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_LLMQ_SNAPSHOT_H
 #define BITCOIN_LLMQ_SNAPSHOT_H
 
-#include <evo/simplifiedmns.h>
+#include <evo/smldiff.h>
 #include <llmq/commitment.h>
 #include <llmq/params.h>
 #include <saltedhasher.h>
@@ -19,6 +19,8 @@
 
 class CBlockIndex;
 class CEvoDB;
+struct RPCResult;
+
 class UniValue;
 
 namespace llmq {
@@ -82,6 +84,7 @@ public:
         }
     }
 
+    [[nodiscard]] static RPCResult GetJsonHelp(const std::string& key, bool optional);
     [[nodiscard]] UniValue ToJson() const;
 };
 
@@ -116,8 +119,8 @@ public:
     CSimplifiedMNListDiff mnListDiffAtHMinus3C;
 
     bool extraShare{false};
-    std::optional<CQuorumSnapshot> quorumSnapshotAtHMinus4C;
-    std::optional<CSimplifiedMNListDiff> mnListDiffAtHMinus4C;
+    CQuorumSnapshot quorumSnapshotAtHMinus4C;
+    CSimplifiedMNListDiff mnListDiffAtHMinus4C;
 
     std::vector<llmq::CFinalCommitment> lastCommitmentPerIndex;
     std::vector<CQuorumSnapshot> quorumSnapshotList;
@@ -142,12 +145,9 @@ public:
     {
         const_cast<CQuorumRotationInfo*>(this)->SerializationOpBase(s, CSerActionSerialize());
 
-        if (extraShare && quorumSnapshotAtHMinus4C.has_value()) {
-            ::Serialize(s, quorumSnapshotAtHMinus4C.value());
-        }
-
-        if (extraShare && mnListDiffAtHMinus4C.has_value()) {
-            ::Serialize(s, mnListDiffAtHMinus4C.value());
+        if (extraShare) {
+            ::Serialize(s, quorumSnapshotAtHMinus4C);
+            ::Serialize(s, mnListDiffAtHMinus4C);
         }
 
         WriteCompactSize(s, lastCommitmentPerIndex.size());
@@ -171,12 +171,9 @@ public:
     {
         SerializationOpBase(s, CSerActionUnserialize());
 
-        if (extraShare && quorumSnapshotAtHMinus4C.has_value()) {
-            ::Unserialize(s, quorumSnapshotAtHMinus4C.value());
-        }
-
-        if (extraShare && mnListDiffAtHMinus4C.has_value()) {
-            ::Unserialize(s, mnListDiffAtHMinus4C.value());
+        if (extraShare) {
+            ::Unserialize(s, quorumSnapshotAtHMinus4C);
+            ::Unserialize(s, mnListDiffAtHMinus4C);
         }
 
         size_t cnt = ReadCompactSize(s);
@@ -204,6 +201,7 @@ public:
     CQuorumRotationInfo() = default;
     CQuorumRotationInfo(const CQuorumRotationInfo& dmn) {}
 
+    [[nodiscard]] static RPCResult GetJsonHelp(const std::string& key, bool optional);
     [[nodiscard]] UniValue ToJson() const;
 };
 
@@ -222,11 +220,14 @@ private:
 
     CEvoDB& m_evoDb;
 
-    unordered_lru_cache<uint256, CQuorumSnapshot, StaticSaltedHasher> quorumSnapshotCache GUARDED_BY(snapshotCacheCs);
+    Uint256LruHashMap<CQuorumSnapshot> quorumSnapshotCache GUARDED_BY(snapshotCacheCs);
 
 public:
-    explicit CQuorumSnapshotManager(CEvoDB& evoDb) :
-        m_evoDb(evoDb), quorumSnapshotCache(32) {}
+    CQuorumSnapshotManager() = delete;
+    CQuorumSnapshotManager(const CQuorumSnapshotManager&) = delete;
+    CQuorumSnapshotManager& operator=(const CQuorumSnapshotManager&) = delete;
+    explicit CQuorumSnapshotManager(CEvoDB& evoDb);
+    ~CQuorumSnapshotManager();
 
     std::optional<CQuorumSnapshot> GetSnapshotForBlock(Consensus::LLMQType llmqType, const CBlockIndex* pindex);
     void StoreSnapshotForBlock(Consensus::LLMQType llmqType, const CBlockIndex* pindex, const CQuorumSnapshot& snapshot);

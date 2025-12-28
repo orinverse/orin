@@ -1,14 +1,14 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_SPAN_H
 #define BITCOIN_SPAN_H
 
-#include <type_traits>
-#include <cstddef>
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
+#include <cstddef>
+#include <type_traits>
 
 #ifdef DEBUG_CORE
 #define CONSTEXPR_IF_NOT_DEBUG
@@ -243,21 +243,16 @@ T& SpanPopBack(Span<T>& span)
     return back;
 }
 
-//! Convert a data pointer to a std::byte data pointer.
-//! Where possible, please use the safer AsBytes helpers.
-inline const std::byte* BytePtr(const void* data) { return reinterpret_cast<const std::byte*>(data); }
-inline std::byte* BytePtr(void* data) { return reinterpret_cast<std::byte*>(data); }
-
 // From C++20 as_bytes and as_writeable_bytes
 template <typename T>
 Span<const std::byte> AsBytes(Span<T> s) noexcept
 {
-    return {BytePtr(s.data()), s.size_bytes()};
+    return {reinterpret_cast<const std::byte*>(s.data()), s.size_bytes()};
 }
 template <typename T>
 Span<std::byte> AsWritableBytes(Span<T> s) noexcept
 {
-    return {BytePtr(s.data()), s.size_bytes()};
+    return {reinterpret_cast<std::byte*>(s.data()), s.size_bytes()};
 }
 
 template <typename V>
@@ -272,10 +267,10 @@ Span<std::byte> MakeWritableByteSpan(V&& v) noexcept
 }
 
 // Helper functions to safely cast to unsigned char pointers.
-inline unsigned char* UCharCast(char* c) { return (unsigned char*)c; }
+inline unsigned char* UCharCast(char* c) { return reinterpret_cast<unsigned char*>(c); }
 inline unsigned char* UCharCast(unsigned char* c) { return c; }
-inline unsigned char* UCharCast(std::byte* c) { return (unsigned char*)c; }
-inline const unsigned char* UCharCast(const char* c) { return (unsigned char*)c; }
+inline unsigned char* UCharCast(std::byte* c) { return reinterpret_cast<unsigned char*>(c); }
+inline const unsigned char* UCharCast(const char* c) { return reinterpret_cast<const unsigned char*>(c); }
 inline const unsigned char* UCharCast(const unsigned char* c) { return c; }
 inline const unsigned char* UCharCast(const std::byte* c) { return reinterpret_cast<const unsigned char*>(c); }
 

@@ -19,6 +19,9 @@ class WalletHDTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 2
         self.extra_args = [['-usehd=0'], ['-usehd=1', '-keypool=0']]
+        # whitelist peers to speed up tx relay / mempool sync
+        for args in self.extra_args:
+            args.append("-whitelist=noban@127.0.0.1")
 
     def setup_network(self):
         self.add_nodes(self.num_nodes, self.extra_args)
@@ -130,7 +133,7 @@ class WalletHDTest(BitcoinTestFramework):
 
         # send a tx and make sure its using the internal chain for the changeoutput
         txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), 1)
-        outs = self.nodes[1].decoderawtransaction(self.nodes[1].gettransaction(txid)['hex'])['vout']
+        outs = self.nodes[1].gettransaction(txid=txid, verbose=True)['decoded']['vout']
         keypath = ""
         for out in outs:
             if out['value'] != 1:
@@ -139,7 +142,7 @@ class WalletHDTest(BitcoinTestFramework):
         assert_equal(keypath[0:13], "m/44'/1'/0'/1")
 
         if not self.options.descriptors:
-            # NOTE: sethdseed can't replace existing seed in Dash Core
+            # NOTE: sethdseed can't replace existing seed in Orin Core
             # though bitcoin lets to do it. Therefore this functional test
             # are not the same with bitcoin's
             # Generate a new HD seed on node 1 and make sure it is set
@@ -181,8 +184,8 @@ class WalletHDTest(BitcoinTestFramework):
             # Sethdseed parameter validity
             assert_raises_rpc_error(-1, 'sethdseed', self.nodes[0].sethdseed, False, new_seed, 0)
             assert_raises_rpc_error(-5, "Invalid private key", wallet_no_seed.sethdseed, False, "not_wif")
-            assert_raises_rpc_error(-1, "JSON value is not a boolean as expected", wallet_no_seed.sethdseed, "Not_bool")
-            assert_raises_rpc_error(-1, "JSON value is not a string as expected", wallet_no_seed.sethdseed, False, True)
+            assert_raises_rpc_error(-1, "JSON value of type string is not of expected type bool", wallet_no_seed.sethdseed, "Not_bool")
+            assert_raises_rpc_error(-1, "JSON value of type bool is not of expected type string", wallet_no_seed.sethdseed, False, True)
             assert_raises_rpc_error(-5, "Already have this key", wallet_no_seed.sethdseed, False, non_hd_key)
 
             self.log.info('Test sethdseed restoring with keys outside of the initial keypool')
@@ -234,7 +237,6 @@ class WalletHDTest(BitcoinTestFramework):
             txid = self.nodes[0].sendtoaddress(addr, 1)
             origin_rpc.sendrawtransaction(self.nodes[0].gettransaction(txid)['hex'])
             self.generate(self.nodes[0], 1)
-            self.sync_blocks()
             origin_rpc.gettransaction(txid)
             assert_raises_rpc_error(-5, 'Invalid or non-wallet transaction id', restore_rpc.gettransaction, txid)
             out_of_kp_txid = txid
@@ -245,7 +247,6 @@ class WalletHDTest(BitcoinTestFramework):
             txid = self.nodes[0].sendtoaddress(last_addr, 1)
             origin_rpc.sendrawtransaction(self.nodes[0].gettransaction(txid)['hex'])
             self.generate(self.nodes[0], 1)
-            self.sync_blocks()
             origin_rpc.gettransaction(txid)
             restore_rpc.gettransaction(txid)
             assert_raises_rpc_error(-5, 'Invalid or non-wallet transaction id', restore_rpc.gettransaction, out_of_kp_txid)

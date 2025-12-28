@@ -1,11 +1,11 @@
-// Copyright (c) 2023 The Dash Core developers
+// Copyright (c) 2023 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <governance/exceptions.h>
+#include <tinyformat.h>
 
 #include <iostream>
-#include <sstream>
 
 std::ostream& operator<<(std::ostream& os, governance_exception_type_enum_t eType)
 {
@@ -32,11 +32,8 @@ std::ostream& operator<<(std::ostream& os, governance_exception_type_enum_t eTyp
 CGovernanceException::CGovernanceException(const std::string& strMessageIn,
                                            governance_exception_type_enum_t eTypeIn,
                                            int nNodePenaltyIn) :
-    strMessage(),
-    eType(eTypeIn),
-    nNodePenalty(nNodePenaltyIn)
+    strMessage{strprintf("%s:%s", eTypeIn, strMessageIn)},
+    eType{eTypeIn},
+    nNodePenalty{nNodePenaltyIn}
 {
-    std::ostringstream ostr;
-    ostr << eType << ":" << strMessageIn;
-    strMessage = ostr.str();
 }

@@ -1,11 +1,12 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
 #include <fs.h>
 #include <logging.h>
+#include <util/system.h>
 #include <wallet/db.h>
 
 #include <exception>
@@ -14,6 +15,7 @@
 #include <system_error>
 #include <vector>
 
+namespace wallet {
 std::vector<fs::path> ListDatabases(const fs::path& wallet_dir)
 {
     std::vector<fs::path> paths;
@@ -37,12 +39,12 @@ std::vector<fs::path> ListDatabases(const fs::path& wallet_dir)
                 (IsBDBFile(BDBDataFile(it->path())) || IsSQLiteFile(SQLiteDataFile(it->path())))) {
                 // Found a directory which contains wallet.dat btree file, add it as a wallet.
                 paths.emplace_back(path);
-            } else if (it.depth() == 0 && it->symlink_status().type() == fs::file_type::regular && IsBDBFile(it->path())) {
+            } else if (it.depth() == 0 && it->symlink_status().type() == fs::file_type::regular && it->path().extension() != ".bak") {
                 if (it->path().filename() == "wallet.dat") {
                     // Found top-level wallet.dat btree file, add top level directory ""
                     // as a wallet.
                     paths.emplace_back();
-                } else {
+                } else if (IsBDBFile(it->path())) {
                     // Found top-level btree file not called wallet.dat. Current bitcoin
                     // software will never create these files but will allow them to be
                     // opened in a shared database environment for backwards compatibility.
@@ -89,7 +91,7 @@ bool IsBDBFile(const fs::path& path)
     if (ec) LogPrintf("%s: %s %s\n", __func__, ec.message(), fs::PathToString(path));
     if (size < 4096) return false;
 
-    std::ifstream file{path, std::ios::binary};
+    std::ifstream file = fsbridge::ifstream(path, std::ios::binary);
     if (!file.is_open()) return false;
 
     file.seekg(12, std::ios::beg); // Magic bytes start at offset 12
@@ -113,7 +115,7 @@ bool IsSQLiteFile(const fs::path& path)
     if (ec) LogPrintf("%s: %s %s\n", __func__, ec.message(), fs::PathToString(path));
     if (size < 512) return false;
 
-    std::ifstream file{path, std::ios::binary};
+    std::ifstream file = fsbridge::ifstream(path, std::ios::binary);
     if (!file.is_open()) return false;
 
     // Magic is at beginning and is 16 bytes long
@@ -136,3 +138,12 @@ bool IsSQLiteFile(const fs::path& path)
     // Check the application id matches our network magic
     return memcmp(Params().MessageStart(), app_id, 4) == 0;
 }
+
+void ReadDatabaseArgs(const ArgsManager& args, DatabaseOptions& options)
+{
+    // Override current options with args values, if any were specified
+    options.use_unsafe_sync = args.GetBoolArg("-unsafesqlitesync", options.use_unsafe_sync);
+    options.use_shared_memory = !args.GetBoolArg("-privdb", !options.use_shared_memory);
+    options.max_log_mb = args.GetIntArg("-dblogsize", options.max_log_mb);
+}
+} // namespace wallet

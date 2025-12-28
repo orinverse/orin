@@ -13,7 +13,7 @@ Example usage:
 import sys
 from typing import Dict, List
 
-import lief #type:ignore
+import lief
 
 # Debian 11 (Bullseye) EOL: 2026. https://wiki.debian.org/LTS
 #
@@ -96,7 +96,7 @@ ELF_ABIS: Dict[lief.ELF.ARCH, Dict[lief.ENDIANNESS, List[int]]] = {
 
 # Allowed NEEDED libraries
 ELF_ALLOWED_LIBRARIES = {
-# dashd and dash-qt
+# orind and orin-qt
 'libgcc_s.so.1', # GCC base support
 'libc.so.6', # C library
 'libpthread.so.0', # threading
@@ -110,7 +110,7 @@ ELF_ALLOWED_LIBRARIES = {
 'ld64.so.2', # POWER64 ABIv2 dynamic linker
 'ld-linux-riscv64-lp64d.so.1', # 64-bit RISC-V dynamic linker
 'libz.so.1', # zlib
-# dash-qt only
+# orin-qt only
 'libxcb.so.1', # part of X11
 'libxcb-shm.so.0', # X11 shared memory extension
 'libxkbcommon.so.0', # keyboard keymapping
@@ -252,7 +252,7 @@ def check_MACHO_sdk(binary) -> bool:
     return False
 
 def check_MACHO_lld(binary) -> bool:
-    if binary.build_version.tools[0].version == [18, 1, 6]:
+    if binary.build_version.tools[0].version == [18, 1, 8]:
         return True
     return False
 

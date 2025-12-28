@@ -40,7 +40,7 @@ class MempoolUnbroadcastTest(BitcoinTestFramework):
             wallet_tx_hsh = node.sendtoaddress(addr, 0.0001)
 
         # generate a txn using sendrawtransaction
-        txFS = self.wallet.create_self_transfer(from_node=node)
+        txFS = self.wallet.create_self_transfer()
         rpc_tx_hsh = node.sendrawtransaction(txFS["hex"])
 
         # check transactions are in unbroadcast using rpc
@@ -90,9 +90,7 @@ class MempoolUnbroadcastTest(BitcoinTestFramework):
 
         self.log.info("Rebroadcast transaction and ensure it is not added to unbroadcast set when already in mempool")
         rpc_tx_hsh = node.sendrawtransaction(txFS["hex"])
-        mempool = node.getrawmempool(True)
-        assert rpc_tx_hsh in mempool
-        assert not mempool[rpc_tx_hsh]['unbroadcast']
+        assert not node.getmempoolentry(rpc_tx_hsh)['unbroadcast']
 
     def test_txn_removal(self):
         self.log.info("Test that transactions removed from mempool are removed from unbroadcast set")

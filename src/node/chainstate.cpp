@@ -4,19 +4,36 @@
 
 #include <node/chainstate.h>
 
+#include <chain.h>
+#include <coins.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
 #include <deploymentstatus.h>
 #include <node/blockstorage.h>
+#include <sync.h>
+#include <threadsafety.h>
+#include <tinyformat.h>
+#include <txdb.h>
+#include <txmempool.h>
+#include <uint256.h>
+#include <util/translation.h>
 #include <validation.h>
 
+#include <bls/bls.h>
 #include <evo/chainhelper.h>
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <gsl/pointers.h>
 #include <llmq/context.h>
 
+#include <atomic>
+#include <cassert>
+#include <memory>
+#include <vector>
+
+namespace node {
 std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      ChainstateManager& chainman,
                                                      CGovernanceManager& govman,
@@ -31,6 +48,7 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      std::unique_ptr<CMNHFManager>& mnhf_manager,
                                                      std::unique_ptr<LLMQContext>& llmq_ctx,
                                                      CTxMemPool* mempool,
+                                                     const fs::path& data_dir,
                                                      bool fPruneMode,
                                                      bool is_addrindex_enabled,
                                                      bool is_governance_enabled,
@@ -45,6 +63,7 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      int64_t nCoinCacheUsage,
                                                      bool block_tree_db_in_memory,
                                                      bool coins_db_in_memory,
+                                                     bool orin_dbs_in_memory,
                                                      std::function<bool()> shutdown_requested,
                                                      std::function<void()> coins_error_cb)
 {
@@ -54,9 +73,8 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
 
     LOCK(cs_main);
 
-    int64_t nEvoDbCache{64 * 1024 * 1024}; // TODO
     evodb.reset();
-    evodb = std::make_unique<CEvoDB>(nEvoDbCache, false, fReset || fReindexChainState);
+    evodb = std::make_unique<CEvoDB>(util::DbWrapperParams{.path = data_dir, .memory = orin_dbs_in_memory, .wipe = fReset || fReindexChainState});
 
     mnhf_manager.reset();
     mnhf_manager = std::make_unique<CMNHFManager>(*evodb);
@@ -72,8 +90,8 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
     pblocktree.reset(new CBlockTreeDB(nBlockTreeDBCache, block_tree_db_in_memory, fReset));
 
     DashChainstateSetup(chainman, govman, mn_metaman, mn_sync, sporkman, mn_activeman, chain_helper, cpoolman,
-                        dmnman, evodb, mnhf_manager, llmq_ctx, mempool, fReset, fReindexChainState,
-                        consensus_params);
+                        dmnman, evodb, mnhf_manager, llmq_ctx, mempool, data_dir, orin_dbs_in_memory,
+                        /*llmq_dbs_wipe=*/fReset || fReindexChainState, consensus_params);
 
     if (fReset) {
         pblocktree->WriteReindexing(true);
@@ -94,7 +112,7 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
     }
 
     // TODO: Remove this when pruning is fixed.
-    // See https://github.com/dashpay/dash/pull/1817 and https://github.com/dashpay/dash/pull/1743
+    // See https://github.com/orinpay/orin/pull/1817 and https://github.com/orinpay/orin/pull/1743
     if (is_governance_enabled && !is_txindex_enabled && network_id != CBaseChainParams::REGTEST) {
         return ChainstateLoadingError::ERROR_TXINDEX_DISABLED_WHEN_GOV_ENABLED;
     }
@@ -147,17 +165,17 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
 
     for (CChainState* chainstate : chainman.GetAll()) {
         chainstate->InitCoinsDB(
-            /* cache_size_bytes */ nCoinDBCache,
-            /* in_memory */ coins_db_in_memory,
-            /* should_wipe */ fReset || fReindexChainState);
+            /*cache_size_bytes=*/nCoinDBCache,
+            /*in_memory=*/coins_db_in_memory,
+            /*should_wipe=*/fReset || fReindexChainState);
 
         if (coins_error_cb) {
             chainstate->CoinsErrorCatcher().AddReadErrCallback(coins_error_cb);
         }
 
-        // If necessary, upgrade from older database format.
+        // Refuse to load unsupported database format.
         // This is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
-        if (!chainstate->CoinsDB().Upgrade()) {
+        if (chainstate->CoinsDB().NeedsUpgrade()) {
             return ChainstateLoadingError::ERROR_CHAINSTATE_UPGRADE_FAILED;
         }
 
@@ -187,11 +205,13 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
         }
     }
 
-    if (!dmnman->MigrateDBIfNeeded() || !dmnman->MigrateDBIfNeeded2()) {
-        return ChainstateLoadingError::ERROR_UPGRADING_EVO_DB;
-    }
     if (!mnhf_manager->ForceSignalDBUpdate()) {
         return ChainstateLoadingError::ERROR_UPGRADING_SIGNALS_DB;
+    }
+
+    // Check if nVersion-first migration is needed and perform it
+    if (dmnman->IsMigrationRequired() && !dmnman->MigrateLegacyDiffs(chainman.ActiveChainstate().m_chain.Tip())) {
+        return ChainstateLoadingError::ERROR_UPGRADING_EVO_DB;
     }
 
     return std::nullopt;
@@ -210,13 +230,14 @@ void DashChainstateSetup(ChainstateManager& chainman,
                          std::unique_ptr<CMNHFManager>& mnhf_manager,
                          std::unique_ptr<LLMQContext>& llmq_ctx,
                          CTxMemPool* mempool,
-                         bool fReset,
-                         bool fReindexChainState,
+                         const fs::path& data_dir,
+                         bool llmq_dbs_in_memory,
+                         bool llmq_dbs_wipe,
                          const Consensus::Params& consensus_params)
 {
     // Same logic as pblocktree
     dmnman.reset();
-    dmnman = std::make_unique<CDeterministicMNManager>(chainman.ActiveChainstate(), *evodb);
+    dmnman = std::make_unique<CDeterministicMNManager>(*evodb, mn_metaman);
 
     cpoolman.reset();
     cpoolman = std::make_unique<CCreditPoolManager>(*evodb);
@@ -227,7 +248,8 @@ void DashChainstateSetup(ChainstateManager& chainman,
     }
     llmq_ctx.reset();
     llmq_ctx = std::make_unique<LLMQContext>(chainman, *dmnman, *evodb, mn_metaman, *mnhf_manager, sporkman,
-                                             *mempool, mn_activeman.get(), mn_sync, /*unit_tests=*/false, /*wipe=*/fReset || fReindexChainState);
+                                             *mempool, mn_activeman.get(), mn_sync,
+                                             util::DbWrapperParams{.path = data_dir, .memory = llmq_dbs_in_memory, .wipe = llmq_dbs_wipe});
     mempool->ConnectManagers(dmnman.get(), llmq_ctx->isman.get());
     // Enable CMNHFManager::{Process, Undo}Block
     mnhf_manager->ConnectManagers(&chainman, llmq_ctx->qman.get());
@@ -316,3 +338,4 @@ std::optional<ChainstateLoadVerifyError> VerifyLoadedChainstate(ChainstateManage
 
     return std::nullopt;
 }
+} // namespace node

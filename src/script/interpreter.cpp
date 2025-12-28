@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -217,31 +217,6 @@ bool CheckSignatureEncoding(const std::vector<unsigned char> &vchSig, unsigned i
 bool static CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, const SigVersion &sigversion, ScriptError* serror) {
     if ((flags & SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(vchPubKey)) {
         return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
-    }
-    return true;
-}
-
-bool CheckMinimalPush(const valtype& data, opcodetype opcode) {
-    // Excludes OP_1NEGATE, OP_1-16 since they are by definition minimal
-    assert(0 <= opcode && opcode <= OP_PUSHDATA4);
-    if (data.size() == 0) {
-        // Should have used OP_0.
-        return opcode == OP_0;
-    } else if (data.size() == 1 && data[0] >= 1 && data[0] <= 16) {
-        // Should have used OP_1 .. OP_16.
-        return false;
-    } else if (data.size() == 1 && data[0] == 0x81) {
-        // Should have used OP_1NEGATE.
-        return false;
-    } else if (data.size() <= 75) {
-        // Must have used a direct push (opcode indicating number of bytes pushed + those bytes).
-        return opcode == data.size();
-    } else if (data.size() <= 255) {
-        // Must have used OP_PUSHDATA.
-        return opcode == OP_PUSHDATA1;
-    } else if (data.size() <= 65535) {
-        // Must have used OP_PUSHDATA2.
-        return opcode == OP_PUSHDATA2;
     }
     return true;
 }
@@ -1426,7 +1401,7 @@ public:
         // Serialize the nSequence
         if (nInput != nIn && (fHashSingle || fHashNone))
             // let the others update at will
-            ::Serialize(s, (int)0);
+            ::Serialize(s, int{0});
         else
             ::Serialize(s, txTo.vin[nInput].nSequence);
     }
@@ -1468,7 +1443,7 @@ public:
 template <class T>
 uint256 GetPrevoutsSHA256(const T& txTo)
 {
-    CHashWriter ss(SER_GETHASH, 0);
+    HashWriter ss{};
     for (const auto& txin : txTo.vin) {
         ss << txin.prevout;
     }
@@ -1479,7 +1454,7 @@ uint256 GetPrevoutsSHA256(const T& txTo)
 template <class T>
 uint256 GetSequencesSHA256(const T& txTo)
 {
-    CHashWriter ss(SER_GETHASH, 0);
+    HashWriter ss{};
     for (const auto& txin : txTo.vin) {
         ss << txin.nSequence;
     }
@@ -1490,7 +1465,7 @@ uint256 GetSequencesSHA256(const T& txTo)
 template <class T>
 uint256 GetOutputsSHA256(const T& txTo)
 {
-    CHashWriter ss(SER_GETHASH, 0);
+    HashWriter ss{};
     for (const auto& txout : txTo.vout) {
         ss << txout;
     }
@@ -1521,7 +1496,7 @@ template void PrecomputedTransactionData::Init(const CMutableTransaction& txTo, 
 template PrecomputedTransactionData::PrecomputedTransactionData(const CTransaction& txTo);
 template PrecomputedTransactionData::PrecomputedTransactionData(const CMutableTransaction& txTo);
 
-static bool HandleMissingData(MissingDataBehavior mdb)
+[[maybe_unused]] static bool HandleMissingData(MissingDataBehavior mdb)
 {
     switch (mdb) {
     case MissingDataBehavior::ASSERT_FAIL:
@@ -1550,7 +1525,7 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
     CTransactionSignatureSerializer<T> txTmp(txTo, scriptCode, nIn, nHashType);
 
     // Serialize and hash
-    CHashWriter ss(SER_GETHASH, 0);
+    HashWriter ss{};
     ss << txTmp << nHashType;
     return ss.GetHash();
 }

@@ -13,6 +13,8 @@
 #include <validation.h>
 #include <validationinterface.h>
 
+using node::SnapshotMetadata;
+
 namespace {
 
 const std::vector<std::shared_ptr<CBlock>>* g_chain;
@@ -24,7 +26,7 @@ void initialize_chain()
     g_chain = &chain;
 }
 
-FUZZ_TARGET_INIT(utxo_snapshot, initialize_chain)
+FUZZ_TARGET(utxo_snapshot, .init = initialize_chain)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     std::unique_ptr<const TestingSetup> setup{MakeNoLogFileContext<const TestingSetup>()};
@@ -36,20 +38,20 @@ FUZZ_TARGET_INIT(utxo_snapshot, initialize_chain)
     Assert(!chainman.SnapshotBlockhash());
 
     {
-        CAutoFile outfile{fsbridge::fopen(snapshot_path, "wb"), SER_DISK, CLIENT_VERSION};
+        AutoFile outfile{fsbridge::fopen(snapshot_path, "wb")};
         const auto file_data{ConsumeRandomLengthByteVector(fuzzed_data_provider)};
         outfile << Span<const uint8_t>{file_data};
     }
 
     const auto ActivateFuzzedSnapshot{[&] {
-        CAutoFile infile{fsbridge::fopen(snapshot_path, "rb"), SER_DISK, CLIENT_VERSION};
+        AutoFile infile{fsbridge::fopen(snapshot_path, "rb")};
         SnapshotMetadata metadata;
         try {
             infile >> metadata;
         } catch (const std::ios_base::failure&) {
             return false;
         }
-        return chainman.ActivateSnapshot(infile, metadata, /* in_memory */ true);
+        return chainman.ActivateSnapshot(infile, metadata, /*in_memory=*/true);
     }};
 
     if (fuzzed_data_provider.ConsumeBool()) {

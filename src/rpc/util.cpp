@@ -50,7 +50,8 @@ void RPCTypeCheck(const UniValue& params,
 void RPCTypeCheckArgument(const UniValue& value, const UniValueType& typeExpected)
 {
     if (!typeExpected.typeAny && value.type() != typeExpected.type) {
-        throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Expected type %s, got %s", uvTypeName(typeExpected.type), uvTypeName(value.type())));
+        throw JSONRPCError(RPC_TYPE_ERROR,
+                           strprintf("JSON value of type %s is not of expected type %s", uvTypeName(value.type()), uvTypeName(typeExpected.type)));
     }
 }
 
@@ -60,7 +61,7 @@ void RPCTypeCheckObj(const UniValue& o,
     bool fStrict)
 {
     for (const auto& t : typesExpected) {
-        const UniValue& v = find_value(o, t.first);
+        const UniValue& v = o.find_value(t.first);
         if (!fAllowNull && v.isNull())
             throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Missing %s", t.first));
 
@@ -107,7 +108,7 @@ uint256 ParseHashV(const UniValue& v, std::string strName)
 }
 uint256 ParseHashO(const UniValue& o, std::string strKey)
 {
-    return ParseHashV(find_value(o, strKey), strKey);
+    return ParseHashV(o.find_value(strKey), strKey);
 }
 std::vector<unsigned char> ParseHexV(const UniValue& v, std::string strName)
 {
@@ -120,7 +121,7 @@ std::vector<unsigned char> ParseHexV(const UniValue& v, std::string strName)
 }
 std::vector<unsigned char> ParseHexO(const UniValue& o, std::string strKey)
 {
-    return ParseHexV(find_value(o, strKey), strKey);
+    return ParseHexV(o.find_value(strKey), strKey);
 }
 
 int32_t ParseInt32V(const UniValue& v, const std::string &strName)
@@ -147,7 +148,7 @@ bool ParseBoolV(const UniValue& v, const std::string &strName)
     if (v.isBool())
         return v.get_bool();
     else if (v.isNum())
-        strBool = ToString(v.get_int());
+        strBool = ToString(v.getInt<int>());
     else if (v.isStr())
         strBool = v.get_str();
 
@@ -202,12 +203,12 @@ std::string ShellQuoteIfNeeded(const std::string& s)
 
 std::string HelpExampleCli(const std::string& methodname, const std::string& args)
 {
-    return "> dash-cli " + methodname + " " + args + "\n";
+    return "> orin-cli " + methodname + " " + args + "\n";
 }
 
 std::string HelpExampleCliNamed(const std::string& methodname, const RPCArgList& args)
 {
-    std::string result = "> dash-cli -named " + methodname;
+    std::string result = "> orin-cli -named " + methodname;
     for (const auto& argpair: args) {
         const auto& value = argpair.second.isStr()
                 ? argpair.second.get_str()
@@ -290,15 +291,13 @@ CTxDestination AddAndGetMultisigDestination(const int required, const std::vecto
         throw JSONRPCError(RPC_INVALID_PARAMETER, (strprintf("redeemScript exceeds size limit: %d > %d", script_out.size(), MAX_SCRIPT_ELEMENT_SIZE)));
     }
 
-    // Make the address (simpler implementation in compare to bitcoin)
-    return AddAndGetDestinationForScript(keystore, script_out);
+    return AddAndGetDestinationForScript(keystore, script_out, OutputType::LEGACY);
 }
 
 class DescribeAddressVisitor
 {
 public:
-
-    explicit DescribeAddressVisitor() {}
+    explicit DescribeAddressVisitor() = default;
 
     UniValue operator()(const CNoDestination &dest) const { return UniValue(UniValue::VOBJ); }
 
@@ -322,7 +321,7 @@ UniValue DescribeAddress(const CTxDestination& dest)
 
 unsigned int ParseConfirmTarget(const UniValue& value, unsigned int max_target)
 {
-    const int target{value.get_int()};
+    const int target{value.getInt<int>()};
     const unsigned int unsigned_target{static_cast<unsigned int>(target)};
     if (target < 1 || unsigned_target > max_target) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid conf_target, must be between %u and %u", 1, max_target));
@@ -376,7 +375,7 @@ struct Sections {
             if (arg.m_type_str.size() != 0 && push_name) {
                 left += "\"" + arg.GetName() + "\": " + arg.m_type_str.at(0);
             } else {
-                left += push_name ? arg.ToStringObj(/* oneline */ false) : arg.ToString(/* oneline */ false);
+                left += push_name ? arg.ToStringObj(/*oneline=*/false) : arg.ToString(/*oneline=*/false);
             }
             left += ",";
             PushSection({left, arg.ToDescriptionString()});
@@ -579,13 +578,12 @@ std::string RPCHelpMan::ToString() const
             if (was_optional) ret += ") ";
             was_optional = false;
         }
-        ret += arg.ToString(/* oneline */ true);
+        ret += arg.ToString(/*oneline=*/true);
     }
     if (was_optional) ret += " )";
-    ret += "\n";
 
     // Description
-    ret += m_description;
+    ret += "\n\n" + TrimString(m_description) + "\n";
 
     // Arguments
     Sections sections;
@@ -793,11 +791,14 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
     }
     case Type::OBJ_DYN:
     case Type::OBJ: {
+        if (m_inner.empty()) {
+            sections.PushSection({indent + maybe_key + "{}", Description("empty JSON object")});
+            return;
+        }
         sections.PushSection({indent + maybe_key + "{", Description("json object")});
         for (const auto& i : m_inner) {
             i.ToSections(sections, OuterType::OBJ, current_indent + 2);
         }
-        CHECK_NONFATAL(!m_inner.empty());
         if (m_type == Type::OBJ_DYN && m_inner.back().m_type != Type::ELISION) {
             // If the dictionary keys are dynamic, use three dots for continuation
             sections.PushSection({indent_next + "...", ""});
@@ -846,6 +847,17 @@ bool RPCResult::MatchesType(const UniValue& result) const
     }
     } // no default case, so the compiler can warn about missing cases
     NONFATAL_UNREACHABLE();
+}
+
+void RPCResult::CheckInnerDoc() const
+{
+    if (m_type == Type::OBJ) {
+        // May or may not be empty
+        return;
+    }
+    // Everything else must either be empty or not
+    const bool inner_needed{m_type == Type::ARR || m_type == Type::ARR_FIXED || m_type == Type::OBJ_DYN};
+    CHECK_NONFATAL(inner_needed != m_inner.empty());
 }
 
 std::string RPCArg::ToStringObj(const bool oneline) const
@@ -923,11 +935,11 @@ std::string RPCArg::ToString(const bool oneline) const
 static std::pair<int64_t, int64_t> ParseRange(const UniValue& value)
 {
     if (value.isNum()) {
-        return {0, value.get_int64()};
+        return {0, value.getInt<int64_t>()};
     }
     if (value.isArray() && value.size() == 2 && value[0].isNum() && value[1].isNum()) {
-        int64_t low = value[0].get_int64();
-        int64_t high = value[1].get_int64();
+        int64_t low = value[0].getInt<int64_t>();
+        int64_t high = value[1].getInt<int64_t>();
         if (low > high) throw JSONRPCError(RPC_INVALID_PARAMETER, "Range specified as [begin,end] must not have begin after end");
         return {low, high};
     }
@@ -996,10 +1008,10 @@ std::vector<CScript> EvalDescriptorStringOrObject(const UniValue& scanobject, Fl
     if (scanobject.isStr()) {
         desc_str = scanobject.get_str();
     } else if (scanobject.isObject()) {
-        UniValue desc_uni = find_value(scanobject, "desc");
+        const UniValue& desc_uni{scanobject.find_value("desc")};
         if (desc_uni.isNull()) throw JSONRPCError(RPC_INVALID_PARAMETER, "Descriptor needs to be provided in scan object");
         desc_str = desc_uni.get_str();
-        UniValue range_uni = find_value(scanobject, "range");
+        const UniValue& range_uni{scanobject.find_value("range")};
         if (!range_uni.isNull()) {
             range = ParseDescriptorRange(range_uni);
         }

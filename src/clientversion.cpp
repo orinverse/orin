@@ -1,18 +1,22 @@
-// Copyright (c) 2012-2020 The Bitcoin Core developers
+// Copyright (c) 2012-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <clientversion.h>
+#include <util/translation.h>
 
 #include <tinyformat.h>
 
+#include <sstream>
+#include <string>
+#include <vector>
 
 /**
  * Name of client reported in the 'version' message. Report the same name
- * for both dashd and dash-qt, to make it harder for attackers to
+ * for both orind and orin-qt, to make it harder for attackers to
  * target servers or GUI users specifically.
  */
-const std::string CLIENT_NAME("Dash Core");
+const std::string CLIENT_NAME("Orin Core");
 
 
 #ifdef HAVE_BUILD_INFO
@@ -23,7 +27,8 @@ const std::string CLIENT_NAME("Dash Core");
 //   - "// No build information available", if proper git information is not available
 #endif
 
-//! git will put "#define ARCHIVE_GIT_DESCRIPTION ..." on the next line inside archives. $Format:%n#define ARCHIVE_GIT_DESCRIPTION "%(describe:abbrev=12)"$
+//! git will put "#define ARCHIVE_GIT_DESCRIPTION ..." on the next line inside archives. 
+#define ARCHIVE_GIT_DESCRIPTION "v23.0.0-rc.3-264-g98600eb0cd02"
 
 #if CLIENT_VERSION_IS_RELEASE
     #define BUILD_DESC "v" PACKAGE_VERSION
@@ -72,4 +77,42 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const 
     }
     ss << "/";
     return ss.str();
+}
+
+std::string CopyrightHolders(const std::string& strPrefix, unsigned int nStartYear, unsigned int nEndYear)
+{
+    const auto copyright_devs = strprintf(_(COPYRIGHT_HOLDERS).translated, COPYRIGHT_HOLDERS_SUBSTITUTION);
+    std::string strCopyrightHolders = strPrefix + strprintf(" %u-%u ", nStartYear, nEndYear) + copyright_devs;
+
+    // Check for untranslated substitution to make sure Orin Core copyright is not removed by accident
+    if (copyright_devs.find("Orin Core") == std::string::npos) {
+        strCopyrightHolders += "\n" + strPrefix + strprintf(" %u-%u ", 2014, nEndYear) + "The Orin Core developers";
+    }
+    // Check for untranslated substitution to make sure Bitcoin Core copyright is not removed by accident
+    if (copyright_devs.find("Bitcoin Core") == std::string::npos) {
+        strCopyrightHolders += "\n" + strPrefix + strprintf(" %u-%u ", 2009, nEndYear) + "The Bitcoin Core developers";
+    }
+    return strCopyrightHolders;
+}
+
+std::string LicenseInfo()
+{
+    const std::string URL_SOURCE_CODE = "<https://github.com/orinverse/orin>";
+
+    const std::string prefix = _("Copyright (C)").translated;
+    const std::string copyright_lines =
+        strprintf("%s %u %s", prefix, COPYRIGHT_YEAR, "The Orin Core developers") + "\n" +
+        strprintf("%s %u-%u %s", prefix, 2014, COPYRIGHT_YEAR, "The Dash Core developers") + "\n" +
+        strprintf("%s %u-%u %s", prefix, 2009, COPYRIGHT_YEAR, "The Bitcoin Core developers");
+
+    return copyright_lines + "\n" +
+           strprintf(_("Please contribute if you find %s useful. "
+                       "Visit %s for further information about the software.").translated, PACKAGE_NAME, "<" PACKAGE_URL ">") +
+           "\n" +
+           strprintf(_("The source code is available from %s.").translated, URL_SOURCE_CODE) +
+           "\n" +
+           "\n" +
+           _("This is experimental software.").translated + "\n" +
+           strprintf(_("Distributed under the MIT software license, see the accompanying file %s or %s").translated, "COPYING", "<https://opensource.org/licenses/MIT>") +
+           "\n";
 }

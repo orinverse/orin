@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Copyright (c) 2017 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -309,6 +309,7 @@ void CExtPubKey::DecodeWithVersion(const unsigned char code[BIP32_EXTKEY_WITH_VE
 }
 
 bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
+    if (nDepth == std::numeric_limits<unsigned char>::max()) return false;
     out.nDepth = nDepth + 1;
     CKeyID id = pubkey.GetID();
     memcpy(out.vchFingerprint, &id, 4);

@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -39,7 +39,7 @@ public:
         return m_fuzzed_data_provider.ConsumeBool();
     }
 
-    virtual ~FuzzedSignatureChecker() {}
+    virtual ~FuzzedSignatureChecker() = default;
 };
 } // namespace
 
@@ -47,8 +47,8 @@ FUZZ_TARGET(signature_checker)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     const unsigned int flags = fuzzed_data_provider.ConsumeIntegral<unsigned int>();
-    const auto script_1 = ConsumeScript(fuzzed_data_provider, 65536);
-    const auto script_2 = ConsumeScript(fuzzed_data_provider, 65536);
+    const auto script_1{ConsumeScript(fuzzed_data_provider)};
+    const auto script_2{ConsumeScript(fuzzed_data_provider)};
     std::vector<std::vector<unsigned char>> stack;
     (void)EvalScript(stack, script_1, flags, FuzzedSignatureChecker(fuzzed_data_provider), SigVersion::BASE, nullptr);
     if (!IsValidFlagCombination(flags)) {

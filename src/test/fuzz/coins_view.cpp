@@ -10,7 +10,6 @@
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <key.h>
-#include <node/coinstats.h>
 #include <policy/policy.h>
 #include <primitives/transaction.h>
 #include <pubkey.h>
@@ -44,7 +43,7 @@ void initialize_coins_view()
     g_setup = testing_setup.get();
 }
 
-FUZZ_TARGET_INIT(coins_view, initialize_coins_view)
+FUZZ_TARGET(coins_view, .init = initialize_coins_view)
 {
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};
     CCoinsView backend_coins_view;
@@ -52,7 +51,7 @@ FUZZ_TARGET_INIT(coins_view, initialize_coins_view)
     COutPoint random_out_point;
     Coin random_coin;
     CMutableTransaction random_mutable_transaction;
-    while (fuzzed_data_provider.ConsumeBool()) {
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
         CallOneOf(
             fuzzed_data_provider,
             [&] {
@@ -119,7 +118,7 @@ FUZZ_TARGET_INIT(coins_view, initialize_coins_view)
             [&] {
                 CCoinsMapMemoryResource resource;
                 CCoinsMap coins_map{0, SaltedOutpointHasher{/*deterministic=*/true}, CCoinsMap::key_equal{}, &resource};
-                while (fuzzed_data_provider.ConsumeBool()) {
+                LIMITED_WHILE (fuzzed_data_provider.ConsumeBool(), 10000) {
                     CCoinsCacheEntry coins_cache_entry;
                     coins_cache_entry.flags = fuzzed_data_provider.ConsumeIntegral<unsigned char>();
                     if (fuzzed_data_provider.ConsumeBool()) {
@@ -271,16 +270,6 @@ FUZZ_TARGET_INIT(coins_view, initialize_coins_view)
                     return;
                 }
                 (void)GetTransactionSigOpCount(transaction, coins_view_cache, flags);
-            },
-            [&] {
-                CCoinsStats stats{CoinStatsHashType::HASH_SERIALIZED};
-                bool expected_code_path = false;
-                try {
-                    (void)GetUTXOStats(&coins_view_cache, g_setup->m_node.chainman->m_blockman, stats);
-                } catch (const std::logic_error&) {
-                    expected_code_path = true;
-                }
-                assert(expected_code_path);
             });
     }
 }

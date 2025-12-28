@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Bitcoin Core developers
+// Copyright (c) 2020-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -30,7 +30,7 @@ void initialize_script_sign()
     SelectParams(CBaseChainParams::REGTEST);
 }
 
-FUZZ_TARGET_INIT(script_sign, initialize_script_sign)
+FUZZ_TARGET(script_sign, .init = initialize_script_sign)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     const std::vector<uint8_t> key = ConsumeRandomLengthByteVector(fuzzed_data_provider, 128);
@@ -48,7 +48,7 @@ FUZZ_TARGET_INIT(script_sign, initialize_script_sign)
 
     {
         std::map<CPubKey, KeyOriginInfo> hd_keypaths;
-        while (fuzzed_data_provider.ConsumeBool()) {
+        LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
             const std::optional<CPubKey> pub_key = ConsumeDeserializable<CPubKey>(fuzzed_data_provider);
             if (!pub_key) {
                 break;
@@ -110,7 +110,7 @@ FUZZ_TARGET_INIT(script_sign, initialize_script_sign)
             }
             if (n_in < script_tx_to.vin.size()) {
                 (void)SignSignature(provider, ConsumeScript(fuzzed_data_provider), script_tx_to, n_in, ConsumeMoney(fuzzed_data_provider), fuzzed_data_provider.ConsumeIntegral<int>());
-                MutableTransactionSignatureCreator signature_creator{&tx_to, n_in, ConsumeMoney(fuzzed_data_provider), fuzzed_data_provider.ConsumeIntegral<int>()};
+                MutableTransactionSignatureCreator signature_creator{tx_to, n_in, ConsumeMoney(fuzzed_data_provider), fuzzed_data_provider.ConsumeIntegral<int>()};
                 std::vector<unsigned char> vch_sig;
                 CKeyID address;
                 if (fuzzed_data_provider.ConsumeBool()) {
@@ -123,7 +123,7 @@ FUZZ_TARGET_INIT(script_sign, initialize_script_sign)
                 (void)signature_creator.CreateSig(provider, vch_sig, address, ConsumeScript(fuzzed_data_provider), SigVersion::BASE);
             }
             std::map<COutPoint, Coin> coins;
-            while (fuzzed_data_provider.ConsumeBool()) {
+            LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
                 const std::optional<COutPoint> outpoint = ConsumeDeserializable<COutPoint>(fuzzed_data_provider);
                 if (!outpoint) {
                     break;

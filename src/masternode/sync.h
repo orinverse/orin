@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #ifndef BITCOIN_MASTERNODE_SYNC_H
@@ -53,7 +53,11 @@ private:
     CNetFulfilledRequestManager& m_netfulfilledman;
 
 public:
+    CMasternodeSync() = delete;
+    CMasternodeSync(const CMasternodeSync&) = delete;
+    CMasternodeSync& operator=(const CMasternodeSync&) = delete;
     explicit CMasternodeSync(CConnman& _connman, CNetFulfilledRequestManager& netfulfilledman);
+    ~CMasternodeSync();
 
     void SendGovernanceSyncRequest(CNode* pnode) const;
 

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Name=Orin Core
+Comment=Orin P2P Cryptocurrency
+Comment[de]=Verbinde mit dem Orin peer-to-peer Netzwerk
+Comment[fr]=Orin, monnaie virtuelle cryptographique pair à pair
+Comment[tr]=Orin, eşten eşe kriptografik sanal para birimi
+Exec=orin-qt %u
+Terminal=false
+Type=Application
+Icon=orin128
+MimeType=x-scheme-handler/orin;
+Categories=Office;Finance;P2P;Network;Qt;
+StartupWMClass=Orin-qt

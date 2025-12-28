@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 #ifndef BITCOIN_WALLET_HDCHAIN_H
 #define BITCOIN_WALLET_HDCHAIN_H
@@ -7,6 +7,7 @@
 #include <script/keyorigin.h>
 #include <sync.h>
 
+namespace wallet {
 /* hd account data model */
 class CHDAccount
 {
@@ -122,7 +123,7 @@ class CHDPubKey
 {
 private:
     static const int CURRENT_VERSION = 1;
-    int nVersion{CHDPubKey::CURRENT_VERSION};
+    [[maybe_unused]] int nVersion{CHDPubKey::CURRENT_VERSION};
 
 public:
     CExtPubKey extPubKey{};
@@ -139,5 +140,12 @@ public:
 
     std::string GetKeyPath() const;
 };
+
+/** Purpose code used for DIP9 (feature derivation paths) */
+constexpr uint8_t BIP32_PURPOSE_FEATURE{9};
+/** Purpose code allotted to BIP 44 (standard derivation paths) */
+constexpr uint8_t BIP32_PURPOSE_STANDARD{44};
+
+} // namespace wallet
 
 #endif // BITCOIN_WALLET_HDCHAIN_H

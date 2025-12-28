@@ -1,5 +1,5 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -124,12 +124,9 @@ class CRPCTable
 {
 private:
     std::map<std::string, std::vector<const CRPCCommand*>> mapCommands;
-    std::multimap<std::string, std::vector<UniValue>> mapPlatformRestrictions;
 public:
     CRPCTable();
     std::string help(const std::string& name, const JSONRPCRequest& helpreq) const;
-
-    void InitPlatformRestrictions();
 
     /**
      * Execute a method.

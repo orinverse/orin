@@ -66,12 +66,12 @@
          transform="matrix(0.28222223,0,0,0.28222223,263.62161,572.00923)"
          style="fill:none;stroke:#ffffff">
         <g
-           style="fill:none;stroke:#ffffff;stroke-width:20;stroke-miterlimit:4;stroke-dasharray:none"
+           style="fill:none;stroke:#ffffff;stroke-width:20;stroke-miterlimit:4;stroke-orinarray:none"
            transform="translate(303.46093,-4.9296877)"
            id="g5317">
           <path
              id="rect5315"
-             style="opacity:1;fill:none;fill-opacity:1;stroke:#ffffff;stroke-width:20;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+             style="opacity:1;fill:none;fill-opacity:1;stroke:#ffffff;stroke-width:20;stroke-miterlimit:4;stroke-orinarray:none;stroke-orinoffset:0;stroke-opacity:1"
              d="m -1334.1996,-1796.9898 h 179.7406 v 179.7405 h -179.7406 z m -92,0 h 179.7406 v 179.7405 h -179.7406 z m 46,48 h 179.7406 v 179.7405 h -179.7406 z m 0,-94 h 179.7406 v 179.7405 h -179.7406 z m 0,48 h 179.7406 v 179.7405 h -179.7406 z"
              inkscape:connector-curvature="0" />
         </g>
@@ -94,7 +94,7 @@
          height="7.9375"
          width="7.9375"
          id="rect5425"
-         style="opacity:1;vector-effect:none;fill:#ff0000;fill-opacity:1;stroke:none;stroke-width:3.35253906;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" />
+         style="opacity:1;vector-effect:none;fill:#ff0000;fill-opacity:1;stroke:none;stroke-width:3.35253906;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-orinarray:none;stroke-orinoffset:0;stroke-opacity:1" />
     </g>
   </g>
 </svg>

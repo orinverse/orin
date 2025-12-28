@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2020 The Bitcoin Core developers
-# Copyright (c) 2023-2024 The Dash Core developers
+# Copyright (c) 2023-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the -alertnotify, -blocknotify, -chainlocknotify, -instantsendnotify and -walletnotify options."""
@@ -27,18 +27,21 @@ def notify_outputname(walletname, txid):
 
 class NotificationsTest(DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(6, 4)
+        self.set_orin_test_params(6, 4)
 
     def setup_network(self):
         self.wallet = ''.join(chr(i) for i in range(FILE_CHAR_START, FILE_CHAR_END) if chr(i) not in FILE_CHARS_DISALLOWED)
         self.alertnotify_dir = os.path.join(self.options.tmpdir, "alertnotify")
         self.blocknotify_dir = os.path.join(self.options.tmpdir, "blocknotify")
         self.walletnotify_dir = os.path.join(self.options.tmpdir, "walletnotify")
+        self.shutdownnotify_dir = os.path.join(self.options.tmpdir, "shutdownnotify")
+        self.shutdownnotify_file = os.path.join(self.shutdownnotify_dir, "shutdownnotify.txt")
         self.chainlocknotify_dir = os.path.join(self.options.tmpdir, "chainlocknotify")
         self.instantsendnotify_dir = os.path.join(self.options.tmpdir, "instantsendnotify")
         os.mkdir(self.alertnotify_dir)
         os.mkdir(self.blocknotify_dir)
         os.mkdir(self.walletnotify_dir)
+        os.mkdir(self.shutdownnotify_dir)
         os.mkdir(self.chainlocknotify_dir)
         os.mkdir(self.instantsendnotify_dir)
 
@@ -47,6 +50,7 @@ class NotificationsTest(DashTestFramework):
         self.extra_args = [[
             f"-alertnotify=echo > {os.path.join(self.alertnotify_dir, '%s')}",
             f"-blocknotify=echo > {os.path.join(self.blocknotify_dir, '%s')}",
+            f"-shutdownnotify=echo > {self.shutdownnotify_file}",
             f"-chainlocknotify=echo > {os.path.join(self.chainlocknotify_dir, '%s')}",
         ], [
             "-rescan",
@@ -103,16 +107,27 @@ class NotificationsTest(DashTestFramework):
         self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 4070908800)
         self.wait_for_sporks_same()
+        self.log.info("Mine quorum for InstantSend")
         (quorum_info_i_0, quorum_info_i_1) = self.mine_cycle_quorum()
+        self.log.info("Mine quorum for ChainLocks")
+        if len(self.nodes[0].quorum('list')['llmq_test']) == 0:
+            self.mine_quorum(llmq_type_name='llmq_test', llmq_type=104)
+        else:
+            self.log.info("Quorum `llmq_test` already exist")
         self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 0)
         self.wait_for_sporks_same()
 
         self.log.info("Mine single block, wait for chainlock")
         self.bump_mocktime(1)
+        pre_tip = self.nodes[0].getbestblockhash()
         tip = self.generate(self.nodes[0], 1, sync_fun=self.no_op)[-1]
         self.wait_for_chainlocked_block_all_nodes(tip)
         # directory content should equal the chainlocked block hash
-        assert_equal([tip], sorted(os.listdir(self.chainlocknotify_dir)))
+        cl_hashes = sorted(os.listdir(self.chainlocknotify_dir))
+        if len(cl_hashes) <= 1:
+            assert_equal([tip], cl_hashes)
+        else:
+            assert_equal(sorted([tip, pre_tip]), cl_hashes)
 
         if self.is_wallet_compiled():
             self.log.info("test -instantsendnotify")
@@ -121,9 +136,11 @@ class NotificationsTest(DashTestFramework):
             tx_count = 10
             for _ in range(tx_count):
                 txid = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 1)
-                self.wait_for_instantlock(txid, self.nodes[1])
+                self.bump_mocktime(30)
+                self.wait_for_instantlock(txid, self.nodes[0])
 
             # wait at most 10 seconds for expected number of files before reading the content
+            self.bump_mocktime(30)
             self.wait_until(lambda: len(os.listdir(self.instantsendnotify_dir)) == tx_count, timeout=10)
 
             # directory content should equal the generated transaction hashes
@@ -131,6 +148,10 @@ class NotificationsTest(DashTestFramework):
             assert_equal(sorted(txids_rpc), sorted(os.listdir(self.instantsendnotify_dir)))
 
         # TODO: add test for `-alertnotify` large fork notifications
+
+        self.log.info("test -shutdownnotify")
+        self.stop_nodes()
+        self.wait_until(lambda: os.path.isfile(self.shutdownnotify_file), timeout=10)
 
     def expect_wallet_notify(self, tx_details):
         self.wait_until(lambda: len(os.listdir(self.walletnotify_dir)) >= len(tx_details), timeout=10)

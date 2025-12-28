@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -30,16 +30,15 @@
 #include <wallet/wallet.h>
 #include <chrono>
 
+using wallet::CCoinControl;
+using wallet::DEFAULT_PAY_TX_FEE;
+
 #include <array>
 #include <fstream>
 #include <memory>
 
-#include <QFontMetrics>
 #include <QScrollBar>
 #include <QSettings>
-#include <QTextDocument>
-
-#define SEND_CONFIRM_DELAY   3
 
 static constexpr std::array confTargets{2, 4, 6, 12, 24, 48, 144, 504, 1008};
 int getConfTargetForIndex(int index) {
@@ -76,7 +75,6 @@ SendCoinsDialog::SendCoinsDialog(bool _fCoinJoin, QWidget* parent) :
                       ui->labelCoinControlQuantityText,
                       ui->labelCoinControlBytesText,
                       ui->labelCoinControlAmountText,
-                      ui->labelCoinControlLowOutputText,
                       ui->labelCoinControlFeeText,
                       ui->labelCoinControlAfterFeeText,
                       ui->labelCoinControlChangeText,
@@ -112,21 +110,18 @@ SendCoinsDialog::SendCoinsDialog(bool _fCoinJoin, QWidget* parent) :
     QAction *clipboardFeeAction = new QAction(tr("Copy fee"), this);
     QAction *clipboardAfterFeeAction = new QAction(tr("Copy after fee"), this);
     QAction *clipboardBytesAction = new QAction(tr("Copy bytes"), this);
-    QAction *clipboardLowOutputAction = new QAction(tr("Copy dust"), this);
     QAction *clipboardChangeAction = new QAction(tr("Copy change"), this);
     connect(clipboardQuantityAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardQuantity);
     connect(clipboardAmountAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardAmount);
     connect(clipboardFeeAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardFee);
     connect(clipboardAfterFeeAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardAfterFee);
     connect(clipboardBytesAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardBytes);
-    connect(clipboardLowOutputAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardLowOutput);
     connect(clipboardChangeAction, &QAction::triggered, this, &SendCoinsDialog::coinControlClipboardChange);
     ui->labelCoinControlQuantity->addAction(clipboardQuantityAction);
     ui->labelCoinControlAmount->addAction(clipboardAmountAction);
     ui->labelCoinControlFee->addAction(clipboardFeeAction);
     ui->labelCoinControlAfterFee->addAction(clipboardAfterFeeAction);
     ui->labelCoinControlBytes->addAction(clipboardBytesAction);
-    ui->labelCoinControlLowOutput->addAction(clipboardLowOutputAction);
     ui->labelCoinControlChange->addAction(clipboardChangeAction);
 
     // init transaction fee section
@@ -367,16 +362,31 @@ bool SendCoinsDialog::send(const QList<SendCoinsRecipient>& recipients, QString&
         formatted_short.erase(formatted_short.begin() + MAX_SEND_POPUP_ENTRIES, formatted_short.end());
     }
 
-    if (model->wallet().privateKeysDisabled()) {
-        question_string.append(tr("Do you want to draft this transaction?"));
+    // Wrap the whole text in a global span to control its styling properly
+    question_string.append("<span style='font-weight:normal;'>");
+
+    /*: Message displayed when attempting to create a transaction. Cautionary text to prompt the user to verify
+        that the displayed transaction details represent the transaction the user intends to create. */
+    question_string.append(tr("Do you want to create this transaction?"));
+    question_string.append("<br /><span style='font-size:10pt;'>");
+    // TODO: re-enable it when external signer will be backported
+    // if (model->wallet().privateKeysDisabled() && !model->wallet().hasExternalSigner()) {
+    const bool external_signer_available{false};
+    if (external_signer_available) {
+        /*: Text to inform a user attempting to create a transaction of their current options. At this stage,
+            a user can only create a PSBT. This string is displayed when private keys are disabled and an external
+            signer is not available. */
+        question_string.append(tr("Please, review your transaction proposal. This will produce a Partially Signed Blockchain Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(PACKAGE_NAME));
+    } else if (model->getOptionsModel()->getEnablePSBTControls()) {
+        /*: Text to inform a user attempting to create a transaction of their current options. At this stage,
+            a user can send their transaction or create a PSBT. This string is displayed when both private keys
+            and PSBT controls are enabled. */
+        question_string.append(tr("Please, review your transaction. You can create and send this transaction or create a Partially Signed Blockchain Transaction (PSBT), which you can save or copy and then sign with, e.g., an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(PACKAGE_NAME));
     } else {
-        question_string.append(tr("Are you sure you want to send?"));
+        /*: Text to prompt a user to review the details of the transaction they are attempting to send. */
+        question_string.append(tr("Please, review your transaction."));
     }
-    if (model->wallet().privateKeysDisabled()) {
-        question_string.append("<br /><span style='font-size:10pt;'>");
-        question_string.append(tr("This will produce a Partially Signed Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(PACKAGE_NAME));
-        question_string.append("</span>");
-    }
+    question_string.append("</span>");
     question_string.append("<br /><br />");
     question_string.append(formatted_short.join("<br />"));
     question_string.append("<br />");
@@ -434,7 +444,7 @@ bool SendCoinsDialog::send(const QList<SendCoinsRecipient>& recipients, QString&
             question_string.append("<br />");
             question_string.append("<span style='" + GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_WARNING) + "'>");
             question_string.append(tr("Warning: Using %1 with %2 or more inputs can harm your privacy and is not recommended").arg(strCoinJoinName).arg(10));
-            question_string.append("<a style='" + GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_COMMAND) + "' href=\"https://docs.dash.org/en/stable/wallets/dashcore/coinjoin-instantsend.html#inputs\">");
+            question_string.append(" <a style='" + GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_COMMAND) + "' href=\"https://docs.orin.cash/en/stable/wallets/orincore/coinjoin-instantsend.html#inputs\">");
             question_string.append(tr("Click to learn more"));
             question_string.append("</a>");
             question_string.append("</span> ");
@@ -445,8 +455,7 @@ bool SendCoinsDialog::send(const QList<SendCoinsRecipient>& recipients, QString&
     question_string.append("<hr />");
     CAmount totalAmount = m_current_transaction->getTotalTransactionAmount() + txFee;
     QStringList alternativeUnits;
-    for (const BitcoinUnits::Unit u : BitcoinUnits::availableUnits())
-    {
+    for (const BitcoinUnit u : BitcoinUnits::availableUnits()) {
         if(u != model->getOptionsModel()->getDisplayUnit())
             alternativeUnits.append(BitcoinUnits::formatHtmlWithUnit(u, totalAmount));
     }
@@ -456,6 +465,9 @@ bool SendCoinsDialog::send(const QList<SendCoinsRecipient>& recipients, QString&
         .arg(BitcoinUnits::formatHtmlWithUnit(model->getOptionsModel()->getDisplayUnit(), totalAmount)));
     question_string.append(QString("<br /><span style='font-size:10pt; font-weight:normal;'>(=%1)</span>")
         .arg(alternativeUnits.join(" " + tr("or") + " ")));
+
+    // Close the global span we opened at the very beginning
+    question_string.append("</span>");
 
     if (formatted.size() > 1) {
         informative_text = tr("To review recipient list click \"Show Details…\"");
@@ -474,20 +486,20 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
     if (!PrepareSendText(question_string, informative_text, detailed_text)) return;
     assert(m_current_transaction);
 
-    const QString confirmation = model->wallet().privateKeysDisabled() ? tr("Confirm transaction proposal") : tr("Confirm send coins");
-    const QString confirmButtonText = model->wallet().privateKeysDisabled() ? tr("Create Unsigned") : tr("Send");
-    SendConfirmationDialog confirmationDialog(confirmation, question_string, informative_text, detailed_text, SEND_CONFIRM_DELAY, confirmButtonText, this);
-    confirmationDialog.exec();
-    QMessageBox::StandardButton retval = static_cast<QMessageBox::StandardButton>(confirmationDialog.result());
+    const QString confirmation = tr("Confirm send coins");
+    auto confirmationDialog = new SendConfirmationDialog(confirmation, question_string, informative_text, detailed_text, SEND_CONFIRM_DELAY, !model->wallet().privateKeysDisabled(), model->getOptionsModel()->getEnablePSBTControls(), this);
+    confirmationDialog->setAttribute(Qt::WA_DeleteOnClose);
+    // TODO: Replace QDialog::exec() with safer QDialog::show().
+    const auto retval = static_cast<QMessageBox::StandardButton>(confirmationDialog->exec());
 
-    if(retval != QMessageBox::Yes)
+    if(retval != QMessageBox::Yes && retval != QMessageBox::Save)
     {
         fNewRecipientAllowed = true;
         return;
     }
 
     bool send_failure = false;
-    if (model->wallet().privateKeysDisabled()) {
+    if (retval == QMessageBox::Save) {
         CMutableTransaction mtx = CMutableTransaction{*(m_current_transaction->getWtx())};
         PartiallySignedTransaction psbtx(mtx);
         bool complete = false;
@@ -537,16 +549,10 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
             assert(false);
         }
     } else {
+        assert(!model->wallet().privateKeysDisabled());
         // now send the prepared transaction
-        WalletModel::SendCoinsReturn sendStatus = model->sendCoins(*m_current_transaction, m_coin_control->IsUsingCoinJoin());
-        // process sendStatus and on error generate message shown to user
-        processSendCoinsReturn(sendStatus);
-
-        if (sendStatus.status == WalletModel::OK) {
-            Q_EMIT coinsSent(m_current_transaction->getWtx()->GetHash());
-        } else {
-            send_failure = true;
-        }
+        model->sendCoins(*m_current_transaction, m_coin_control->IsUsingCoinJoin());
+        Q_EMIT coinsSent(m_current_transaction->getWtx()->GetHash());
     }
     if (!send_failure) {
         accept();
@@ -603,10 +609,15 @@ SendCoinsEntry *SendCoinsDialog::addEntry()
     entry->clear();
     entry->setFocus();
     ui->scrollAreaWidgetContents->resize(ui->scrollAreaWidgetContents->sizeHint());
-    qApp->processEvents();
-    QScrollBar* bar = ui->scrollArea->verticalScrollBar();
-    if(bar)
-        bar->setSliderPosition(bar->maximum());
+
+    // Scroll to the newly added entry on a QueuedConnection because Qt doesn't
+    // adjust the scroll area and scrollbar immediately when the widget is added.
+    // Invoking on a DirectConnection will only scroll to the second-to-last entry.
+    QMetaObject::invokeMethod(ui->scrollArea, [this] {
+        if (ui->scrollArea->verticalScrollBar()) {
+            ui->scrollArea->verticalScrollBar()->setValue(ui->scrollArea->verticalScrollBar()->maximum());
+        }
+    }, Qt::QueuedConnection);
 
     updateTabsAndLabels();
     return entry;
@@ -910,12 +921,6 @@ void SendCoinsDialog::coinControlClipboardBytes()
     GUIUtil::setClipboard(ui->labelCoinControlBytes->text().replace(ASYMP_UTF8, ""));
 }
 
-// Coin Control: copy label "Dust" to clipboard
-void SendCoinsDialog::coinControlClipboardLowOutput()
-{
-    GUIUtil::setClipboard(ui->labelCoinControlLowOutput->text());
-}
-
 // Coin Control: copy label "Change" to clipboard
 void SendCoinsDialog::coinControlClipboardChange()
 {
@@ -937,9 +942,9 @@ void SendCoinsDialog::coinControlFeatureChanged(bool checked)
 // Coin Control: button inputs -> show actual coin control dialog
 void SendCoinsDialog::coinControlButtonClicked()
 {
-    CoinControlDialog dlg(*m_coin_control, model, this);
-    dlg.exec();
-    coinControlUpdateLabels();
+    auto dlg = new CoinControlDialog(*m_coin_control, model);
+    connect(dlg, &QDialog::finished, this, &SendCoinsDialog::coinControlUpdateLabels);
+    GUIUtil::ShowModalDialogAsynchronously(dlg);
 }
 
 // Coin Control: checkbox custom change address
@@ -974,7 +979,7 @@ void SendCoinsDialog::coinControlChangeEdited(const QString& text)
         }
         else if (!IsValidDestination(dest)) // Invalid address
         {
-            ui->labelCoinControlChangeLabel->setText(tr("Warning: Invalid Dash address"));
+            ui->labelCoinControlChangeLabel->setText(tr("Warning: Invalid Orin address"));
         }
         else // Valid address
         {
@@ -1059,8 +1064,8 @@ void SendCoinsDialog::keepChangeAddressChanged(bool checked)
     fKeepChangeAddress = checked;
 }
 
-SendConfirmationDialog::SendConfirmationDialog(const QString& title, const QString& text, const QString& informative_text, const QString& detailed_text, int _secDelay, const QString& _confirmButtonText, QWidget* parent)
-    : QMessageBox(parent), secDelay(_secDelay), confirmButtonText(_confirmButtonText)
+SendConfirmationDialog::SendConfirmationDialog(const QString& title, const QString& text, const QString& informative_text, const QString& detailed_text, int _secDelay, bool enable_send, bool always_show_unsigned, QWidget* parent)
+    : QMessageBox(parent), secDelay(_secDelay), m_enable_send(enable_send)
 {
     GUIUtil::updateFonts();
     setIcon(QMessageBox::Question);
@@ -1069,18 +1074,20 @@ SendConfirmationDialog::SendConfirmationDialog(const QString& title, const QStri
     setInformativeText(informative_text);
     setDetailedText(detailed_text);
     setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
+    if (always_show_unsigned || !enable_send) addButton(QMessageBox::Save);
     setDefaultButton(QMessageBox::Cancel);
     yesButton = button(QMessageBox::Yes);
     if (confirmButtonText.isEmpty()) {
         confirmButtonText = yesButton->text();
     }
-    updateYesButton();
+    m_psbt_button = button(QMessageBox::Save);
+    updateButtons();
     connect(&countDownTimer, &QTimer::timeout, this, &SendConfirmationDialog::countDown);
 }
 
 int SendConfirmationDialog::exec()
 {
-    updateYesButton();
+    updateButtons();
     countDownTimer.start(1s);
     return QMessageBox::exec();
 }
@@ -1088,7 +1095,7 @@ int SendConfirmationDialog::exec()
 void SendConfirmationDialog::countDown()
 {
     secDelay--;
-    updateYesButton();
+    updateButtons();
 
     if(secDelay <= 0)
     {
@@ -1096,16 +1103,24 @@ void SendConfirmationDialog::countDown()
     }
 }
 
-void SendConfirmationDialog::updateYesButton()
+void SendConfirmationDialog::updateButtons()
 {
     if(secDelay > 0)
     {
         yesButton->setEnabled(false);
-        yesButton->setText(confirmButtonText + " (" + QString::number(secDelay) + ")");
+        yesButton->setText(confirmButtonText + (m_enable_send ? (" (" + QString::number(secDelay) + ")") : QString("")));
+        if (m_psbt_button) {
+            m_psbt_button->setEnabled(false);
+            m_psbt_button->setText(m_psbt_button_text + " (" + QString::number(secDelay) + ")");
+        }
     }
     else
     {
-        yesButton->setEnabled(true);
+        yesButton->setEnabled(m_enable_send);
         yesButton->setText(confirmButtonText);
+        if (m_psbt_button) {
+            m_psbt_button->setEnabled(true);
+            m_psbt_button->setText(m_psbt_button_text);
+        }
     }
 }

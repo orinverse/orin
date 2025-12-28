@@ -1,0 +1,22 @@
+Drop GCC-only -fno-keep-inline-dllexport for mingw builds
+
+This flag is not recognized by clang (including llvm-mingw), which
+causes Qt's configure probe to fail. GCC already keeps inline
+dllexport symbols by default, so removing it is safe.
+
+--- a/qtbase/mkspecs/win32-g++/qmake.conf	2025-11-12 00:27:34.615144678 +0200
++++ b/qtbase/mkspecs/win32-g++/qmake.conf	2025-11-12 00:27:34.623145388 +0200
+@@ -13,11 +13,11 @@
+ # modifications to g++-win32.conf
+ 
+ QMAKE_CC                = $${CROSS_COMPILE}gcc
+-QMAKE_CFLAGS           += -fno-keep-inline-dllexport
++
+ QMAKE_CFLAGS_WARN_ON   += -Wextra
+ 
+ QMAKE_CXX               = $${CROSS_COMPILE}g++
+-QMAKE_CXXFLAGS         += -fno-keep-inline-dllexport
++
+ QMAKE_CXXFLAGS_WARN_ON  = $$QMAKE_CFLAGS_WARN_ON
+ 
+ QMAKE_LINK              = $${CROSS_COMPILE}g++

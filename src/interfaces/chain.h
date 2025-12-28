@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -31,13 +31,15 @@ enum class MemPoolRemovalReason;
 struct bilingual_str;
 struct CBlockLocator;
 struct FeeCalculation;
+namespace chainlock {
+struct ChainLockSig;
+} // namespace chainlock
+namespace instantsend {
+struct InstantSendLock;
+} // namespace instantsend
+namespace node {
 struct NodeContext;
-enum class MemPoolRemovalReason;
-
-namespace llmq {
-class CChainLockSig;
-struct CInstantSendLock;
-} // namespace llmq
+} // namespace node
 
 typedef std::shared_ptr<const CTransaction> CTransactionRef;
 
@@ -128,13 +130,14 @@ public:
     //! Get locator for the current chain tip.
     virtual CBlockLocator getTipLocator() = 0;
 
+    //! Return a locator that refers to a block in the active chain.
+    //! If specified block is not in the active chain, return locator for the latest ancestor that is in the chain.
+    virtual CBlockLocator getActiveChainLocator(const uint256& block_hash) = 0;
+
     //! Return height of the highest block on chain in common with the locator,
     //! which will either be the original block used to create the locator,
     //! or one of its ancestors.
     virtual std::optional<int> findLocatorFork(const CBlockLocator& locator) = 0;
-
-    //! Check if transaction will be final given chain height current time.
-    virtual bool checkFinalTx(const CTransaction& tx) = 0;
 
     //! Check if transaction is locked by InstantSendManager
     virtual bool isInstantSendLockedTx(const uint256& hash) = 0;
@@ -201,7 +204,7 @@ public:
         bilingual_str& err_string) = 0;
 
     //! Calculate mempool ancestor and descendant counts for the given transaction.
-    virtual void getTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants) = 0;
+    virtual void getTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants, size_t* ancestorsize = nullptr, CAmount* ancestorfees = nullptr) = 0;
 
     //! Get the node's package limits.
     //! Currently only returns the ancestor and descendant count limits, but could be enhanced to
@@ -264,8 +267,8 @@ public:
         virtual void blockDisconnected(const CBlock& block, int height) {}
         virtual void updatedBlockTip() {}
         virtual void chainStateFlushed(const CBlockLocator& locator) {}
-        virtual void notifyChainLock(const CBlockIndex* pindexChainLock, const std::shared_ptr<const llmq::CChainLockSig>& clsig) {}
-        virtual void notifyTransactionLock(const CTransactionRef &tx, const std::shared_ptr<const llmq::CInstantSendLock>& islock) {}
+        virtual void notifyChainLock(const CBlockIndex* pindexChainLock, const std::shared_ptr<const chainlock::ChainLockSig>& clsig) {}
+        virtual void notifyTransactionLock(const CTransactionRef &tx, const std::shared_ptr<const instantsend::InstantSendLock>& islock) {}
     };
 
     //! Register handler for notifications.
@@ -342,7 +345,7 @@ public:
 };
 
 //! Return implementation of Chain interface.
-std::unique_ptr<Chain> MakeChain(NodeContext& node);
+std::unique_ptr<Chain> MakeChain(node::NodeContext& node);
 
 } // namespace interfaces
 

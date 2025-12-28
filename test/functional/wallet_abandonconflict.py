@@ -24,13 +24,15 @@ class AbandonConflictTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.extra_args = [["-minrelaytxfee=0.00001"], []]
+        # whitelist peers to speed up tx relay / mempool sync
+        for args in self.extra_args:
+            args.append("-whitelist=noban@127.0.0.1")
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def run_test(self):
         self.generate(self.nodes[1], COINBASE_MATURITY)
-        self.sync_blocks()
         balance = self.nodes[0].getbalance()
         txA = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), Decimal("10"))
         txB = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), Decimal("10"))
@@ -126,6 +128,13 @@ class AbandonConflictTest(BitcoinTestFramework):
             assert_equal(tx['abandoned'], True)
             assert_equal(tx['confirmations'], 0)
             assert_equal(tx['trusted'], False)
+
+        self.log.info("Check abandoned field is present for all transaction categories in listtransactions")
+        txAB1_listtransactions = [d for d in self.nodes[0].listtransactions() if d['txid'] == txAB1]
+        assert len(txAB1_listtransactions) > 0, "Should have transactions for abandoned txid"
+        for tx in txAB1_listtransactions:
+            assert 'abandoned' in tx, f"abandoned field should be present for category '{tx['category']}'"
+            assert_equal(tx['abandoned'], True)
 
         # Verify that even with a low min relay fee, the tx is not reaccepted from wallet on startup once abandoned
         self.restart_node(0, extra_args=["-minrelaytxfee=0.00001"])

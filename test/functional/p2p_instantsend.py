@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2024 The Dash Core developers
+# Copyright (c) 2018-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,7 +14,7 @@ Tests InstantSend functionality (prevent doublespend for unconfirmed transaction
 
 class InstantSendTest(DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(8, 4)
+        self.set_orin_test_params(8, 4)
         # set sender,  receiver,  isolated nodes
         self.isolated_idx = 1
         self.receiver_idx = 2
@@ -23,7 +23,13 @@ class InstantSendTest(DashTestFramework):
     def run_test(self):
         self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
+        self.log.info("Mine quorum for InstantSend")
         (quorum_info_i_0, quorum_info_i_1) = self.mine_cycle_quorum()
+        self.log.info("Mine quorum for ChainLocks")
+        if len(self.nodes[0].quorum('list')['llmq_test']) == 0:
+            self.mine_quorum(llmq_type_name='llmq_test', llmq_type=104)
+        else:
+            self.log.info("Quorum `llmq_test` already exist")
 
         self.test_mempool_doublespend()
         self.test_block_doublespend()
@@ -36,9 +42,9 @@ class InstantSendTest(DashTestFramework):
         # feed the sender with some balance
         sender_addr = sender.getnewaddress()
         is_id = self.nodes[0].sendtoaddress(sender_addr, 1)
+        self.bump_mocktime(30)
         for node in self.nodes:
             self.wait_for_instantlock(is_id, node)
-        self.bump_mocktime(1)
         self.generate(self.nodes[0], 2)
 
         # create doublespending transaction, but don't relay it
@@ -52,6 +58,7 @@ class InstantSendTest(DashTestFramework):
         connected_nodes = self.nodes.copy()
         del connected_nodes[self.isolated_idx]
         self.sync_mempools(connected_nodes)
+        self.bump_mocktime(30)
         for node in connected_nodes:
             self.wait_for_instantlock(is_id, node)
         # send doublespend transaction to isolated node
@@ -95,9 +102,9 @@ class InstantSendTest(DashTestFramework):
         # feed the sender with some balance
         sender_addr = sender.getnewaddress()
         is_id = self.nodes[0].sendtoaddress(sender_addr, 1)
+        self.bump_mocktime(30)
         for node in self.nodes:
             self.wait_for_instantlock(is_id, node)
-        self.bump_mocktime(1)
         self.generate(self.nodes[0], 2)
 
         # create doublespending transaction, but don't relay it
@@ -118,18 +125,19 @@ class InstantSendTest(DashTestFramework):
         receiver_addr = receiver.getnewaddress()
         is_id = sender.sendtoaddress(receiver_addr, 0.9)
         # wait for the transaction to propagate
+        self.bump_mocktime(30)
         self.sync_mempools()
         for node in self.nodes:
             self.wait_for_instantlock(is_id, node)
         assert dblspnd_txid not in set(isolated.getrawmempool())
         # send coins back to the controller node without waiting for confirmations
         sentback_id = receiver.sendtoaddress(self.nodes[0].getnewaddress(), 0.9, "", "", True)
+        self.bump_mocktime(30)
         self.sync_mempools()
         for node in self.nodes:
             self.wait_for_instantlock(sentback_id, node)
         assert_equal(receiver.getwalletinfo()["balance"], 0)
         # mine more blocks
-        self.bump_mocktime(1)
         self.generate(self.nodes[0], 2)
 
 if __name__ == '__main__':

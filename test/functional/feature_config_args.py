@@ -17,34 +17,57 @@ class ConfArgsTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.supports_cli = False
         self.wallet_names = []
+        self.disable_autoconnect = False
 
     def test_config_file_parser(self):
+        self.log.info('Test config file parser')
         self.stop_node(0)
 
+        # Check that startup fails if conf= is set in bitcoin.conf or in an included conf file
+        bad_conf_file_path = os.path.join(self.options.tmpdir, 'node0', 'bitcoin_bad.conf')
+        util.write_config(bad_conf_file_path, n=0, chain='', extra_config=f'conf=some.conf\n')
+        conf_in_config_file_err = 'Error: Error reading configuration file: conf cannot be set in the configuration file; use includeconf= if you want to include additional config files'
+        self.nodes[0].assert_start_raises_init_error(
+            extra_args=[f'-conf={bad_conf_file_path}'],
+            expected_msg=conf_in_config_file_err,
+        )
         inc_conf_file_path = os.path.join(self.nodes[0].datadir, 'include.conf')
-        with open(os.path.join(self.nodes[0].datadir, 'dash.conf'), 'a', encoding='utf-8') as conf:
+        with open(os.path.join(self.nodes[0].datadir, 'orin.conf'), 'a', encoding='utf-8') as conf:
             conf.write(f'includeconf={inc_conf_file_path}\n')
+        with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
+            conf.write('conf=some.conf\n')
+        self.nodes[0].assert_start_raises_init_error(
+            expected_msg=conf_in_config_file_err,
+        )
 
         self.nodes[0].assert_start_raises_init_error(
-            expected_msg='Error: Error parsing command line arguments: Invalid parameter -dash_cli=1',
-            extra_args=['-dash_cli=1'],
+            expected_msg='Error: Error parsing command line arguments: Invalid parameter -orin_cli=1',
+            extra_args=['-orin_cli=1'],
         )
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
-            conf.write('dash_conf=1\n')
-        with self.nodes[0].assert_debug_log(expected_msgs=['Ignoring unknown configuration value dash_conf']):
+            conf.write('orin_conf=1\n')
+
+        with self.nodes[0].assert_debug_log(expected_msgs=['Ignoring unknown configuration value orin_conf']):
             self.start_node(0)
         self.stop_node(0)
 
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
-            conf.write('-dash=1\n')
-        self.nodes[0].assert_start_raises_init_error(expected_msg='Error: Error reading configuration file: parse error on line 1: -dash=1, options in configuration file must be specified without leading -')
+            conf.write('reindex=1\n')
+
+        with self.nodes[0].assert_debug_log(expected_msgs=['Warning: reindex=1 is set in the configuration file, which will significantly slow down startup. Consider removing or commenting out this option for better performance, unless there is currently a condition which makes rebuilding the indexes necessary']):
+            self.start_node(0)
+        self.stop_node(0)
+
+        with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
+            conf.write('-orin=1\n')
+        self.nodes[0].assert_start_raises_init_error(expected_msg='Error: Error reading configuration file: parse error on line 1: -orin=1, options in configuration file must be specified without leading -')
 
         if self.is_wallet_compiled():
             with open(inc_conf_file_path, 'w', encoding='utf8') as conf:
                 conf.write("wallet=foo\n")
             self.nodes[0].assert_start_raises_init_error(expected_msg=f'Error: Config setting for -wallet only applied on {self.chain} network when in [{self.chain}] section.')
 
-        main_conf_file_path = os.path.join(self.options.tmpdir, 'node0', 'dash_main.conf')
+        main_conf_file_path = os.path.join(self.options.tmpdir, 'node0', 'orin_main.conf')
         util.write_config(main_conf_file_path, n=0, chain='', extra_config=f'includeconf={inc_conf_file_path}\n')
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
             conf.write('acceptnonstdtxn=1\n')
@@ -67,7 +90,7 @@ class ConfArgsTest(BitcoinTestFramework):
         self.nodes[0].assert_start_raises_init_error(expected_msg='Error: Error reading configuration file: parse error on line 4, using # in rpcpassword can be ambiguous and should be avoided')
 
         inc_conf_file2_path = os.path.join(self.nodes[0].datadir, 'include2.conf')
-        with open(os.path.join(self.nodes[0].datadir, 'dash.conf'), 'a', encoding='utf-8') as conf:
+        with open(os.path.join(self.nodes[0].datadir, 'orin.conf'), 'a', encoding='utf-8') as conf:
             conf.write(f'includeconf={inc_conf_file2_path}\n')
 
         with open(inc_conf_file_path, 'w', encoding='utf-8') as conf:
@@ -100,7 +123,6 @@ class ConfArgsTest(BitcoinTestFramework):
                 expected_msgs=[
                     'Command-line arg: addnode="some.node"',
                     'Command-line arg: rpcauth=****',
-                    'Command-line arg: rpcbind=****',
                     'Command-line arg: rpcpassword=****',
                     'Command-line arg: rpcuser=****',
                     'Command-line arg: torpassword=****',
@@ -109,14 +131,17 @@ class ConfArgsTest(BitcoinTestFramework):
                 ],
                 unexpected_msgs=[
                     'alice:f7efda5c189b999524f151318c0c86$d5b51b3beffbc0',
-                    '127.1.1.1',
                     'secret-rpcuser',
                     'secret-torpassword',
+                    'Command-line arg: rpcbind=****',
+                    'Command-line arg: rpcallowip=****',
                 ]):
             self.start_node(0, extra_args=[
                 '-addnode=some.node',
                 '-rpcauth=alice:f7efda5c189b999524f151318c0c86$d5b51b3beffbc0',
                 '-rpcbind=127.1.1.1',
+                '-rpcbind=127.0.0.1',
+                "-rpcallowip=127.0.0.1",
                 '-rpcpassword=',
                 '-rpcuser=secret-rpcuser',
                 '-torpassword=secret-torpassword',
@@ -266,10 +291,11 @@ class ConfArgsTest(BitcoinTestFramework):
         self.nodes[0].assert_start_raises_init_error([f'-datadir={new_data_dir}'], f'Error: Specified data directory "{new_data_dir}" does not exist.')
 
         # Check that using non-existent datadir in conf file fails
-        conf_file = os.path.join(default_data_dir, "dash.conf")
+        conf_file = os.path.join(default_data_dir, "orin.conf")
 
         # datadir needs to be set before [chain] section
-        conf_file_contents = open(conf_file, encoding='utf8').read()
+        with open(conf_file, encoding='utf8') as f:
+            conf_file_contents = f.read()
         with open(conf_file, 'w', encoding='utf8') as f:
             f.write(f"datadir={new_data_dir}\n")
             f.write(conf_file_contents)
@@ -277,7 +303,7 @@ class ConfArgsTest(BitcoinTestFramework):
         self.nodes[0].assert_start_raises_init_error([f'-conf={conf_file}'], f'Error: Error reading configuration file: specified data directory "{new_data_dir}" does not exist.')
 
         # Check that an explicitly specified config file that cannot be opened fails
-        none_existent_conf_file = os.path.join(default_data_dir, "none_existent_dash.conf")
+        none_existent_conf_file = os.path.join(default_data_dir, "none_existent_orin.conf")
         self.nodes[0].assert_start_raises_init_error(['-conf=' + none_existent_conf_file], 'Error: Error reading configuration file: specified config file "' + none_existent_conf_file + '" could not be opened.')
 
         # Create the directory and ensure the config file now works

@@ -1,5 +1,5 @@
-// Copyright (c) 2015-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2015-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,12 +11,13 @@
 #include <key.h>
 #include <util/system.h>
 #include <node/caches.h>
-#include <node/context.h>
+#include <node/context.h> // IWYU pragma: export
 #include <pubkey.h>
 #include <random.h>
 #include <txmempool.h>
 #include <util/check.h>
 #include <util/string.h>
+#include <util/time.h>
 #include <util/vector.h>
 
 #include <functional>
@@ -69,7 +70,7 @@ void Seed(FastRandomContext& ctx);
 static inline void SeedInsecureRand(SeedRand seed = SeedRand::SEED)
 {
     if (seed == SeedRand::ZEROS) {
-        g_insecure_rand_ctx = FastRandomContext(/* deterministic */ true);
+        g_insecure_rand_ctx = FastRandomContext(/*fDeterministic=*/true);
     } else {
         Seed(g_insecure_rand_ctx);
     }
@@ -83,23 +84,19 @@ static inline bool InsecureRandBool() { return g_insecure_rand_ctx.randbool(); }
 
 static constexpr CAmount CENT{1000000};
 
-/** Initialize Dash-specific components during chainstate initialization (NodeContext-friendly aliases) */
+/** Initialize Orin-specific components during chainstate initialization (NodeContext-friendly aliases) */
 void DashChainstateSetup(ChainstateManager& chainman,
-                         NodeContext& node,
-                         bool fReset,
-                         bool fReindexChainState,
+                         node::NodeContext& node,
+                         bool llmq_dbs_in_memory,
+                         bool llmq_dbs_wipe,
                          const Consensus::Params& consensus_params);
-void DashChainstateSetupClose(NodeContext& node);
-
-/** Initialize Dash-specific components after chainstate initialization */
-void DashPostChainstateSetup(NodeContext& node);
-void DashPostChainstateSetupClose(NodeContext& node);
+void DashChainstateSetupClose(node::NodeContext& node);
 
 /** Basic testing setup.
  * This just configures logging, data dir and chain parameters.
  */
 struct BasicTestingSetup {
-    NodeContext m_node;
+    node::NodeContext m_node;
 
     explicit BasicTestingSetup(const std::string& chainName = CBaseChainParams::MAIN, const std::vector<const char*>& extra_args = {});
     ~BasicTestingSetup();
@@ -113,7 +110,7 @@ struct BasicTestingSetup {
  * initialization behaviour.
  */
 struct ChainTestingSetup : public BasicTestingSetup {
-    CacheSizes m_cache_sizes{};
+    node::CacheSizes m_cache_sizes{};
 
     explicit ChainTestingSetup(const std::string& chainName = CBaseChainParams::MAIN, const std::vector<const char*>& extra_args = {});
     ~ChainTestingSetup();
@@ -136,9 +133,11 @@ class CBlock;
 struct CMutableTransaction;
 class CScript;
 
-struct TestChainSetup : public RegTestingSetup
+struct TestChainSetup : public TestingSetup
 {
-    TestChainSetup(int num_blocks, const std::vector<const char*>& extra_args = {});
+    TestChainSetup(int num_blocks,
+                   const std::string& chain_name = CBaseChainParams::REGTEST,
+                   const std::vector<const char*>& extra_args = {});
     ~TestChainSetup();
 
     /**
@@ -149,9 +148,6 @@ struct TestChainSetup : public RegTestingSetup
     CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns,
                                  const CScript& scriptPubKey,
                                  CChainState* chainstate = nullptr);
-    CBlock CreateAndProcessBlock(const std::vector<CMutableTransaction>& txns,
-                                 const CKey& scriptKey,
-                                 CChainState* chainstate = nullptr);
 
     /**
      * Create a new block with just given transactions, coinbase paying to
@@ -159,9 +155,6 @@ struct TestChainSetup : public RegTestingSetup
      */
     CBlock CreateBlock(const std::vector<CMutableTransaction>& txns,
                        const CScript& scriptPubKey,
-                       CChainState& chainstate);
-    CBlock CreateBlock(const std::vector<CMutableTransaction>& txns,
-                       const CKey& scriptKey,
                        CChainState& chainstate);
 
     //! Mine a series of new blocks on the active chain.
@@ -186,6 +179,19 @@ struct TestChainSetup : public RegTestingSetup
                                                       CAmount output_amount = CAmount(1 * COIN),
                                                       bool submit = true);
 
+    /** Create transactions spending from m_coinbase_txns. These transactions will only spend coins
+     * that exist in the current chain, but may be premature coinbase spends, have missing
+     * signatures, or violate some other consensus rules. They should only be used for testing
+     * mempool consistency. All transactions will have some random number of inputs and outputs
+     * (between 1 and 24). Transactions may or may not be dependent upon each other; if dependencies
+     * exit, every parent will always be somewhere in the list before the child so each transaction
+     * can be submitted in the same order they appear in the list.
+     * @param[in]   submit      When true, submit transactions to the mempool.
+     *                          When false, return them but don't submit them.
+     * @returns A vector of transactions that can be submitted to the mempool.
+     */
+    std::vector<CTransactionRef> PopulateMempool(FastRandomContext& det_rand, size_t num_transactions, bool submit);
+
     std::vector<CTransactionRef> m_coinbase_txns; // For convenience, coinbase transactions
     CKey coinbaseKey; // private/public key needed to spend coinbase transactions
 };
@@ -194,7 +200,8 @@ struct TestChainSetup : public RegTestingSetup
  * Testing fixture that pre-creates a 100-block REGTEST-mode block chain
  */
 struct TestChain100Setup : public TestChainSetup {
-    TestChain100Setup(const std::vector<const char*>& extra_args = {});
+    TestChain100Setup(const std::string& chain_name = CBaseChainParams::REGTEST,
+                      const std::vector<const char*>& extra_args = {});
 };
 
 /**
@@ -216,29 +223,28 @@ std::unique_ptr<T> MakeNoLogFileContext(const std::string& chain_name = CBaseCha
 
 class CTxMemPoolEntry;
 
-struct TestMemPoolEntryHelper
-{
+struct TestMemPoolEntryHelper {
     // Default values
     CAmount nFee;
-    int64_t nTime;
+    NodeSeconds time{};
     unsigned int nHeight;
     bool spendsCoinbase;
     unsigned int sigOpCount;
     LockPoints lp;
 
     TestMemPoolEntryHelper() :
-        nFee(0), nTime(0), nHeight(1),
+        nFee(0), nHeight(1),
         spendsCoinbase(false), sigOpCount(1) { }
 
     CTxMemPoolEntry FromTx(const CMutableTransaction& tx) const;
     CTxMemPoolEntry FromTx(const CTransactionRef& tx) const;
 
     // Change the default value
-    TestMemPoolEntryHelper &Fee(CAmount _fee) { nFee = _fee; return *this; }
-    TestMemPoolEntryHelper &Time(int64_t _time) { nTime = _time; return *this; }
-    TestMemPoolEntryHelper &Height(unsigned int _height) { nHeight = _height; return *this; }
-    TestMemPoolEntryHelper &SpendsCoinbase(bool _flag) { spendsCoinbase = _flag; return *this; }
-    TestMemPoolEntryHelper &SigOps(unsigned int _sigops) { sigOpCount = _sigops; return *this; }
+    TestMemPoolEntryHelper& Fee(CAmount _fee) { nFee = _fee; return *this; }
+    TestMemPoolEntryHelper& Time(NodeSeconds tp) { time = tp; return *this; }
+    TestMemPoolEntryHelper& Height(unsigned int _height) { nHeight = _height; return *this; }
+    TestMemPoolEntryHelper& SpendsCoinbase(bool _flag) { spendsCoinbase = _flag; return *this; }
+    TestMemPoolEntryHelper& SigOps(unsigned int _sigops) { sigOpCount = _sigops; return *this; }
 };
 
 CBlock getBlock13b8a();

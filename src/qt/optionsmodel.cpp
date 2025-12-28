@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -29,10 +29,11 @@
 #include <QLatin1Char>
 #include <QSettings>
 #include <QStringList>
+#include <QVariant>
 
 const char *DEFAULT_GUI_PROXY_HOST = "127.0.0.1";
 
-static const QString GetDefaultProxyAddress();
+static QString GetDefaultProxyAddress();
 
 OptionsModel::OptionsModel(QObject *parent, bool resetSettings) :
     QAbstractListModel(parent)
@@ -76,9 +77,16 @@ void OptionsModel::Init(bool resetSettings)
     fMinimizeOnClose = settings.value("fMinimizeOnClose").toBool();
 
     // Display
-    if (!settings.contains("nDisplayUnit"))
-        settings.setValue("nDisplayUnit", BitcoinUnits::DASH);
-    nDisplayUnit = settings.value("nDisplayUnit").toInt();
+    if (!settings.contains("DisplayDashUnit")) {
+        settings.setValue("DisplayDashUnit", QVariant::fromValue(BitcoinUnit::ORIN));
+    }
+    QVariant unit = settings.value("DisplayDashUnit");
+    if (unit.canConvert<BitcoinUnit>()) {
+        m_display_bitcoin_unit = unit.value<BitcoinUnit>();
+    } else {
+        m_display_bitcoin_unit = BitcoinUnit::ORIN;
+        settings.setValue("DisplayDashUnit", QVariant::fromValue(m_display_bitcoin_unit));
+    }
 
     if (!settings.contains("strThirdPartyTxUrls"))
         settings.setValue("strThirdPartyTxUrls", "");
@@ -148,6 +156,11 @@ void OptionsModel::Init(bool resetSettings)
     if (!settings.contains("fCoinControlFeatures"))
         settings.setValue("fCoinControlFeatures", false);
     fCoinControlFeatures = settings.value("fCoinControlFeatures", false).toBool();
+
+    if (!settings.contains("enable_psbt_controls")) {
+        settings.setValue("enable_psbt_controls", false);
+    }
+    m_enable_psbt_controls = settings.value("enable_psbt_controls", false).toBool();
 
     if (!settings.contains("fKeepChangeAddress"))
         settings.setValue("fKeepChangeAddress", false);
@@ -262,9 +275,26 @@ void OptionsModel::Init(bool resetSettings)
 
     if (!settings.contains("fListen"))
         settings.setValue("fListen", DEFAULT_LISTEN);
-    if (!gArgs.SoftSetBoolArg("-listen", settings.value("fListen").toBool())) {
+    const bool listen{settings.value("fListen").toBool()};
+    if (!gArgs.SoftSetBoolArg("-listen", listen)) {
         addOverriddenOption("-listen");
-    } else if (!settings.value("fListen").toBool()) {
+    } else if (!listen) {
+        // We successfully set -listen=0, thus mimic the logic from InitParameterInteraction():
+        // "parameter interaction: -listen=0 -> setting -listenonion=0".
+        //
+        // Both -listen and -listenonion default to true.
+        //
+        // The call order is:
+        //
+        // InitParameterInteraction()
+        //     would set -listenonion=0 if it sees -listen=0, but for bitcoin-qt with
+        //     fListen=false -listen is 1 at this point
+        //
+        // OptionsModel::Init()
+        //     (this method) can flip -listen from 1 to 0 if fListen=false
+        //
+        // AppInitParameterInteraction()
+        //     raises an error if -listen=0 and -listenonion=1
         gArgs.SoftSetBoolArg("-listenonion", false);
     }
 
@@ -380,7 +410,7 @@ static void SetProxySetting(QSettings &settings, const QString &name, const Prox
     settings.setValue(name, QString{ip_port.ip + QLatin1Char(':') + ip_port.port});
 }
 
-static const QString GetDefaultProxyAddress()
+static QString GetDefaultProxyAddress()
 {
     return QString("%1:%2").arg(DEFAULT_GUI_PROXY_HOST).arg(DEFAULT_GUI_PROXY_PORT);
 }
@@ -402,7 +432,7 @@ void OptionsModel::SetPruneEnabled(bool prune, bool force)
     if (!gArgs.SoftSetArg("-prune", prune_val)) {
         addOverriddenOption("-prune");
     }
-    if (gArgs.GetArg("-prune", 0) > 0) {
+    if (gArgs.GetIntArg("-prune", 0) > 0) {
         gArgs.SoftSetBoolArg("-disablegovernance", true);
         gArgs.SoftSetBoolArg("-txindex", false);
     }
@@ -494,7 +524,7 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             return settings.value("fCoinJoinMultiSession");
 #endif
         case DisplayUnit:
-            return nDisplayUnit;
+            return QVariant::fromValue(m_display_bitcoin_unit);
         case ThirdPartyTxUrls:
             return strThirdPartyTxUrls;
 #ifdef ENABLE_WALLET
@@ -526,6 +556,8 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
 #ifdef ENABLE_WALLET
         case CoinControlFeatures:
             return fCoinControlFeatures;
+        case EnablePSBTControls:
+            return settings.value("enable_psbt_controls");
         case KeepChangeAddress:
             return fKeepChangeAddress;
 #endif // ENABLE_WALLET
@@ -775,6 +807,10 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             settings.setValue("fCoinControlFeatures", fCoinControlFeatures);
             Q_EMIT coinControlFeaturesChanged(fCoinControlFeatures);
             break;
+        case EnablePSBTControls:
+            m_enable_psbt_controls = value.toBool();
+            settings.setValue("enable_psbt_controls", m_enable_psbt_controls);
+            break;
         case KeepChangeAddress:
             fKeepChangeAddress = value.toBool();
             settings.setValue("fKeepChangeAddress", fKeepChangeAddress);
@@ -827,16 +863,13 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
     return successful;
 }
 
-/** Updates current unit in memory, settings and emits displayUnitChanged(newUnit) signal */
-void OptionsModel::setDisplayUnit(const QVariant &value)
+void OptionsModel::setDisplayUnit(const QVariant& new_unit)
 {
-    if (!value.isNull())
-    {
-        QSettings settings;
-        nDisplayUnit = value.toInt();
-        settings.setValue("nDisplayUnit", nDisplayUnit);
-        Q_EMIT displayUnitChanged(nDisplayUnit);
-    }
+    if (new_unit.isNull() || new_unit.value<BitcoinUnit>() == m_display_bitcoin_unit) return;
+    m_display_bitcoin_unit = new_unit.value<BitcoinUnit>();
+    QSettings settings;
+    settings.setValue("DisplayDashUnit", QVariant::fromValue(m_display_bitcoin_unit));
+    Q_EMIT displayUnitChanged(m_display_bitcoin_unit);
 }
 
 void OptionsModel::emitCoinJoinEnabledChanged()

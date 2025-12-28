@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,10 +8,12 @@
 #include <banman.h>
 #include <chainparams.h>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <crypto/sha256.h>
+#include <crypto/x11/dispatch.h>
 #include <index/txindex.h>
 #include <init.h>
 #include <interfaces/chain.h>
@@ -31,6 +33,7 @@
 #include <shutdown.h>
 #include <streams.h>
 #include <test/util/index.h>
+#include <test/util/net.h>
 #include <txdb.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -45,16 +48,21 @@
 #include <walletinitinterface.h>
 
 #include <bls/bls.h>
-#include <coinjoin/context.h>
+#include <coinjoin/coinjoin.h>
+#include <coinjoin/walletman.h>
 #include <evo/cbtx.h>
+#include <evo/chainhelper.h>
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <evo/simplifiedmns.h>
 #include <evo/specialtx.h>
+#include <evo/specialtxman.h>
 #include <flat-database.h>
 #include <governance/governance.h>
 #include <llmq/context.h>
+#include <masternode/active/context.h>
 #include <masternode/meta.h>
 #include <masternode/sync.h>
 #include <netfulfilledman.h>
@@ -63,10 +71,25 @@
 
 #ifdef ENABLE_WALLET
 #include <interfaces/coinjoin.h>
+#include <interfaces/wallet.h>
 #endif // ENABLE_WALLET
 
-#include <stdexcept>
+#include <algorithm>
 #include <memory>
+#include <stdexcept>
+
+using node::BlockAssembler;
+using node::CalculateCacheSizes;
+using node::DashChainstateSetup;
+using node::DashChainstateSetupClose;
+using node::DEFAULT_ADDRESSINDEX;
+using node::DEFAULT_SPENTINDEX;
+using node::DEFAULT_TIMESTAMPINDEX;
+using node::LoadChainstate;
+using node::NodeContext;
+using node::VerifyLoadedChainstate;
+using node::fPruneMode;
+using node::fReindex;
 
 const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
 UrlDecodeFn* const URL_DECODE = nullptr;
@@ -102,38 +125,20 @@ std::ostream& operator<<(std::ostream& os, const uint256& num)
 
 void DashChainstateSetup(ChainstateManager& chainman,
                          NodeContext& node,
-                         bool fReset,
-                         bool fReindexChainState,
+                         bool llmq_dbs_in_memory,
+                         bool llmq_dbs_wipe,
                          const Consensus::Params& consensus_params)
 {
     DashChainstateSetup(chainman, *Assert(node.govman.get()), *Assert(node.mn_metaman.get()), *Assert(node.mn_sync.get()),
                         *Assert(node.sporkman.get()), node.mn_activeman, node.chain_helper, node.cpoolman, node.dmnman,
-                        node.evodb, node.mnhf_manager, node.llmq_ctx, Assert(node.mempool.get()), fReset, fReindexChainState,
-                        consensus_params);
+                        node.evodb, node.mnhf_manager, node.llmq_ctx, Assert(node.mempool.get()), node.args->GetDataDirNet(),
+                        llmq_dbs_in_memory, llmq_dbs_wipe, consensus_params);
 }
 
 void DashChainstateSetupClose(NodeContext& node)
 {
     DashChainstateSetupClose(node.chain_helper, node.cpoolman, node.dmnman, node.mnhf_manager, node.llmq_ctx,
                              Assert(node.mempool.get()));
-}
-
-void DashPostChainstateSetup(NodeContext& node)
-{
-    node.cj_ctx = std::make_unique<CJContext>(*node.chainman, *node.connman, *node.dmnman, *node.mn_metaman, *node.mempool,
-                                              /*mn_activeman=*/nullptr, *node.mn_sync, *node.llmq_ctx->isman, node.peerman,
-                                              /*relay_txes=*/true);
-#ifdef ENABLE_WALLET
-    node.coinjoin_loader = interfaces::MakeCoinJoinLoader(*node.cj_ctx->walletman);
-#endif // ENABLE_WALLET
-}
-
-void DashPostChainstateSetupClose(NodeContext& node)
-{
-#ifdef ENABLE_WALLET
-    node.coinjoin_loader.reset();
-#endif // ENABLE_WALLET
-    node.cj_ctx.reset();
 }
 
 BasicTestingSetup::BasicTestingSetup(const std::string& chainName, const std::vector<const char*>& extra_args)
@@ -176,6 +181,7 @@ BasicTestingSetup::BasicTestingSetup(const std::string& chainName, const std::ve
     InitLogging(*m_node.args);
     AppInitParameterInteraction(*m_node.args);
     LogInstance().StartLogging();
+    SapphireAutoDetect();
     SHA256AutoDetect();
     ECC_Start();
     BLSInit();
@@ -183,45 +189,69 @@ BasicTestingSetup::BasicTestingSetup(const std::string& chainName, const std::ve
     SetupNetworking();
     InitSignatureCache();
     InitScriptExecutionCache();
-    ::g_stats_client = InitStatsClient(*m_node.args);
-    m_node.chain = interfaces::MakeChain(m_node);
 
+    m_node.chain = interfaces::MakeChain(m_node);
     m_node.netgroupman = std::make_unique<NetGroupManager>(/*asmap=*/std::vector<bool>());
     m_node.addrman = std::make_unique<AddrMan>(*m_node.netgroupman,
                                                /*deterministic=*/false,
-                                               m_node.args->GetArg("-checkaddrman", 0));
-    m_node.connman = std::make_unique<CConnman>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman); // Deterministic randomness for tests.
+                                               m_node.args->GetIntArg("-checkaddrman", 0));
 
-    // while g_wallet_init_interface is init here at very early stage
-    // we can't get rid of unique_ptr from wallet/context.h
-    // TODO: remove unique_ptr from wallet/context.h after bitcoin/bitcoin#22219
-    g_wallet_init_interface.Construct(m_node);
+    std::string sem_str = m_args.GetArg("-socketevents", DEFAULT_SOCKETEVENTS);
+    ::g_socket_events_mode = SEMFromString(sem_str);
+    if (::g_socket_events_mode == SocketEventsMode::Unknown) {
+        throw std::runtime_error(
+            strprintf("Invalid -socketevents ('%s') specified. Only these modes are supported: %s",
+                      sem_str, GetSupportedSocketEventsStr()));
+    }
+
+    {
+        auto stats_client = StatsdClient::make(*m_node.args);
+        if (!stats_client) {
+            throw std::runtime_error{strprintf("Cannot init Statsd client (%s)", util::ErrorString(stats_client).original)};
+        }
+        ::g_stats_client = std::move(*stats_client);
+    }
+
+    m_node.connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman); // Deterministic randomness for tests.
+
     fCheckBlockIndex = true;
-    m_node.evodb = std::make_unique<CEvoDB>(1 << 20, true, true);
-    m_node.mnhf_manager = std::make_unique<CMNHFManager>(*m_node.evodb);
+
+    m_node.mn_metaman = std::make_unique<CMasternodeMetaMan>();
+    m_node.netfulfilledman = std::make_unique<CNetFulfilledRequestManager>();
+    m_node.sporkman = std::make_unique<CSporkManager>();
+    m_node.evodb = std::make_unique<CEvoDB>(util::DbWrapperParams{.path = m_node.args->GetDataDirNet(), .memory = true, .wipe = true});
     m_node.cpoolman = std::make_unique<CCreditPoolManager>(*m_node.evodb);
+    m_node.mnhf_manager = std::make_unique<CMNHFManager>(*m_node.evodb);
+
     static bool noui_connected = false;
     if (!noui_connected) {
         noui_connect();
         noui_connected = true;
     }
+
     bls::bls_legacy_scheme.store(true);
 }
 
 BasicTestingSetup::~BasicTestingSetup()
 {
     SetMockTime(0s); // Reset mocktime for following tests
-    m_node.cpoolman.reset();
-    m_node.mnhf_manager.reset();
-    m_node.evodb.reset();
-    m_node.connman.reset();
-    m_node.addrman.reset();
-    m_node.netgroupman.reset();
-    ::g_stats_client.reset();
-
     LogInstance().DisconnectTestLogger();
     fs::remove_all(m_path_root);
     gArgs.ClearArgs();
+
+    m_node.mnhf_manager.reset();
+    m_node.cpoolman.reset();
+    m_node.evodb.reset();
+    m_node.sporkman.reset();
+    m_node.netfulfilledman.reset();
+    m_node.mn_metaman.reset();
+    m_node.connman.reset();
+    ::g_stats_client.reset();
+    ::g_socket_events_mode = SocketEventsMode::Unknown;
+    m_node.addrman.reset();
+    m_node.netgroupman.reset();
+    m_node.args = nullptr;
+
     ECC_Stop();
 }
 
@@ -235,16 +265,13 @@ ChainTestingSetup::ChainTestingSetup(const std::string& chainName, const std::ve
     GetMainSignals().RegisterBackgroundSignalScheduler(*m_node.scheduler);
 
     m_node.fee_estimator = std::make_unique<CBlockPolicyEstimator>();
-    m_node.mempool = std::make_unique<CTxMemPool>(m_node.fee_estimator.get(), 1);
+    m_node.mempool = std::make_unique<CTxMemPool>(m_node.fee_estimator.get(), m_node.args->GetIntArg("-checkmempool", 1));
 
     m_cache_sizes = CalculateCacheSizes(m_args);
 
     m_node.chainman = std::make_unique<ChainstateManager>();
     m_node.chainman->m_blockman.m_block_tree_db = std::make_unique<CBlockTreeDB>(m_cache_sizes.block_tree_db, true);
 
-    m_node.mn_metaman = std::make_unique<CMasternodeMetaMan>();
-    m_node.netfulfilledman = std::make_unique<CNetFulfilledRequestManager>();
-    m_node.sporkman = std::make_unique<CSporkManager>();
     m_node.mn_sync = std::make_unique<CMasternodeSync>(*m_node.connman, *m_node.netfulfilledman);
     m_node.govman = std::make_unique<CGovernanceManager>(*m_node.mn_metaman, *m_node.netfulfilledman, *m_node.chainman, m_node.dmnman, *m_node.mn_sync);
 
@@ -260,15 +287,12 @@ ChainTestingSetup::~ChainTestingSetup()
     StopScriptCheckWorkerThreads();
     GetMainSignals().FlushBackgroundCallbacks();
     GetMainSignals().UnregisterBackgroundSignalScheduler();
-    m_node.mn_sync.reset();
     m_node.govman.reset();
-    m_node.sporkman.reset();
-    m_node.netfulfilledman.reset();
-    m_node.mn_metaman.reset();
-    m_node.args = nullptr;
-    m_node.mempool.reset();
-    m_node.scheduler.reset();
+    m_node.mn_sync.reset();
     m_node.chainman.reset();
+    m_node.mempool.reset();
+    m_node.fee_estimator.reset();
+    m_node.scheduler.reset();
 }
 
 TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const char*>& extra_args)
@@ -293,6 +317,7 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
                                            m_node.mnhf_manager,
                                            m_node.llmq_ctx,
                                            Assert(m_node.mempool.get()),
+                                           Assert(m_node.args)->GetDataDirNet(),
                                            fPruneMode,
                                            m_args.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX),
                                            !m_args.GetBoolArg("-disablegovernance", !DEFAULT_GOVERNANCE_ENABLE),
@@ -306,35 +331,53 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
                                            m_cache_sizes.coins_db,
                                            m_cache_sizes.coins,
                                            /*block_tree_db_in_memory=*/true,
-                                           /*coins_db_in_memory=*/true);
+                                           /*coins_db_in_memory=*/true,
+                                           /*orin_dbs_in_memory=*/true);
     assert(!maybe_load_error.has_value());
 
     auto maybe_verify_error = VerifyLoadedChainstate(
         *Assert(m_node.chainman),
         *Assert(m_node.evodb.get()),
         fReindex.load(),
-        m_args.GetArg("-reindex-chainstate", false),
+        m_args.GetBoolArg("-reindex-chainstate", false),
         chainparams.GetConsensus(),
-        m_args.GetArg("-checkblocks", DEFAULT_CHECKBLOCKS),
-        m_args.GetArg("-checklevel", DEFAULT_CHECKLEVEL),
+        m_args.GetIntArg("-checkblocks", DEFAULT_CHECKBLOCKS),
+        m_args.GetIntArg("-checklevel", DEFAULT_CHECKLEVEL),
         /*get_unix_time_seconds=*/static_cast<int64_t(*)()>(GetTime),
         [](bool bls_state) {
             LogPrintf("%s: bls_legacy_scheme=%d\n", __func__, bls_state);
         });
     assert(!maybe_verify_error.has_value());
 
+    m_node.dstxman = std::make_unique<CDSTXManager>();
+#ifdef ENABLE_WALLET
+    // The test suite doesn't use masternode mode, so we may initialize it
+    m_node.cj_walletman = CJWalletManager::make(*m_node.chainman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mempool,
+                                                *m_node.mn_sync, *m_node.llmq_ctx->isman, /*relay_txes=*/true);
+    assert(m_node.cj_walletman);
+
+    // WalletInit::Construct()-like logic needed for wallet tests that run on
+    // TestingSetup and its children (e.g. TestChain100Setup) instead of
+    // WalletTestingSetup
+    m_node.coinjoin_loader = interfaces::MakeCoinJoinLoader(m_node);
+
+    auto wallet_loader = interfaces::MakeWalletLoader(*m_node.chain, *m_node.args, m_node, *m_node.coinjoin_loader);
+    m_node.wallet_loader = wallet_loader.get();
+    m_node.chain_clients.emplace_back(std::move(wallet_loader));
+#endif // ENABLE_WALLET
+
     m_node.banman = std::make_unique<BanMan>(m_args.GetDataDirBase() / "banlist", nullptr, DEFAULT_MISBEHAVING_BANTIME);
-    m_node.peerman = PeerManager::make(chainparams, *m_node.connman, *m_node.addrman, m_node.banman.get(),
+    m_node.peerman = PeerManager::make(chainparams, *m_node.connman, *m_node.addrman, m_node.banman.get(), *m_node.dstxman,
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
-                                       *m_node.govman, *m_node.sporkman, /* mn_activeman = */ nullptr, m_node.dmnman,
-                                       m_node.cj_ctx, m_node.llmq_ctx, /* ignore_incoming_txs = */ false);
+                                       *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
+                                       /*active_ctx=*/nullptr, m_node.cj_walletman.get(), m_node.llmq_ctx,
+                                       /*ignore_incoming_txs=*/false);
     {
         CConnman::Options options;
         options.m_msgproc = m_node.peerman.get();
+        options.socketEventsMode = ::g_socket_events_mode;
         m_node.connman->Init(options);
     }
-
-    DashPostChainstateSetup(m_node);
 
     BlockValidationState state;
     if (!m_node.chainman->ActiveChainstate().ActivateBestChain(state)) {
@@ -344,7 +387,17 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 
 TestingSetup::~TestingSetup()
 {
-    DashPostChainstateSetupClose(m_node);
+    m_node.peerman.reset();
+    m_node.banman.reset();
+#ifdef ENABLE_WALLET
+    for (auto& client : m_node.chain_clients) {
+        client.reset();
+    }
+    m_node.wallet_loader = nullptr;
+    m_node.coinjoin_loader.reset();
+    m_node.cj_walletman.reset();
+#endif // ENABLE_WALLET
+    m_node.dstxman.reset();
 
     // Interrupt() and PrepareShutdown() routines
     if (m_node.llmq_ctx) {
@@ -358,18 +411,15 @@ TestingSetup::~TestingSetup()
     // DashChainstateSetup() is called by LoadChainstate() internally but
     // winding them down is our responsibility
     DashChainstateSetupClose(m_node);
-
-    m_node.peerman.reset();
-    m_node.banman.reset();
 }
 
-TestChain100Setup::TestChain100Setup(const std::vector<const char*>& extra_args)
-    : TestChainSetup{100, extra_args}
+TestChain100Setup::TestChain100Setup(const std::string& chain_name, const std::vector<const char*>& extra_args)
+    : TestChainSetup{100, chain_name, extra_args}
 {
 }
 
-TestChainSetup::TestChainSetup(int num_blocks, const std::vector<const char*>& extra_args)
-    : RegTestingSetup(extra_args)
+TestChainSetup::TestChainSetup(int num_blocks, const std::string& chain_name, const std::vector<const char*>& extra_args)
+    : TestingSetup{chain_name, extra_args}
 {
     SetMockTime(1598887952);
     constexpr std::array<unsigned char, 32> vchKey = {
@@ -389,15 +439,15 @@ TestChainSetup::TestChainSetup(int num_blocks, const std::vector<const char*>& e
 
     CCheckpointData checkpoints{
         {
-            /* TestChainDATSetup */
+            /*TestChainDATSetup=*/
             {   98, uint256S("0x150e127929d578d8129b77a6cb7e2e343a1379aa3feaaa9cce59e0a645756a81") },
-            /* TestChain100Setup */
+            /*TestChain100Setup=*/
             {  100, uint256S("0x6ffb83129c19ebdf1ae3771be6a67fe34b35f4c956326b9ba152fac1649f65ae") },
-            /* TestChainDIP3BeforeActivationSetup */
+            /*TestChainDIP3BeforeActivationSetup=*/
             {  430, uint256S("0x0bcefaa33fec56cd84d05d0e76cd6a78badcc20f627d91903646de6a07930a14") },
-            /* TestChainBRRBeforeActivationSetup */
+            /*TestChainBRRBeforeActivationSetup=*/
             {  497, uint256S("0x0857a9b5db51835b1c828f019f4c664b5fe6c28ac44a6d868436930f832d31e5") },
-            /* TestChainV19BeforeActivationSetup */
+            /*TestChainV19BeforeActivationSetup=*/
             {  494, uint256S("0x44ee5c8a5e5cbd4437d63c54ddc1d40329be811b25c492fa901e11cdf408f905") },
         }
     };
@@ -413,7 +463,7 @@ TestChainSetup::TestChainSetup(int num_blocks, const std::vector<const char*>& e
 
 void TestChainSetup::mineBlocks(int num_blocks)
 {
-    CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+    CScript scriptPubKey = GetScriptForRawPubKey(coinbaseKey.GetPubKey());
     for (int i = 0; i < num_blocks; i++) {
         std::vector<CMutableTransaction> noTxns;
         CBlock b = CreateAndProcessBlock(noTxns, scriptPubKey);
@@ -445,15 +495,6 @@ CBlock TestChainSetup::CreateAndProcessBlock(
     return block;
 }
 
-CBlock TestChainSetup::CreateAndProcessBlock(
-    const std::vector<CMutableTransaction>& txns,
-    const CKey& scriptKey,
-    CChainState* chainstate)
-{
-    CScript scriptPubKey = CScript() <<  ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
-    return CreateAndProcessBlock(txns, scriptPubKey, chainstate);
-}
-
 CBlock TestChainSetup::CreateBlock(
     const std::vector<CMutableTransaction>& txns,
     const CScript& scriptPubKey,
@@ -461,7 +502,7 @@ CBlock TestChainSetup::CreateBlock(
 {
     const CChainParams& chainparams = Params();
     CTxMemPool empty_pool;
-    CBlock block = BlockAssembler(chainstate, m_node, empty_pool, chainparams).CreateNewBlock(scriptPubKey)->block;
+    CBlock block = BlockAssembler(chainstate, m_node, &empty_pool, chainparams).CreateNewBlock(scriptPubKey)->block;
 
     std::vector<CTransactionRef> llmqCommitments;
     for (const auto& tx : block.vtx) {
@@ -486,7 +527,11 @@ CBlock TestChainSetup::CreateBlock(
         auto cbTx = GetTxPayload<CCbTx>(*block.vtx[0]);
         Assert(cbTx.has_value());
         BlockValidationState state;
-        if (!CalcCbTxMerkleRootMNList(block, chainstate.m_chain.Tip(), cbTx->merkleRootMNList, state, *m_node.dmnman, *m_node.llmq_ctx->qsnapman, chainstate.CoinsTip())) {
+        CDeterministicMNList mn_list;
+        if (!chainstate.ChainHelper().special_tx->BuildNewListFromBlock(block, chainstate.m_chain.Tip(), chainstate.CoinsTip(), true, state, mn_list)) {
+            Assert(false);
+        }
+        if (!CalcCbTxMerkleRootMNList(cbTx->merkleRootMNList, mn_list.to_sml(), state)) {
             Assert(false);
         }
         if (!CalcCbTxMerkleRootQuorums(block, chainstate.m_chain.Tip(), *m_node.llmq_ctx->quorum_block_processor, cbTx->merkleRootQuorums, state)) {
@@ -497,11 +542,14 @@ CBlock TestChainSetup::CreateBlock(
         block.vtx[0] = MakeTransactionRef(tmpTx);
     }
 
-    // IncrementExtraNonce creates a valid coinbase and merkleRoot
+    // Create a valid coinbase and merkleRoot
     {
-        LOCK(cs_main);
-        unsigned int extraNonce = 0;
-        IncrementExtraNonce(&block, chainstate.m_chain.Tip(), extraNonce);
+        LOCK(::cs_main);
+        block.hashPrevBlock = chainstate.m_chain.Tip()->GetBlockHash();
+        CMutableTransaction tx_coinbase{*block.vtx[0]};
+        tx_coinbase.vin[0].scriptSig = CScript{} << (chainstate.m_chain.Height() + 1) << CScriptNum{1};
+        block.vtx[0] = MakeTransactionRef(std::move(tx_coinbase));
+        block.hashMerkleRoot = BlockMerkleRoot(block);
     }
 
     while (!CheckProofOfWork(block.GetHash(), block.nBits, chainparams.GetConsensus())) ++block.nNonce;
@@ -509,16 +557,6 @@ CBlock TestChainSetup::CreateBlock(
     CBlock result = block;
     return result;
 }
-
-CBlock TestChainSetup::CreateBlock(
-    const std::vector<CMutableTransaction>& txns,
-    const CKey& scriptKey,
-    CChainState& chainstate)
-{
-    CScript scriptPubKey = CScript() <<  ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
-    return CreateBlock(txns, scriptPubKey, chainstate);
-}
-
 
 CMutableTransaction TestChainSetup::CreateValidMempoolTransaction(CTransactionRef input_transaction,
                                                                   int input_vout,
@@ -581,6 +619,52 @@ TestChainSetup::~TestChainSetup()
     g_txindex.reset();
 }
 
+std::vector<CTransactionRef> TestChainSetup::PopulateMempool(FastRandomContext& det_rand, size_t num_transactions, bool submit)
+{
+    std::vector<CTransactionRef> mempool_transactions;
+    std::deque<std::pair<COutPoint, CAmount>> unspent_prevouts;
+    std::transform(m_coinbase_txns.begin(), m_coinbase_txns.end(), std::back_inserter(unspent_prevouts),
+        [](const auto& tx){ return std::make_pair(COutPoint(tx->GetHash(), 0), tx->vout[0].nValue); });
+    while (num_transactions > 0 && !unspent_prevouts.empty()) {
+        // The number of inputs and outputs are random, between 1 and 24.
+        CMutableTransaction mtx = CMutableTransaction();
+        const size_t num_inputs = det_rand.randrange(24) + 1;
+        CAmount total_in{0};
+        for (size_t n{0}; n < num_inputs; ++n) {
+            if (unspent_prevouts.empty()) break;
+            const auto& [prevout, amount] = unspent_prevouts.front();
+            mtx.vin.push_back(CTxIn(prevout, CScript()));
+            total_in += amount;
+            unspent_prevouts.pop_front();
+        }
+        const size_t num_outputs = det_rand.randrange(24) + 1;
+        // Approximately 1000sat "fee," equal output amounts.
+        const CAmount amount_per_output = (total_in - 1000) / num_outputs;
+        for (size_t n{0}; n < num_outputs; ++n) {
+            CScript spk = CScript() << CScriptNum(num_transactions + n);
+            mtx.vout.push_back(CTxOut(amount_per_output, spk));
+        }
+        CTransactionRef ptx = MakeTransactionRef(mtx);
+        mempool_transactions.push_back(ptx);
+        if (amount_per_output > 2000) {
+            // If the value is high enough to fund another transaction + fees, keep track of it so
+            // it can be used to build a more complex transaction graph. Insert randomly into
+            // unspent_prevouts for extra randomness in the resulting structures.
+            for (size_t n{0}; n < num_outputs; ++n) {
+                unspent_prevouts.push_back(std::make_pair(COutPoint(ptx->GetHash(), n), amount_per_output));
+                std::swap(unspent_prevouts.back(), unspent_prevouts[det_rand.randrange(unspent_prevouts.size())]);
+            }
+        }
+        if (submit) {
+            LOCK2(m_node.mempool->cs, cs_main);
+            LockPoints lp;
+            m_node.mempool->addUnchecked(CTxMemPoolEntry(ptx, 1000, 0, 1, false, 4, lp));
+        }
+        --num_transactions;
+    }
+    return mempool_transactions;
+}
+
 CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CMutableTransaction& tx) const
 {
     return FromTx(MakeTransactionRef(tx));
@@ -588,7 +672,7 @@ CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CMutableTransaction& tx) co
 
 CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CTransactionRef& tx) const
 {
-    return CTxMemPoolEntry(tx, nFee, nTime, nHeight,
+    return CTxMemPoolEntry(tx, nFee, TicksSinceEpoch<std::chrono::seconds>(time), nHeight,
                            spendsCoinbase, sigOpCount, lp);
 }
 

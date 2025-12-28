@@ -50,9 +50,14 @@ class WalletTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.extra_args = [
-            ['-limitdescendantcount=3'],  # Limit mempool descendants as a hack to have wallet txs rejected from the mempool
+            # Limit mempool descendants as a hack to have wallet txs rejected from the mempool.
+            # Set walletrejectlongchains=0 so the wallet still creates the transactions.
+            ['-limitdescendantcount=3', '-walletrejectlongchains=0'],
             [],
         ]
+        # whitelist peers to speed up tx relay / mempool sync
+        for args in self.extra_args:
+            args.append("-whitelist=noban@127.0.0.1")
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -191,12 +196,12 @@ class WalletTest(BitcoinTestFramework):
         test_balances(fee_node_1=Decimal('0.01'))
 
         # Node 1 bumps the transaction fee and resends
-        # self.nodes[1].sendrawtransaction(txs[1]['hex']) # disabled, no RBF in Dash
-        #self.nodes[0].sendrawtransaction(txs[1]['hex'])  # sending on both nodes is faster than waiting for propagation # disabled, no RBF in Dash
+        # self.nodes[1].sendrawtransaction(txs[1]['hex']) # disabled, no RBF in Orin
+        #self.nodes[0].sendrawtransaction(txs[1]['hex'])  # sending on both nodes is faster than waiting for propagation # disabled, no RBF in Orin
         self.sync_all()
 
         self.log.info("Test getbalance and getbalances.mine.untrusted_pending with conflicted unconfirmed inputs")
-        # test_balances(fee_node_1=Decimal('0.02')) # disabled, no RBF in Dash
+        # test_balances(fee_node_1=Decimal('0.02')) # disabled, no RBF in Orin
 
         self.generatetoaddress(self.nodes[1], 1, ADDRESS_WATCHONLY)
 
@@ -258,7 +263,6 @@ class WalletTest(BitcoinTestFramework):
 
         # Now confirm tx_replace
         block_reorg = self.generatetoaddress(self.nodes[1], 1, ADDRESS_WATCHONLY)[0]
-        self.sync_all()
         assert_equal(self.nodes[0].getbalance(minconf=0), total_amount)
 
         self.log.info('Put txs back into mempool of node 1 (not node 0)')

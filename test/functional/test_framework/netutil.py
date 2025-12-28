@@ -25,6 +25,11 @@ import os
 STATE_LISTEN = '0A'
 # STATE_CLOSING = '0B'
 
+# Address manager size constants as defined in addrman_impl.h
+ADDRMAN_NEW_BUCKET_COUNT = 1 << 10
+ADDRMAN_TRIED_BUCKET_COUNT = 1 << 8
+ADDRMAN_BUCKET_SIZE = 1 << 6
+
 def get_socket_inodes(pid):
     '''
     Get list of socket inodes for process pid.
@@ -155,3 +160,12 @@ def test_ipv6_local():
     # except socket.error:
     #     have_ipv6 = False
     # return have_ipv6
+
+def test_unix_socket():
+    '''Return True if UNIX sockets are available on this platform.'''
+    try:
+        socket.AF_UNIX
+    except AttributeError:
+        return False
+    else:
+        return True

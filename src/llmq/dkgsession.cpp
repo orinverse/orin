@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,22 +10,18 @@
 #include <llmq/options.h>
 #include <llmq/utils.h>
 
-#include <evo/deterministicmns.h>
-#include <evo/specialtx.h>
-
 #include <batchedlogger.h>
 #include <chainparams.h>
 #include <cxxtimer.hpp>
 #include <deploymentstatus.h>
+#include <evo/deterministicmns.h>
 #include <logging.h>
 #include <masternode/meta.h>
 #include <masternode/node.h>
-#include <netmessagemaker.h>
-#include <validation.h>
 #include <util/irange.h>
 #include <util/underlying.h>
 
-#include <univalue.h>
+#include <array>
 #include <atomic>
 #include <memory>
 
@@ -166,6 +162,8 @@ void CDKGSession::Contribute(CDKGPendingMessages& pendingMessages, PeerManager& 
         return;
     }
 
+    assert(params.threshold > 1); // we should not get there with single-node-quorums
+
     cxxtimer::Timer t1(true);
     logger.Batch("generating contributions");
     if (!blsWorker.GenerateContributions(params.threshold, memberIds, vvecContribution, m_sk_contributions)) {
@@ -278,6 +276,7 @@ bool CDKGSession::PreVerifyMessage(const CDKGContribution& qc, bool& retBan) con
     return true;
 }
 
+// TODO: remove duplicated code between all ReceiveMessage: CDKGContribution, CDKGComplaint, CDKGJustification, CDKGPrematureCommitment
 std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGContribution& qc)
 {
     CDKGLogger logger(*this, __func__, __LINE__);
@@ -470,7 +469,7 @@ void CDKGSession::VerifyConnectionAndMinProtoVersions(CConnman& connman) const
 
     CDKGLogger logger(*this, __func__, __LINE__);
 
-    std::unordered_map<uint256, int, StaticSaltedHasher> protoMap;
+    Uint256HashMap<int> protoMap;
     connman.ForEachNode([&](const CNode* pnode) {
         auto verifiedProRegTxHash = pnode->GetVerifiedProRegTxHash();
         if (verifiedProRegTxHash.IsNull()) {
@@ -493,10 +492,14 @@ void CDKGSession::VerifyConnectionAndMinProtoVersions(CConnman& connman) const
             m->badConnection = true;
             logger.Batch("%s does not have min proto version %d (has %d)", m->dmn->proTxHash.ToString(), MIN_MASTERNODE_PROTO_VERSION, it->second);
         }
-
-        if (m_mn_metaman.GetMetaInfo(m->dmn->proTxHash)->OutboundFailedTooManyTimes()) {
+        const auto meta_info = m_mn_metaman.GetMetaInfo(m->dmn->proTxHash);
+        if (meta_info->OutboundFailedTooManyTimes()) {
             m->badConnection = true;
             logger.Batch("%s failed to connect to it too many times", m->dmn->proTxHash.ToString());
+        }
+        if (meta_info->IsPlatformBanned()) {
+            m->badConnection = true;
+            logger.Batch("%s is Platform PoSe banned", m->dmn->proTxHash.ToString());
         }
     }
 }
@@ -997,7 +1000,7 @@ void CDKGSession::SendCommitment(CDKGPendingMessages& pendingMessages, PeerManag
 
     int lieType = -1;
     if (ShouldSimulateError(DKGError::type::COMMIT_LIE)) {
-        lieType = GetRandInt(5);
+        lieType = GetRand<int>(/*nMax=*/5);
         logger.Batch("lying on commitment. lieType=%d", lieType);
     }
 
@@ -1235,6 +1238,7 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
         fqc.quorumVvecHash = first.quorumVvecHash;
 
         const bool isQuorumRotationEnabled{IsQuorumRotationEnabled(params, m_quorum_base_block_index)};
+        // TODO: always put `true` here: so far as v19 is activated, we always write BASIC now
         fqc.nVersion = CFinalCommitment::GetVersion(isQuorumRotationEnabled, DeploymentActiveAfter(m_quorum_base_block_index, Params().GetConsensus(), Consensus::DEPLOYMENT_V19));
         fqc.quorumIndex = isQuorumRotationEnabled ? quorumIndex : 0;
 
@@ -1290,6 +1294,64 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
     logger.Flush();
 
     return finalCommitments;
+}
+
+CFinalCommitment CDKGSession::FinalizeSingleCommitment()
+{
+    if (!AreWeMember()) {
+        return {};
+    }
+
+    CDKGLogger logger(*this, __func__, __LINE__);
+
+    std::vector<CBLSId> signerIds;
+    std::vector<CBLSSignature> thresholdSigs;
+
+    CFinalCommitment fqc(params, m_quorum_base_block_index->GetBlockHash());
+
+
+    fqc.signers = {true};
+    fqc.validMembers = {true};
+
+    CBLSSecretKey sk1;
+    sk1.MakeNewKey();
+
+    fqc.quorumPublicKey = sk1.GetPublicKey();
+    fqc.quorumVvecHash = {};
+
+    // use just MN's operator public key as quorum pubkey.
+    // TODO: use sk1 here instead and use recovery mechanism from shares, but that's not trivial to do
+    const bool workaround_qpublic_key = true;
+    if (workaround_qpublic_key) {
+        fqc.quorumPublicKey = m_mn_activeman->GetPubKey();
+    }
+    const bool isQuorumRotationEnabled{false};
+    fqc.nVersion = CFinalCommitment::GetVersion(isQuorumRotationEnabled,
+                                                DeploymentActiveAfter(m_quorum_base_block_index, Params().GetConsensus(),
+                                                                      Consensus::DEPLOYMENT_V19));
+    fqc.quorumIndex = 0;
+
+    uint256 commitmentHash = BuildCommitmentHash(fqc.llmqType, fqc.quorumHash, fqc.validMembers, fqc.quorumPublicKey,
+                                                 fqc.quorumVvecHash);
+    fqc.quorumSig = sk1.Sign(commitmentHash, m_use_legacy_bls);
+
+    fqc.membersSig = m_mn_activeman->Sign(commitmentHash, m_use_legacy_bls);
+
+    if (workaround_qpublic_key) {
+        fqc.quorumSig = fqc.membersSig;
+    }
+
+    if (!fqc.Verify(m_dmnman, m_qsnapman, m_quorum_base_block_index, true)) {
+        logger.Batch("failed to verify final commitment");
+        assert(false);
+    }
+
+    logger.Batch("final commitment: validMembers=%d, signers=%d, quorumPublicKey=%s", fqc.CountValidMembers(),
+                 fqc.CountSigners(), fqc.quorumPublicKey.ToString());
+
+    logger.Flush();
+
+    return fqc;
 }
 
 CDKGMember* CDKGSession::GetMember(const uint256& proTxHash) const

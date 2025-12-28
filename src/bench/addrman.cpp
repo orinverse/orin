@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2020 The Bitcoin Core developers
+// Copyright (c) 2020-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -136,7 +136,7 @@ static void AddrManGetAddr(benchmark::Bench& bench)
     FillAddrMan(addrman);
 
     bench.run([&] {
-        const auto& addresses = addrman.GetAddr(/* max_addresses */ 2500, /* max_pct */ 23, /* network */ std::nullopt);
+        const auto& addresses = addrman.GetAddr(/*max_addresses=*/2500, /*max_pct=*/23, /*network=*/std::nullopt);
         assert(addresses.size() > 0);
     });
 }

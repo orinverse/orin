@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,16 +7,15 @@
 #define BITCOIN_PROTOCOL_H
 
 #include <netaddress.h>
-#include <primitives/transaction.h>
 #include <serialize.h>
 #include <streams.h>
 #include <uint256.h>
-#include <util/expected.h>
 #include <util/time.h>
 
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <variant>
 
 /** Message header.
  * (4) message start.
@@ -255,7 +254,7 @@ extern const char* CFCHECKPT;
  */
 extern const char* SENDTXRCNCL;
 
-// Dash message types
+// Orin message types
 // NOTE: do NOT declare non-implmented here, we don't want them to be exposed to the outside
 // TODO: add description
 extern const char* SPORK;
@@ -298,6 +297,7 @@ extern const char* SENDHEADERS2;
 extern const char* HEADERS2;
 extern const char* GETQUORUMROTATIONINFO;
 extern const char* QUORUMROTATIONINFO;
+extern const char* PLATFORMBAN;
 };
 
 /* Get a vector of all valid message types (see above) */
@@ -312,10 +312,10 @@ enum ServiceFlags : uint64_t {
     // Nothing
     NODE_NONE = 0,
     // NODE_NETWORK means that the node is capable of serving the complete block chain. It is currently
-    // set by all Dash Core non pruned nodes, and is unset by SPV clients or other light clients.
+    // set by all Orin Core non pruned nodes, and is unset by SPV clients or other light clients.
     NODE_NETWORK = (1 << 0),
     // NODE_BLOOM means the node is capable and willing to handle bloom-filtered connections.
-    // Dash Core nodes used to support this by default, without advertising this bit,
+    // Orin Core nodes used to support this by default, without advertising this bit,
     // but no longer do as of protocol version 70201 (= NO_BLOOM_VERSION)
     NODE_BLOOM = (1 << 2),
     // NODE_COMPACT_FILTERS means the node will service basic block filter requests.
@@ -499,12 +499,12 @@ enum GetDataMsg : uint32_t {
     MSG_BLOCK = 2,
     // The following can only occur in getdata. Invs always use TX or BLOCK.
     MSG_FILTERED_BLOCK = 3,                           //!< Defined in BIP37
-    // Dash message types
+    // Orin message types
     // NOTE: we must keep this enum consistent and backwards compatible
     /* MSG_LEGACY_TXLOCK_REQUEST = 4, */              // Legacy InstantSend and not used anymore
     /* MSG_TXLOCK_VOTE = 5, */                        // Legacy InstantSend and not used anymore
     MSG_SPORK = 6,
-    /* 7 - 15 were used in old Dash versions and were mainly budget and MN broadcast/ping related*/
+    /* 7 - 15 were used in old Orin versions and were mainly budget and MN broadcast/ping related*/
     MSG_DSTX = 16,
     MSG_GOVERNANCE_OBJECT = 17,
     MSG_GOVERNANCE_OBJECT_VOTE = 18,
@@ -524,6 +524,7 @@ enum GetDataMsg : uint32_t {
     /* MSG_ISLOCK = 30, */                            // Non-deterministic InstantSend and not used anymore
     MSG_ISDLOCK = 31,
     MSG_DSQ = 32,
+    MSG_PLATFORM_BAN = 33,                            // Platform service ban (DIP-0031)
 };
 
 /** inv message data */
@@ -564,59 +565,6 @@ private:
 public:
     uint32_t type;
     uint256 hash;
-};
-
-struct MisbehavingError
-{
-    int score;
-    std::string message;
-
-    MisbehavingError(int s) : score{s} {}
-
-     // Constructor does a perfect forwarding reference
-    template <typename T>
-    MisbehavingError(int s, T&& msg) :
-        score{s},
-        message{std::forward<T>(msg)}
-    {}
-};
-
-// TODO: replace usages of PeerMsgRet to MessageProcessingResult which is cover this one
-using PeerMsgRet = tl::expected<void, MisbehavingError>;
-
-/**
- * This struct is a helper to return values from handlers that are processing
- * network messages but implemented outside of net_processing.cpp,
- * for example llmq's messages.
- *
- * These handlers do not supposed to know anything about PeerManager to avoid
- * circular dependencies.
- *
- * See `PeerManagerImpl::PostProcessMessage` to see how each type of return code
- * is processed.
- */
-struct MessageProcessingResult
-{
-    //! @m_error triggers Misbehaving error with score and optional message if not nullopt
-    std::optional<MisbehavingError> m_error;
-
-    //! @m_inventory will relay this inventory to connected peers if not nullopt
-    std::optional<CInv> m_inventory;
-
-    //! @m_transactions will relay transactions to peers which is ready to accept it (some peers does not accept transactions)
-    std::vector<uint256> m_transactions;
-
-    //! @m_to_erase triggers EraseObjectRequest from PeerManager for this inventory if not nullopt
-    std::optional<CInv> m_to_erase;
-
-    MessageProcessingResult() = default;
-    MessageProcessingResult(MisbehavingError error) :
-        m_error(error)
-    {}
-    MessageProcessingResult(CInv inv) :
-        m_inventory(inv)
-    {
-    }
 };
 
 #endif // BITCOIN_PROTOCOL_H

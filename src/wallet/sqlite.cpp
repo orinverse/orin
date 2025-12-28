@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Bitcoin Core developers
+// Copyright (c) 2020-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,10 +20,14 @@
 #include <utility>
 #include <vector>
 
+namespace wallet {
 static constexpr int32_t WALLET_SCHEMA_VERSION = 0;
 
-static Mutex g_sqlite_mutex;
-static int g_sqlite_count GUARDED_BY(g_sqlite_mutex) = 0;
+static Span<const std::byte> SpanFromBlob(sqlite3_stmt* stmt, int col)
+{
+    return {reinterpret_cast<const std::byte*>(sqlite3_column_blob(stmt, col)),
+            static_cast<size_t>(sqlite3_column_bytes(stmt, col))};
+}
 
 static void ErrorLogCallback(void* arg, int code, const char* msg)
 {
@@ -34,6 +38,21 @@ static void ErrorLogCallback(void* arg, int code, const char* msg)
     // Assert that this is the case:
     assert(arg == nullptr);
     LogPrintf("SQLite Error. Code: %d. Message: %s\n", code, msg);
+}
+
+static int TraceSqlCallback(unsigned code, void* context, void* param1, void* param2)
+{
+    auto* db = static_cast<SQLiteDatabase*>(context);
+    if (code == SQLITE_TRACE_STMT) {
+        auto* stmt = static_cast<sqlite3_stmt*>(param1);
+        // To be conservative and avoid leaking potentially secret information
+        // in the log file, only expand statements that query the database, not
+        // statements that update the database.
+        char* expanded{sqlite3_stmt_readonly(stmt) ? sqlite3_expanded_sql(stmt) : nullptr};
+        LogPrintf("[%s] SQLite Statement: %s\n", db->Filename(), expanded ? expanded : sqlite3_sql(stmt));
+        if (expanded) sqlite3_free(expanded);
+    }
+    return SQLITE_OK;
 }
 
 static bool BindBlobToStatement(sqlite3_stmt* stmt,
@@ -82,8 +101,11 @@ static void SetPragma(sqlite3* db, const std::string& key, const std::string& va
     }
 }
 
-SQLiteDatabase::SQLiteDatabase(const fs::path& dir_path, const fs::path& file_path, bool mock)
-    : WalletDatabase(), m_mock(mock), m_dir_path(fs::PathToString(dir_path)), m_file_path(fs::PathToString(file_path))
+Mutex SQLiteDatabase::g_sqlite_mutex;
+int SQLiteDatabase::g_sqlite_count = 0;
+
+SQLiteDatabase::SQLiteDatabase(const fs::path& dir_path, const fs::path& file_path, const DatabaseOptions& options, bool mock)
+    : WalletDatabase(), m_mock(mock), m_dir_path(fs::PathToString(dir_path)), m_file_path(fs::PathToString(file_path)), m_use_unsafe_sync(options.use_unsafe_sync)
 {
     {
         LOCK(g_sqlite_mutex);
@@ -145,6 +167,8 @@ SQLiteDatabase::~SQLiteDatabase()
 
 void SQLiteDatabase::Cleanup() noexcept
 {
+    AssertLockNotHeld(g_sqlite_mutex);
+
     Close();
 
     LOCK(g_sqlite_mutex);
@@ -232,6 +256,13 @@ void SQLiteDatabase::Open()
         if (ret != SQLITE_OK) {
             throw std::runtime_error(strprintf("SQLiteDatabase: Failed to enable extended result codes: %s\n", sqlite3_errstr(ret)));
         }
+        // Trace SQL statements if tracing is enabled with -debug=walletdb -loglevel=walletdb:trace
+        if (LogAcceptCategory(BCLog::WALLETDB, BCLog::Level::Trace)) {
+           ret = sqlite3_trace_v2(m_db, SQLITE_TRACE_STMT, TraceSqlCallback, this);
+           if (ret != SQLITE_OK) {
+               LogPrintf("Failed to enable SQL tracing for %s\n", Filename());
+           }
+        }
     }
 
     if (sqlite3_db_readonly(m_db, "main") != 0) {
@@ -244,7 +275,7 @@ void SQLiteDatabase::Open()
     // Now begin a transaction to acquire the exclusive lock. This lock won't be released until we close because of the exclusive locking mode.
     int ret = sqlite3_exec(m_db, "BEGIN EXCLUSIVE TRANSACTION", nullptr, nullptr, nullptr);
     if (ret != SQLITE_OK) {
-        throw std::runtime_error("SQLiteDatabase: Unable to obtain an exclusive lock on the database, is it being used by another dashd?\n");
+        throw std::runtime_error("SQLiteDatabase: Unable to obtain an exclusive lock on the database, is it being used by another instance of " PACKAGE_NAME "?\n");
     }
     ret = sqlite3_exec(m_db, "COMMIT", nullptr, nullptr, nullptr);
     if (ret != SQLITE_OK) {
@@ -254,7 +285,7 @@ void SQLiteDatabase::Open()
     // Enable fullfsync for the platforms that use it
     SetPragma(m_db, "fullfsync", "true", "Failed to enable fullfsync");
 
-    if (gArgs.GetBoolArg("-unsafesqlitesync", false)) {
+    if (m_use_unsafe_sync) {
         // Use normal synchronous mode for the journal
         LogPrintf("WARNING SQLite is configured to not wait for data to be flushed to disk. Data loss and corruption may occur.\n");
         SetPragma(m_db, "synchronous", "OFF", "Failed to set synchronous mode to OFF");
@@ -404,9 +435,8 @@ bool SQLiteBatch::ReadKey(CDataStream&& key, CDataStream& value)
         return false;
     }
     // Leftmost column in result is index 0
-    const std::byte* data{BytePtr(sqlite3_column_blob(m_read_stmt, 0))};
-    size_t data_size(sqlite3_column_bytes(m_read_stmt, 0));
-    value.write({data, data_size});
+    value.clear();
+    value.write(SpanFromBlob(m_read_stmt, 0));
 
     sqlite3_clear_bindings(m_read_stmt);
     sqlite3_reset(m_read_stmt);
@@ -495,13 +525,12 @@ bool SQLiteBatch::ReadAtCursor(CDataStream& key, CDataStream& value, bool& compl
         return false;
     }
 
+    key.clear();
+    value.clear();
+
     // Leftmost column in result is index 0
-    const std::byte* key_data{BytePtr(sqlite3_column_blob(m_cursor_stmt, 0))};
-    size_t key_data_size(sqlite3_column_bytes(m_cursor_stmt, 0));
-    key.write({key_data, key_data_size});
-    const std::byte* value_data{BytePtr(sqlite3_column_blob(m_cursor_stmt, 1))};
-    size_t value_data_size(sqlite3_column_bytes(m_cursor_stmt, 1));
-    value.write({value_data, value_data_size});
+    key.write(SpanFromBlob(m_cursor_stmt, 0));
+    value.write(SpanFromBlob(m_cursor_stmt, 1));
     return true;
 }
 
@@ -545,7 +574,7 @@ std::unique_ptr<SQLiteDatabase> MakeSQLiteDatabase(const fs::path& path, const D
 {
     try {
         fs::path data_file = SQLiteDataFile(path);
-        auto db = std::make_unique<SQLiteDatabase>(data_file.parent_path(), data_file);
+        auto db = std::make_unique<SQLiteDatabase>(data_file.parent_path(), data_file, options);
         if (options.verify && !db->Verify(error)) {
             status = DatabaseStatus::FAILED_VERIFY;
             return nullptr;
@@ -563,3 +592,4 @@ std::string SQLiteDatabaseVersion()
 {
     return std::string(sqlite3_libversion());
 }
+} // namespace wallet

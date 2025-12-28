@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -29,6 +29,7 @@
 #include <optional>
 #include <string>
 
+namespace wallet {
 namespace DBKeys {
 const std::string ACENTRY{"acentry"};
 const std::string ACTIVEEXTERNALSPK{"activeexternalspk"};
@@ -241,7 +242,7 @@ bool WalletBatch::EraseActiveScriptPubKeyMan(bool internal)
     return EraseIC(key);
 }
 
-bool WalletBatch::WriteDescriptorKey(const uint256& desc_id, const CPubKey& pubkey, const CPrivKey& privkey)
+bool WalletBatch::WriteDescriptorKey(const uint256& desc_id, const CPubKey& pubkey, const CPrivKey& privkey, const SecureString& mnemonic, const SecureString& mnemonic_passphrase)
 {
     // hash pubkey/privkey to accelerate wallet load
     std::vector<unsigned char> key;
@@ -249,19 +250,19 @@ bool WalletBatch::WriteDescriptorKey(const uint256& desc_id, const CPubKey& pubk
     key.insert(key.end(), pubkey.begin(), pubkey.end());
     key.insert(key.end(), privkey.begin(), privkey.end());
 
-    return WriteIC(std::make_pair(DBKeys::WALLETDESCRIPTORKEY, std::make_pair(desc_id, pubkey)), std::make_pair(privkey, Hash(key)), false);
+    return WriteIC(std::make_pair(DBKeys::WALLETDESCRIPTORKEY, std::make_pair(desc_id, pubkey)), std::make_pair(std::make_pair(privkey, Hash(key)), std::make_pair(mnemonic, mnemonic_passphrase)), false);
 }
 
-bool WalletBatch::WriteCryptedDescriptorKey(const uint256& desc_id, const CPubKey& pubkey, const std::vector<unsigned char>& secret)
+bool WalletBatch::WriteCryptedDescriptorKey(const uint256& desc_id, const CPubKey& pubkey, const std::vector<unsigned char>& secret, const std::vector<unsigned char>& crypted_mnemonic, const std::vector<unsigned char>& crypted_mnemonic_passphrase)
 {
-    if (!WriteIC(std::make_pair(DBKeys::WALLETDESCRIPTORCKEY, std::make_pair(desc_id, pubkey)), secret, false)) {
+    if (!WriteIC(std::make_pair(DBKeys::WALLETDESCRIPTORCKEY, std::make_pair(desc_id, pubkey)), std::make_pair(secret, std::make_pair(crypted_mnemonic, crypted_mnemonic_passphrase)), false)) {
         return false;
     }
     EraseIC(std::make_pair(DBKeys::WALLETDESCRIPTORKEY, std::make_pair(desc_id, pubkey)));
     return true;
 }
 
-bool WalletBatch::WriteDescriptor(const uint256& desc_id, const WalletDescriptor& descriptor)
+bool WalletBatch::WriteDescriptor(const uint256& desc_id, const WalletDescriptor& descriptor/*, const SecureString& mnemonic, const SecureString& mnemonic_passphrase*/)
 {
     return WriteIC(make_pair(DBKeys::WALLETDESCRIPTOR, desc_id), descriptor);
 }
@@ -335,10 +336,11 @@ public:
     std::map<uint256, DescriptorCache> m_descriptor_caches;
     std::map<std::pair<uint256, CKeyID>, CKey> m_descriptor_keys;
     std::map<std::pair<uint256, CKeyID>, std::pair<CPubKey, std::vector<unsigned char>>> m_descriptor_crypt_keys;
+    std::map<std::pair<uint256, CKeyID>, std::pair<SecureString, SecureString>> mnemonics;
+    std::map<std::pair<uint256, CKeyID>, std::pair<std::vector<unsigned char>, std::vector<unsigned char>>> crypted_mnemonics;
     bool tx_corrupt{false};
 
-    CWalletScanState() {
-    }
+    CWalletScanState() = default;
 };
 
 static bool
@@ -704,6 +706,21 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 return false;
             }
             wss.m_descriptor_keys.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), key));
+
+            SecureString mnemonic;
+            SecureString mnemonic_passphrase;
+            // it's okay if wallet doesn't have mnemonic.
+            // The wallet may be created in an older version of Orin Core or by importing descriptor
+            try
+            {
+                ssValue >> mnemonic;
+                ssValue >> mnemonic_passphrase;
+            }
+            catch (const std::ios_base::failure&) {}
+
+            if (!mnemonic.empty()) {
+                wss.mnemonics.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), std::make_pair(mnemonic, mnemonic_passphrase)));
+            }
         } else if (strType == DBKeys::WALLETDESCRIPTORCKEY) {
             uint256 desc_id;
             CPubKey pubkey;
@@ -720,6 +737,22 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
 
             wss.m_descriptor_crypt_keys.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), std::make_pair(pubkey, privkey)));
             wss.fIsEncrypted = true;
+
+            // TODO : remove copy-paste with plain-text key
+            std::vector<unsigned char> mnemonic;
+            std::vector<unsigned char> mnemonic_passphrase;
+            // it's okay if wallet doesn't have mnemonic.
+            // The wallet may be created in an older version of Orin Core or by importing descriptor
+            try
+            {
+                ssValue >> mnemonic;
+                ssValue >> mnemonic_passphrase;
+            }
+            catch (const std::ios_base::failure&) {}
+            if (!mnemonic.empty()) {
+                wss.crypted_mnemonics.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), std::make_pair(mnemonic, mnemonic_passphrase)));
+            }
+
         } else if (strType == DBKeys::LOCKED_UTXO) {
             uint256 hash;
             uint32_t n;
@@ -837,10 +870,6 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
             if (!strErr.empty())
                 pwallet->WalletLogPrintf("%s\n", strErr);
         }
-
-        // Store initial external keypool size since we mostly use external keys in mixing
-        pwallet->nKeysLeftSinceAutoBackup = pwallet->KeypoolCountExternalKeys();
-        pwallet->WalletLogPrintf("nKeysLeftSinceAutoBackup: %d\n", pwallet->nKeysLeftSinceAutoBackup);
     } catch (...) {
         result = DBErrors::CORRUPT;
     }
@@ -848,10 +877,10 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
 
     // Set the active ScriptPubKeyMans
     for (auto spk_man : wss.m_active_external_spks) {
-        pwallet->LoadActiveScriptPubKeyMan(spk_man.second, /* internal */ false);
+        pwallet->LoadActiveScriptPubKeyMan(spk_man.second, /*internal=*/false);
     }
     for (auto spk_man : wss.m_active_internal_spks) {
-        pwallet->LoadActiveScriptPubKeyMan(spk_man.second, /* internal */ true);
+        pwallet->LoadActiveScriptPubKeyMan(spk_man.second, /*internal=*/true);
     }
 
     // Set the descriptor caches
@@ -864,11 +893,22 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     // Set the descriptor keys
     for (auto desc_key_pair : wss.m_descriptor_keys) {
         auto spk_man = pwallet->GetScriptPubKeyMan(desc_key_pair.first.first);
-        ((DescriptorScriptPubKeyMan*)spk_man)->AddKey(desc_key_pair.first.second, desc_key_pair.second);
+        auto it = wss.mnemonics.find(desc_key_pair.first);
+        if (it == wss.mnemonics.end()) {
+            ((DescriptorScriptPubKeyMan*)spk_man)->AddKey(desc_key_pair.first.second, desc_key_pair.second, "", "");
+        } else {
+            ((DescriptorScriptPubKeyMan*)spk_man)->AddKey(desc_key_pair.first.second, desc_key_pair.second, it->second.first, it->second.second);
+        }
     }
+
     for (auto desc_key_pair : wss.m_descriptor_crypt_keys) {
         auto spk_man = pwallet->GetScriptPubKeyMan(desc_key_pair.first.first);
-        ((DescriptorScriptPubKeyMan*)spk_man)->AddCryptedKey(desc_key_pair.first.second, desc_key_pair.second.first, desc_key_pair.second.second);
+        auto it = wss.crypted_mnemonics.find(desc_key_pair.first);
+        if (it == wss.crypted_mnemonics.end()) {
+            ((DescriptorScriptPubKeyMan*)spk_man)->AddCryptedKey(desc_key_pair.first.second, desc_key_pair.second.first, desc_key_pair.second.second, {}, {});
+        } else {
+            ((DescriptorScriptPubKeyMan*)spk_man)->AddCryptedKey(desc_key_pair.first.second, desc_key_pair.second.first, desc_key_pair.second.second, it->second.first, it->second.second);
+        }
     }
 
     if (fNoncriticalErrors && result == DBErrors::LOAD_OK)
@@ -879,12 +919,14 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     if (result != DBErrors::LOAD_OK)
         return result;
 
-    // Last client version to open this wallet, was previously the file version number
-    int last_client = CLIENT_VERSION;
-    m_batch->Read(DBKeys::VERSION, last_client);
+    // Store initial external keypool size since we mostly use external keys in mixing
+    pwallet->nKeysLeftSinceAutoBackup = pwallet->KeypoolCountExternalKeys();
+    pwallet->WalletLogPrintf("nKeysLeftSinceAutoBackup: %d\n", pwallet->nKeysLeftSinceAutoBackup);
 
-    int wallet_version = pwallet->GetVersion();
-    pwallet->WalletLogPrintf("Wallet File Version = %d\n", wallet_version > 0 ? wallet_version : last_client);
+    // Last client version to open this wallet
+    int last_client = CLIENT_VERSION;
+    bool has_last_client = m_batch->Read(DBKeys::VERSION, last_client);
+    pwallet->WalletLogPrintf("Wallet file version = %d, last client version = %d\n", pwallet->GetVersion(), last_client);
 
     pwallet->WalletLogPrintf("Keys: %u plaintext, %u encrypted, %u total; Watch scripts: %u; HD PubKeys: %u; Metadata: %u; Unknown wallet records: %u\n",
            wss.nKeys, wss.nCKeys, wss.nKeys + wss.nCKeys,
@@ -906,7 +948,7 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     if (wss.fIsEncrypted && (last_client == 40000 || last_client == 50000))
         return DBErrors::NEED_REWRITE;
 
-    if (last_client < CLIENT_VERSION) // Update
+    if (!has_last_client || last_client != CLIENT_VERSION) // Update
         m_batch->Write(DBKeys::VERSION, CLIENT_VERSION);
 
     if (wss.fAnyUnordered)
@@ -931,7 +973,7 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     return result;
 }
 
-DBErrors WalletBatch::FindWalletTx(std::vector<uint256>& vTxHash, std::list<CWalletTx>& vWtx)
+DBErrors WalletBatch::FindWalletTxHashes(std::vector<uint256>& tx_hashes)
 {
     DBErrors result = DBErrors::LOAD_OK;
 
@@ -969,9 +1011,7 @@ DBErrors WalletBatch::FindWalletTx(std::vector<uint256>& vTxHash, std::list<CWal
             if (strType == DBKeys::TX) {
                 uint256 hash;
                 ssKey >> hash;
-                vTxHash.push_back(hash);
-                vWtx.emplace_back(nullptr /* wallet */, nullptr /* tx */);
-                ssValue >> vWtx.back();
+                tx_hashes.push_back(hash);
             }
         }
     } catch (...) {
@@ -984,10 +1024,9 @@ DBErrors WalletBatch::FindWalletTx(std::vector<uint256>& vTxHash, std::list<CWal
 
 DBErrors WalletBatch::ZapSelectTx(std::vector<uint256>& vTxHashIn, std::vector<uint256>& vTxHashOut)
 {
-    // build list of wallet TXs and hashes
+    // build list of wallet TX hashes
     std::vector<uint256> vTxHash;
-    std::list<CWalletTx> vWtx;
-    DBErrors err = FindWalletTx(vTxHash, vWtx);
+    DBErrors err = FindWalletTxHashes(vTxHash);
     if (err != DBErrors::LOAD_OK) {
         return err;
     }
@@ -1020,14 +1059,14 @@ DBErrors WalletBatch::ZapSelectTx(std::vector<uint256>& vTxHashIn, std::vector<u
     return DBErrors::LOAD_OK;
 }
 
-void MaybeCompactWalletDB()
+void MaybeCompactWalletDB(WalletContext& context)
 {
     static std::atomic<bool> fOneThread(false);
     if (fOneThread.exchange(true)) {
         return;
     }
 
-    for (const std::shared_ptr<CWallet>& pwallet : GetWallets()) {
+    for (const std::shared_ptr<CWallet>& pwallet : GetWallets(context)) {
         WalletDatabase& dbh = pwallet->GetDatabase();
 
         unsigned int nUpdateCounter = dbh.nUpdateCounter;
@@ -1162,19 +1201,27 @@ std::unique_ptr<WalletDatabase> MakeDatabase(const fs::path& path, const Databas
 
     if (format == DatabaseFormat::SQLITE) {
 #ifdef USE_SQLITE
-        return MakeSQLiteDatabase(path, options, status, error);
+        if constexpr (true) {
+            return MakeSQLiteDatabase(path, options, status, error);
+        } else
 #endif
-        error = Untranslated(strprintf("Failed to open database path '%s'. Build does not support SQLite database format.", fs::PathToString(path)));
-        status = DatabaseStatus::FAILED_BAD_FORMAT;
-        return nullptr;
+        {
+            error = Untranslated(strprintf("Failed to open database path '%s'. Build does not support SQLite database format.", fs::PathToString(path)));
+            status = DatabaseStatus::FAILED_BAD_FORMAT;
+            return nullptr;
+        }
     }
 
 #ifdef USE_BDB
-    return MakeBerkeleyDatabase(path, options, status, error);
+    if constexpr (true) {
+        return MakeBerkeleyDatabase(path, options, status, error);
+    } else
 #endif
-    error = Untranslated(strprintf("Failed to open database path '%s'. Build does not support Berkeley DB database format.", fs::PathToString(path)));
-    status = DatabaseStatus::FAILED_BAD_FORMAT;
-    return nullptr;
+    {
+        error = Untranslated(strprintf("Failed to open database path '%s'. Build does not support Berkeley DB database format.", fs::PathToString(path)));
+        status = DatabaseStatus::FAILED_BAD_FORMAT;
+        return nullptr;
+    }
 }
 
 /** Return object for accessing dummy database with no read/write capabilities. */
@@ -1184,11 +1231,36 @@ std::unique_ptr<WalletDatabase> CreateDummyWalletDatabase()
 }
 
 /** Return object for accessing temporary in-memory database. */
+std::unique_ptr<WalletDatabase> CreateMockWalletDatabase(DatabaseOptions& options)
+{
+
+    std::optional<DatabaseFormat> format;
+    if (options.require_format) format = options.require_format;
+    if (!format) {
+#ifdef USE_BDB
+        format = DatabaseFormat::BERKELEY;
+#endif
+#ifdef USE_SQLITE
+        format = DatabaseFormat::SQLITE;
+#endif
+    }
+
+    if (format == DatabaseFormat::SQLITE) {
+#ifdef USE_SQLITE
+        return std::make_unique<SQLiteDatabase>(":memory:", "", options, true);
+#endif
+        assert(false);
+    }
+
+#ifdef USE_BDB
+    return std::make_unique<BerkeleyDatabase>(std::make_shared<BerkeleyEnvironment>(), "", options);
+#endif
+    assert(false);
+}
+
 std::unique_ptr<WalletDatabase> CreateMockWalletDatabase()
 {
-#ifdef USE_BDB
-    return std::make_unique<BerkeleyDatabase>(std::make_shared<BerkeleyEnvironment>(), "");
-#elif defined(USE_SQLITE)
-    return std::make_unique<SQLiteDatabase>("", "", true);
-#endif
+    DatabaseOptions options;
+    return CreateMockWalletDatabase(options);
 }
+} // namespace wallet

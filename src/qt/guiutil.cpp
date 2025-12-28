@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,6 @@
 #include <qt/bitcoinaddressvalidator.h>
 #include <qt/bitcoingui.h>
 #include <qt/bitcoinunits.h>
-#include <qt/optionsdialog.h>
 #include <qt/qvalidatedlineedit.h>
 #include <qt/sendcoinsrecipient.h>
 
@@ -39,21 +38,19 @@
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
+#include <QFile>
 #include <QDateTime>
-#include <QDebug>
 #include <QDesktopServices>
+#include <QDialog>
 #include <QDialogButtonBox>
-#include <QDoubleValidator>
 #include <QFileDialog>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QJsonObject>
-#include <QKeyEvent>
 #include <QKeySequence>
 #include <QLatin1String>
-#include <QLineEdit>
 #include <QList>
 #include <QLocale>
 #include <QMenu>
@@ -61,17 +58,17 @@
 #include <QPluginLoader>
 #include <QPointer>
 #include <QProgressDialog>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
 #include <QSize>
+#include <QStandardPaths>
 #include <QString>
 #include <QTextDocument> // for Qt::mightBeRichText
 #include <QThread>
-#include <QTimer>
 #include <QUrlQuery>
 #include <QVBoxLayout>
-#include <QtGlobal>
 
 #include <chrono>
 #include <exception>
@@ -79,7 +76,7 @@
 #include <string>
 #include <vector>
 
-#if defined(Q_OS_MAC)
+#if defined(Q_OS_MACOS)
 
 #include <QProcess>
 
@@ -117,7 +114,7 @@ static std::unique_ptr<QFont> osDefaultFont;
 static const FontFamily defaultFontFamily = FontFamily::SystemDefault;
 static const int defaultFontSize = 12;
 static const double fontScaleSteps = 0.01;
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 static const QFont::Weight defaultFontWeightNormal = QFont::ExtraLight;
 static const QFont::Weight defaultFontWeightBold = QFont::Medium;
 static const int defaultFontScale = 0;
@@ -140,7 +137,7 @@ static std::map<QPointer<QWidget>, std::tuple<FontWeight, bool, int>> mapFontUpd
 // Contains a list of supported font weights for all members of GUIUtil::FontFamily
 static std::map<FontFamily, std::vector<QFont::Weight>> mapSupportedWeights;
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 // Contains all widgets where the macOS focus rect has been disabled.
 static std::set<QWidget*> setRectsDisabled;
 #endif
@@ -180,7 +177,7 @@ static const std::map<ThemedColor, QColor> themedDarkColors = {
 };
 
 static const std::map<ThemedStyle, QString> themedStyles = {
-    { ThemedStyle::TS_INVALID, "background:#a84832;" },
+    { ThemedStyle::TS_INVALID, "border: 3px solid #a84832;" },
     { ThemedStyle::TS_ERROR, "color:#a84832;" },
     { ThemedStyle::TS_WARNING, "color:#999900;" },
     { ThemedStyle::TS_SUCCESS, "color:#5e8c41;" },
@@ -190,7 +187,7 @@ static const std::map<ThemedStyle, QString> themedStyles = {
 };
 
 static const std::map<ThemedStyle, QString> themedDarkStyles = {
-    { ThemedStyle::TS_INVALID, "background:#a84832;" },
+    { ThemedStyle::TS_INVALID, "border: 3px solid #a84832;" },
     { ThemedStyle::TS_ERROR, "color:#a84832;" },
     { ThemedStyle::TS_WARNING, "color:#999900;" },
     { ThemedStyle::TS_SUCCESS, "color:#5e8c41;" },
@@ -295,7 +292,7 @@ void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent, bool fAllow
 
     // We don't want translators to use own addresses in translations
     // and this is the only place, where this address is supplied.
-    widget->setPlaceholderText(QObject::tr("Enter a Dash address (e.g. %1)").arg(
+    widget->setPlaceholderText(QObject::tr("Enter a Orin address (e.g. %1)").arg(
         QString::fromStdString(DummyAddress(Params()))));
     widget->setValidator(new BitcoinAddressEntryValidator(parent, fAllowURI));
     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
@@ -308,7 +305,7 @@ void setupAppearance(QWidget* parent, OptionsModel* model)
         QDialog dlg(parent);
         dlg.setObjectName("AppearanceSetup");
         dlg.setWindowTitle(QObject::tr("Appearance Setup"));
-        dlg.setWindowIcon(QIcon(":icons/dash"));
+        dlg.setWindowIcon(QIcon(":icons/orin"));
         // And the widgets we add to it
         QLabel lblHeading(QObject::tr("Please choose your preferred settings for the appearance of %1").arg(PACKAGE_NAME), &dlg);
         lblHeading.setObjectName("lblHeading");
@@ -350,8 +347,8 @@ void AddButtonShortcut(QAbstractButton* button, const QKeySequence& shortcut)
 
 bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
 {
-    // return if URI is not valid or is no dash: URI
-    if(!uri.isValid() || uri.scheme() != QString("dash"))
+    // return if URI is not valid or is no orin: URI
+    if(!uri.isValid() || uri.scheme() != QString("orin"))
         return false;
 
     SendCoinsRecipient rv;
@@ -393,8 +390,7 @@ bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
         {
             if(!i->second.isEmpty())
             {
-                if(!BitcoinUnits::parse(BitcoinUnits::DASH, i->second, &rv.amount))
-                {
+                if (!BitcoinUnits::parse(BitcoinUnit::ORIN, i->second, &rv.amount)) {
                     return false;
                 }
             }
@@ -425,12 +421,12 @@ bool validateBitcoinURI(const QString& uri)
 
 QString formatBitcoinURI(const SendCoinsRecipient &info)
 {
-    QString ret = QString("dash:%1").arg(info.address);
+    QString ret = QString("orin:%1").arg(info.address);
     int paramCount = 0;
 
     if (info.amount)
     {
-        ret += QString("?amount=%1").arg(BitcoinUnits::format(BitcoinUnits::DASH, info.amount, false, BitcoinUnits::SeparatorStyle::NEVER));
+        ret += QString("?amount=%1").arg(BitcoinUnits::format(BitcoinUnit::ORIN, info.amount, false, BitcoinUnits::SeparatorStyle::NEVER));
         paramCount++;
     }
 
@@ -512,6 +508,17 @@ QString getDefaultDataDirectory()
     return PathToQString(GetDefaultDataDir());
 }
 
+QString ExtractFirstSuffixFromFilter(const QString& filter)
+{
+    QRegularExpression filter_re(QStringLiteral(".* \\(\\*\\.(.*)[ \\)]"), QRegularExpression::InvertedGreedinessOption);
+    QString suffix;
+    QRegularExpressionMatch m = filter_re.match(filter);
+    if (m.hasMatch()) {
+        suffix = m.captured(1);
+    }
+    return suffix;
+}
+
 QString getSaveFileName(QWidget *parent, const QString &caption, const QString &dir,
     const QString &filter,
     QString *selectedSuffixOut)
@@ -529,13 +536,7 @@ QString getSaveFileName(QWidget *parent, const QString &caption, const QString &
     /* Directly convert path to native OS path separators */
     QString result = QDir::toNativeSeparators(QFileDialog::getSaveFileName(parent, caption, myDir, filter, &selectedFilter));
 
-    /* Extract first suffix from filter pattern "Description (*.foo)" or "Description (*.foo *.bar ...) */
-    QRegExp filter_re(".* \\(\\*\\.(.*)[ \\)]");
-    QString selectedSuffix;
-    if(filter_re.exactMatch(selectedFilter))
-    {
-        selectedSuffix = filter_re.cap(1);
-    }
+    QString selectedSuffix = ExtractFirstSuffixFromFilter(selectedFilter);
 
     /* Add suffix if needed */
     QFileInfo info(result);
@@ -577,14 +578,8 @@ QString getOpenFileName(QWidget *parent, const QString &caption, const QString &
 
     if(selectedSuffixOut)
     {
-        /* Extract first suffix from filter pattern "Description (*.foo)" or "Description (*.foo *.bar ...) */
-        QRegExp filter_re(".* \\(\\*\\.(.*)[ \\)]");
-        QString selectedSuffix;
-        if(filter_re.exactMatch(selectedFilter))
-        {
-            selectedSuffix = filter_re.cap(1);
-        }
-        *selectedSuffixOut = selectedSuffix;
+        *selectedSuffixOut = ExtractFirstSuffixFromFilter(selectedFilter);
+        ;
     }
     return result;
 }
@@ -619,19 +614,26 @@ bool isObscured(QWidget *w)
 
 void bringToFront(QWidget* w)
 {
-#ifdef Q_OS_MAC
-    ForceActivation();
-#endif
-
     if (w) {
-        // activateWindow() (sometimes) helps with keyboard focus on Windows
-        if (w->isMinimized()) {
-            w->showNormal();
-        } else {
+        if (QGuiApplication::platformName() == "wayland") {
+            auto flags = w->windowFlags();
+            w->setWindowFlags(flags|Qt::WindowStaysOnTopHint);
             w->show();
+            w->setWindowFlags(flags);
+            w->show();
+        } else {
+#ifdef Q_OS_MACOS
+            ForceActivation();
+#endif
+            // activateWindow() (sometimes) helps with keyboard focus on Windows
+            if (w->isMinimized()) {
+                w->showNormal();
+            } else {
+                w->show();
+            }
+            w->activateWindow();
+            w->raise();
         }
-        w->activateWindow();
-        w->raise();
     }
 }
 
@@ -651,13 +653,13 @@ void openDebugLogfile()
 
 void openConfigfile()
 {
-    fs::path pathConfig = GetConfigFile(gArgs.GetArg("-conf", BITCOIN_CONF_FILENAME));
+    fs::path pathConfig = GetConfigFile(gArgs.GetPathArg("-conf", BITCOIN_CONF_FILENAME));
 
-    /* Open dash.conf with the associated application */
+    /* Open orin.conf with the associated application */
     if (fs::exists(pathConfig)) {
         // Workaround for macOS-specific behavior; see #15409.
         if (!QDesktopServices::openUrl(QUrl::fromLocalFile(PathToQString(pathConfig)))) {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
             QProcess::startDetached("/usr/bin/open", QStringList{"-t", PathToQString(pathConfig)});
 #endif
             return;
@@ -729,15 +731,15 @@ fs::path static StartupShortcutPath()
 {
     std::string chain = gArgs.GetChainName();
     if (chain == CBaseChainParams::MAIN)
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Dash Core.lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "Orin Core.lnk";
     if (chain == CBaseChainParams::TESTNET) // Remove this special case when CBaseChainParams::TESTNET = "testnet4"
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Dash Core (testnet).lnk";
-    return GetSpecialFolderPath(CSIDL_STARTUP) / strprintf("Dash Core (%s).lnk", chain);
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "Orin Core (testnet).lnk";
+    return GetSpecialFolderPath(CSIDL_STARTUP) / fs::u8path(strprintf("Orin Core (%s).lnk", chain));
 }
 
 bool GetStartOnSystemStartup()
 {
-    // check for "Dash Core*.lnk"
+    // check for "Orin Core*.lnk"
     return fs::exists(StartupShortcutPath());
 }
 
@@ -812,13 +814,13 @@ fs::path static GetAutostartFilePath()
 {
     std::string chain = gArgs.GetChainName();
     if (chain == CBaseChainParams::MAIN)
-        return GetAutostartDir() / "dashcore.desktop";
-    return GetAutostartDir() / strprintf("dashcore-%s.desktop", chain);
+        return GetAutostartDir() / "orincore.desktop";
+    return GetAutostartDir() / fs::u8path(strprintf("orincore-%s.desktop", chain));
 }
 
 bool GetStartOnSystemStartup()
 {
-    std::ifstream optionFile{GetAutostartFilePath()};
+    std::ifstream optionFile = fsbridge::ifstream(GetAutostartFilePath());
     if (!optionFile.good())
         return false;
     // Scan through file for "Hidden=true":
@@ -850,17 +852,17 @@ bool SetStartOnSystemStartup(bool fAutoStart)
 
         fs::create_directories(GetAutostartDir());
 
-        std::ofstream optionFile{GetAutostartFilePath(), std::ios_base::out | std::ios_base::trunc};
+        std::ofstream optionFile = fsbridge::ofstream(GetAutostartFilePath(), std::ios_base::out | std::ios_base::trunc);
         if (!optionFile.good())
             return false;
         std::string chain = gArgs.GetChainName();
-        // Write a dashcore.desktop file to the autostart directory:
+        // Write a orincore.desktop file to the autostart directory:
         optionFile << "[Desktop Entry]\n";
         optionFile << "Type=Application\n";
         if (chain == CBaseChainParams::MAIN)
-            optionFile << "Name=Dash Core\n";
+            optionFile << "Name=Orin Core\n";
         else
-            optionFile << strprintf("Name=Dash Core (%s)\n", chain);
+            optionFile << strprintf("Name=Orin Core (%s)\n", chain);
         optionFile << "Exec=" << pszExePath << strprintf(" -min -chain=%s\n", chain);
         optionFile << "Terminal=false\n";
         optionFile << "Hidden=false\n";
@@ -886,7 +888,7 @@ bool isStyleSheetDirectoryCustom()
     return stylesheetDirectory != defaultStylesheetDirectory;
 }
 
-const std::vector<QString> listStyleSheets()
+std::vector<QString> listStyleSheets()
 {
     std::vector<QString> vecStylesheets;
     for (const auto& it : mapThemeToStyle) {
@@ -895,7 +897,7 @@ const std::vector<QString> listStyleSheets()
     return vecStylesheets;
 }
 
-const std::vector<QString> listThemes()
+std::vector<QString> listThemes()
 {
     std::vector<QString> vecThemes;
     for (const auto& it : mapThemeToStyle) {
@@ -905,7 +907,7 @@ const std::vector<QString> listThemes()
     return vecThemes;
 }
 
-const QString getDefaultTheme()
+QString getDefaultTheme()
 {
     return defaultTheme;
 }
@@ -999,7 +1001,7 @@ void loadStyleSheet(bool fForceUpdate)
 
         std::vector<QString> vecFiles;
         // If light/dark theme is used load general styles first
-        if (dashThemeActive()) {
+        if (orinThemeActive()) {
             vecFiles.push_back(pathToFile(generalTheme));
         }
         vecFiles.push_back(pathToFile(getActiveTheme()));
@@ -1166,6 +1168,9 @@ bool loadFonts()
 {
     // Before any font changes store the applications default font to use it as SystemDefault.
     osDefaultFont = std::make_unique<QFont>(QApplication::font());
+    mapSupportedWeights.clear();
+    mapDefaultWeights.clear();
+    mapWeights.clear();
 
     QString family = fontFamilyToString(FontFamily::Montserrat);
     QString italic = "Italic";
@@ -1185,21 +1190,87 @@ bool loadFonts()
 
     QFontDatabase database;
     std::vector<int> vecFontIds;
+    auto supportedWeights = [&](FontFamily fam) -> std::vector<QFont::Weight> {
+        auto getTestWidth = [&](QFont::Weight weight) -> int {
+            QFont font = getFont(fam, weight, false, defaultFontSize);
+            return TextWidth(QFontMetrics(font), ("Check the width of this text to see if the weight change has an impact!"));
+        };
+        std::vector<QFont::Weight> vecWeights{QFont::Thin, QFont::ExtraLight, QFont::Light,
+                                              QFont::Normal, QFont::Medium, QFont::DemiBold,
+                                              QFont::Bold, QFont::ExtraBold, QFont::Black};
+        std::vector<QFont::Weight> vecSupported;
+        QFont::Weight prevWeight = vecWeights.front();
+        for (auto weight = vecWeights.begin() + 1; weight != vecWeights.end(); ++weight) {
+            if (getTestWidth(prevWeight) != getTestWidth(*weight)) {
+                if (vecSupported.empty()) {
+                    vecSupported.push_back(prevWeight);
+                }
+                vecSupported.push_back(*weight);
+            }
+            prevWeight = *weight;
+        }
+        if (vecSupported.empty()) {
+            vecSupported.push_back(QFont::Normal);
+        }
+        return vecSupported;
+    };
+
+    auto addBestDefaults = [&](FontFamily fam) {
+        auto getBestMatch = [&](FontFamily ff, QFont::Weight targetWeight) {
+            auto& vecSupported = mapSupportedWeights[ff];
+            auto it = vecSupported.begin();
+            QFont::Weight bestWeight = *it;
+            int nBestDiff = abs(*it - targetWeight);
+            while (++it != vecSupported.end()) {
+                int nDiff = abs(*it - targetWeight);
+                if (nDiff < nBestDiff) {
+                    bestWeight = *it;
+                    nBestDiff = nDiff;
+                }
+            }
+            return bestWeight;
+        };
+
+        QFont::Weight normalWeight = getBestMatch(fam, defaultFontWeightNormal);
+        QFont::Weight boldWeight = getBestMatch(fam, defaultFontWeightBold);
+        if (normalWeight == boldWeight) {
+            auto& vecSupported = mapSupportedWeights[fam];
+            auto it = std::find(vecSupported.begin(), vecSupported.end(), normalWeight);
+            if (it != vecSupported.end() && ++it != vecSupported.end()) {
+                boldWeight = *it;
+            }
+        }
+        mapDefaultWeights.emplace(fam, std::make_pair(normalWeight, boldWeight));
+    };
+
+    auto loadFontFromResource = [](const QString& resource) -> int {
+        QFile file(resource);
+        if (!file.open(QIODevice::ReadOnly)) {
+            qWarning() << __func__ << ": Failed to open font resource" << resource;
+            return -1;
+        }
+        return QFontDatabase::addApplicationFontFromData(file.readAll());
+    };
 
     for (const auto& it : mapStyles) {
-        QString font = ":fonts/" + family + "-" + it.first;
-        vecFontIds.push_back(QFontDatabase::addApplicationFont(font));
+        QString font = ":/fonts/" + family + "-" + it.first;
+        vecFontIds.push_back(loadFontFromResource(font));
         qDebug() << __func__ << ": " << font << " loaded with id " << vecFontIds.back();
         if (it.second) {
-            vecFontIds.push_back(QFontDatabase::addApplicationFont(font + italic));
+            vecFontIds.push_back(loadFontFromResource(font + italic));
             qDebug() << __func__ << ": " << font + italic << " loaded with id " << vecFontIds.back();
         }
     }
 
-    // Fail if an added id is -1 which means QFontDatabase::addApplicationFont failed.
+    // If any resource failed to load, log a warning and continue with the system default fonts.
     if (std::find(vecFontIds.begin(), vecFontIds.end(), -1) != vecFontIds.end()) {
-        osDefaultFont = nullptr;
-        return false;
+        qWarning() << __func__ << ": Failed to load bundled fonts, falling back to system defaults.";
+        fontFamily = FontFamily::SystemDefault;
+        mapSupportedWeights[FontFamily::SystemDefault] = supportedWeights(FontFamily::SystemDefault);
+        addBestDefaults(FontFamily::SystemDefault);
+        mapWeights = mapDefaultWeights;
+        setApplicationFont();
+        return true;
     }
 
     // Print debug logs for added fonts fetched by the added ids
@@ -1226,64 +1297,8 @@ bool loadFonts()
 
     setApplicationFont();
 
-    // Initialize supported font weights for all available fonts
-    // Generate a vector with supported font weights by comparing the width of a certain test text for all font weights
-    auto supportedWeights = [](FontFamily family) -> std::vector<QFont::Weight> {
-        auto getTestWidth = [&](QFont::Weight weight) -> int {
-            QFont font = getFont(family, weight, false, defaultFontSize);
-            return TextWidth(QFontMetrics(font), ("Check the width of this text to see if the weight change has an impact!"));
-        };
-        std::vector<QFont::Weight> vecWeights{QFont::Thin, QFont::ExtraLight, QFont::Light,
-                                              QFont::Normal, QFont::Medium, QFont::DemiBold,
-                                              QFont::Bold, QFont::ExtraBold, QFont::Black};
-        std::vector<QFont::Weight> vecSupported;
-        QFont::Weight prevWeight = vecWeights.front();
-        for (auto weight = vecWeights.begin() + 1; weight != vecWeights.end(); ++weight) {
-            if (getTestWidth(prevWeight) != getTestWidth(*weight)) {
-                if (vecSupported.empty()) {
-                    vecSupported.push_back(prevWeight);
-                }
-                vecSupported.push_back(*weight);
-            }
-            prevWeight = *weight;
-        }
-        if (vecSupported.empty()) {
-            vecSupported.push_back(QFont::Normal);
-        }
-        return vecSupported;
-    };
-
     mapSupportedWeights.insert(std::make_pair(FontFamily::SystemDefault, supportedWeights(FontFamily::SystemDefault)));
     mapSupportedWeights.insert(std::make_pair(FontFamily::Montserrat, supportedWeights(FontFamily::Montserrat)));
-
-    auto getBestMatch = [&](FontFamily fontFamily, QFont::Weight targetWeight) {
-        auto& vecSupported = mapSupportedWeights[fontFamily];
-        auto it = vecSupported.begin();
-        QFont::Weight bestWeight = *it;
-        int nBestDiff = abs(*it - targetWeight);
-        while (++it != vecSupported.end()) {
-            int nDiff = abs(*it - targetWeight);
-            if (nDiff < nBestDiff) {
-                bestWeight = *it;
-                nBestDiff = nDiff;
-            }
-        }
-        return bestWeight;
-    };
-
-    auto addBestDefaults = [&](FontFamily family) -> auto {
-        QFont::Weight normalWeight = getBestMatch(family, defaultFontWeightNormal);
-        QFont::Weight boldWeight = getBestMatch(family, defaultFontWeightBold);
-        if (normalWeight == boldWeight) {
-            // If the results are the same use the next possible weight for bold font
-            auto& vecSupported = mapSupportedWeights[fontFamily];
-            auto it = std::find(vecSupported.begin(), vecSupported.end(),normalWeight);
-            if (++it != vecSupported.end()) {
-                boldWeight = *it;
-            }
-        }
-        mapDefaultWeights.emplace(family, std::make_pair(normalWeight, boldWeight));
-    };
 
     addBestDefaults(FontFamily::SystemDefault);
     addBestDefaults(FontFamily::Montserrat);
@@ -1309,7 +1324,7 @@ void setApplicationFont()
 
     if (fontFamily == FontFamily::Montserrat) {
         QString family = fontFamilyToString(FontFamily::Montserrat);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
         if (getFontWeightNormal() != getFontWeightNormalDefault()) {
             font = std::make_unique<QFont>(getFontNormal());
         } else {
@@ -1466,7 +1481,7 @@ QFont getFont(FontFamily family, QFont::Weight qWeight, bool fItalic, int nPoint
             {QFont::DemiBold, "SemiBold"},
             {QFont::ExtraBold, "ExtraBold"},
             {QFont::Black, "Black"},
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
             {QFont::Normal, "Regular"},
             {QFont::Bold, "Bold"},
 #else
@@ -1477,7 +1492,7 @@ QFont getFont(FontFamily family, QFont::Weight qWeight, bool fItalic, int nPoint
 
         assert(mapMontserratMapping.count(qWeight));
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 
         QString styleName = mapMontserratMapping[qWeight];
 
@@ -1587,7 +1602,7 @@ QString getActiveTheme()
     return theme;
 }
 
-bool dashThemeActive()
+bool orinThemeActive()
 {
     QSettings settings;
     QString theme = settings.value("theme", defaultTheme).toString();
@@ -1603,10 +1618,10 @@ void loadTheme(bool fForce)
 
 void disableMacFocusRect(const QWidget* w)
 {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     for (const auto& c : w->findChildren<QWidget*>()) {
         if (c->testAttribute(Qt::WA_MacShowFocusRect)) {
-            c->setAttribute(Qt::WA_MacShowFocusRect, !dashThemeActive());
+            c->setAttribute(Qt::WA_MacShowFocusRect, !orinThemeActive());
             setRectsDisabled.emplace(c);
         }
     }
@@ -1615,12 +1630,12 @@ void disableMacFocusRect(const QWidget* w)
 
 void updateMacFocusRects()
 {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     QWidgetList allWidgets = QApplication::allWidgets();
     auto it = setRectsDisabled.begin();
     while (it != setRectsDisabled.end()) {
         if (allWidgets.contains(*it)) {
-            (*it)->setAttribute(Qt::WA_MacShowFocusRect, !dashThemeActive());
+            (*it)->setAttribute(Qt::WA_MacShowFocusRect, !orinThemeActive());
             ++it;
         } else {
             it = setRectsDisabled.erase(it);
@@ -1634,7 +1649,7 @@ void updateButtonGroupShortcuts(QButtonGroup* buttonGroup)
     if (buttonGroup == nullptr) {
         return;
     }
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     auto modifier = "Ctrl";
 #else
     auto modifier = "Alt";
@@ -1665,7 +1680,7 @@ fs::path QStringToPath(const QString &path)
 
 QString PathToQString(const fs::path &path)
 {
-    return QString::fromStdString(path.u8string());
+    return QString::fromStdString(path.utf8string());
 }
 
 QString NetworkToQString(Network net)
@@ -1714,8 +1729,7 @@ QString ConnectionTypeToQString(ConnectionType conn_type, bool prepend_direction
 
 QString formatDurationStr(std::chrono::seconds dur)
 {
-    using days = std::chrono::duration<int, std::ratio<86400>>; // can remove this line after C++20
-    const auto d{std::chrono::duration_cast<days>(dur)};
+    const auto d{std::chrono::duration_cast<std::chrono::days>(dur)};
     const auto h{std::chrono::duration_cast<std::chrono::hours>(dur - d)};
     const auto m{std::chrono::duration_cast<std::chrono::minutes>(dur - d - h)};
     const auto s{std::chrono::duration_cast<std::chrono::seconds>(dur - d - h - m)};
@@ -1847,7 +1861,7 @@ bool ItemDelegate::eventFilter(QObject *object, QEvent *event)
 
 void PolishProgressDialog(QProgressDialog* dialog)
 {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     // Workaround for macOS-only Qt bug; see: QTBUG-65750, QTBUG-70357.
     const int margin = TextWidth(dialog->fontMetrics(), ("X"));
     dialog->resize(dialog->width() + 2 * margin, dialog->height());
@@ -1947,6 +1961,13 @@ void PrintSlotException(
     description += "->";
     description += receiver->metaObject()->className();
     PrintExceptionContinue(std::make_exception_ptr(exception), description.c_str());
+}
+
+void ShowModalDialogAsynchronously(QDialog* dialog)
+{
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowModality(Qt::ApplicationModal);
+    dialog->show();
 }
 
 } // namespace GUIUtil

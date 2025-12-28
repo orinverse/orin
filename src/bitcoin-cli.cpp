@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -79,12 +79,17 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-version", "Print version and exit", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-conf=<file>", strprintf("Specify configuration file. Relative paths will be prefixed by datadir location. (default: %s)", BITCOIN_CONF_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-datadir=<dir>", "Specify data directory", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-generate", strprintf("Generate blocks immediately, equivalent to RPC getnewaddress followed by RPC generatetoaddress. Optional positional integer arguments are number of blocks to generate (default: %s) and maximum iterations to try (default: %s), equivalent to RPC generatetoaddress nblocks and maxtries arguments. Example: dash-cli -generate 4 1000", DEFAULT_NBLOCKS, DEFAULT_MAX_TRIES), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-generate",
+                   strprintf("Generate blocks, equivalent to RPC getnewaddress followed by RPC generatetoaddress. Optional positional integer "
+                             "arguments are number of blocks to generate (default: %s) and maximum iterations to try (default: %s), equivalent to "
+                             "RPC generatetoaddress nblocks and maxtries arguments. Example: orin-cli -generate 4 1000",
+                             DEFAULT_NBLOCKS, DEFAULT_MAX_TRIES),
+                   ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-addrinfo", "Get the number of addresses known to the node, per network and total, after filtering for quality and recency. The total number of addresses known to the node may be higher.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-getinfo", "Get general information from the remote server. Note that unlike server-side RPC calls, the results of -getinfo is the result of multiple non-atomic requests. Some entries in the result may represent results from different states (e.g. wallet balance may be as of a different block from the chain state reported)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-getinfo", "Get general information from the remote server. Note that unlike server-side RPC calls, the output of -getinfo is the result of multiple non-atomic requests. Some entries in the output may represent results from different states (e.g. wallet balance may be as of a different block from the chain state reported)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-netinfo", "Get network peer connection information from the remote server. An optional integer argument from 0 to 4 can be passed for different peers listings (default: 0). Pass \"help\" for detailed help documentation.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 
-    argsman.AddArg("-color=<when>", strprintf("Color setting for CLI output (default: %s). Valid values: always, auto (add color codes when standard output is connected to a terminal and OS is not WIN32), never.", DEFAULT_COLOR_SETTING), ArgsManager::ALLOW_STRING, OptionsCategory::OPTIONS);
+    argsman.AddArg("-color=<when>", strprintf("Color setting for CLI output (default: %s). Valid values: always, auto (add color codes when standard output is connected to a terminal and OS is not WIN32), never.", DEFAULT_COLOR_SETTING), ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-named", strprintf("Pass named instead of positional arguments (default: %s)", DEFAULT_NAMED), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcclienttimeout=<n>", strprintf("Timeout in seconds during HTTP requests, or 0 for no timeout. (default: %d)", DEFAULT_HTTP_CLIENT_TIMEOUT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcconnect=<ip>", strprintf("Send commands to node running on <ip> (default: %s)", DEFAULT_RPCCONNECT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -93,8 +98,8 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-rpcport=<port>", strprintf("Connect to JSON-RPC on <port> (default: %u, testnet: %u, regtest: %u)", defaultBaseParams->RPCPort(), testnetBaseParams->RPCPort(), regtestBaseParams->RPCPort()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcuser=<user>", "Username for JSON-RPC connections", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcwait", "Wait for RPC server to start", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-rpcwallet=<walletname>", "Send RPC for non-default wallet on RPC server (needs to exactly match corresponding -wallet option passed to dashd). This changes the RPC endpoint used, e.g. http://127.0.0.1:9998/wallet/<walletname>", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-rpcwaittimeout=<n>", strprintf("Timeout in seconds to wait for the RPC server to start, or 0 for no timeout. (default: %d)", DEFAULT_WAIT_CLIENT_TIMEOUT), ArgsManager::ALLOW_INT, OptionsCategory::OPTIONS);
+    argsman.AddArg("-rpcwallet=<walletname>", "Send RPC for non-default wallet on RPC server (needs to exactly match corresponding -wallet option passed to orind). This changes the RPC endpoint used, e.g. http://127.0.0.1:9998/wallet/<walletname>", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-rpcwaittimeout=<n>", strprintf("Timeout in seconds to wait for the RPC server to start, or 0 for no timeout. (default: %d)", DEFAULT_WAIT_CLIENT_TIMEOUT), ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-stdin", "Read extra arguments from standard input, one per line until EOF/Ctrl-D (recommended for sensitive information such as passphrases). When combined with -stdinrpcpass, the first line from standard input is used for the RPC password.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-stdinrpcpass", "Read RPC password from standard input as a single line. When combined with -stdin, the first line from standard input is used for the RPC password. When combined with -stdinwalletpassphrase, -stdinrpcpass consumes the first line, and -stdinwalletpassphrase consumes the second.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-stdinwalletpassphrase", "Read wallet passphrase from standard input as a single line. When combined with -stdin, the first line from standard input is used for the wallet passphrase.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -153,12 +158,15 @@ static int AppInitRPC(int argc, char* argv[])
 
     if (argc < 2 || HelpRequested(gArgs) || gArgs.IsArgSet("-version")) {
         std::string strUsage = PACKAGE_NAME " RPC client version " + FormatFullVersion() + "\n";
-        if (!gArgs.IsArgSet("-version")) {
+
+        if (gArgs.IsArgSet("-version")) {
+            strUsage += FormatParagraph(LicenseInfo());
+        } else {
             strUsage += "\n"
-                "Usage:  dash-cli [options] <command> [params]  Send command to " PACKAGE_NAME "\n"
-                "or:     dash-cli [options] -named <command> [name=value]...  Send command to " PACKAGE_NAME " (with named arguments)\n"
-                "or:     dash-cli [options] help                List commands\n"
-                "or:     dash-cli [options] help <command>      Get help for a command\n";
+                "Usage:  orin-cli [options] <command> [params]  Send command to " PACKAGE_NAME "\n"
+                "or:     orin-cli [options] -named <command> [name=value]...  Send command to " PACKAGE_NAME " (with named arguments)\n"
+                "or:     orin-cli [options] help                List commands\n"
+                "or:     orin-cli [options] help <command>      Get help for a command\n";
             strUsage += "\n" + gArgs.GetHelpMessage();
         }
 
@@ -191,17 +199,16 @@ static int AppInitRPC(int argc, char* argv[])
 /** Reply structure for request_done to fill in */
 struct HTTPReply
 {
-    HTTPReply(): status(0), error(-1) {}
+    HTTPReply() = default;
 
-    int status;
-    int error;
+    int status{0};
+    int error{-1};
     std::string body;
 };
 
 static std::string http_errorstring(int code)
 {
     switch(code) {
-#if LIBEVENT_VERSION_NUMBER >= 0x02010300
     case EVREQ_HTTP_TIMEOUT:
         return "timeout reached";
     case EVREQ_HTTP_EOF:
@@ -214,7 +221,6 @@ static std::string http_errorstring(int code)
         return "request was canceled";
     case EVREQ_HTTP_DATA_TOO_LONG:
         return "response body is larger than allowed";
-#endif
     default:
         return "unknown";
     }
@@ -245,13 +251,11 @@ static void http_request_done(struct evhttp_request *req, void *ctx)
     }
 }
 
-#if LIBEVENT_VERSION_NUMBER >= 0x02010300
 static void http_error_cb(enum evhttp_request_error err, void *ctx)
 {
     HTTPReply *reply = static_cast<HTTPReply*>(ctx);
     reply->error = err;
 }
-#endif
 
 /** Class that handles the conversion from a command-line to a JSON-RPC request,
  * as well as converting back to a JSON object that can be shown as result.
@@ -259,7 +263,7 @@ static void http_error_cb(enum evhttp_request_error err, void *ctx)
 class BaseRequestHandler
 {
 public:
-    virtual ~BaseRequestHandler() {}
+    virtual ~BaseRequestHandler() = default;
     virtual UniValue PrepareRequest(const std::string& method, const std::vector<std::string>& args) = 0;
     virtual UniValue ProcessReply(const UniValue &batch_in) = 0;
 };
@@ -291,7 +295,7 @@ public:
         if (!reply["error"].isNull()) return reply;
         const std::vector<UniValue>& nodes{reply["result"].getValues()};
         if (!nodes.empty() && nodes.at(0)["network"].isNull()) {
-            throw std::runtime_error("-addrinfo requires dashd server to be running v21.0 and up");
+            throw std::runtime_error("-addrinfo requires orind server to be running v21.0 and up");
         }
         // Count the number of peers known to our node, by network.
         std::array<uint64_t, NETWORKS.size()> counts{{}};
@@ -402,7 +406,7 @@ private:
         }
         return UNKNOWN_NETWORK;
     }
-    uint8_t m_details_level{0}; //!< Optional user-supplied arg to set dashboard details level
+    uint8_t m_details_level{0}; //!< Optional user-supplied arg to set orinboard details level
     bool DetailsRequested() const { return m_details_level > 0 && m_details_level < 5; }
     bool IsAddressSelected() const { return m_details_level == 2 || m_details_level == 4; }
     bool IsVersionSelected() const { return m_details_level == 3 || m_details_level == 4; }
@@ -471,7 +475,7 @@ public:
             if (ParseUInt8(args.at(0), &n)) {
                 m_details_level = std::min(n, MAX_DETAIL_LEVEL);
             } else {
-                throw std::runtime_error(strprintf("invalid -netinfo argument: %s\nFor more information, run: dash-cli -netinfo help", args.at(0)));
+                throw std::runtime_error(strprintf("invalid -netinfo argument: %s\nFor more information, run: orin-cli -netinfo help", args.at(0)));
             }
         }
         UniValue result(UniValue::VARR);
@@ -487,8 +491,8 @@ public:
         if (!batch[ID_NETWORKINFO]["error"].isNull()) return batch[ID_NETWORKINFO];
 
         const UniValue& networkinfo{batch[ID_NETWORKINFO]["result"]};
-        if (networkinfo["version"].get_int() < 200000) {
-            throw std::runtime_error("-netinfo requires dashd server to be running v20.0 and up");
+        if (networkinfo["version"].getInt<int>() < 200000) {
+            throw std::runtime_error("-netinfo requires orind server to be running v20.0 and up");
         }
         const int64_t time_now{TicksSinceEpoch<std::chrono::seconds>(CliClock::now())};
 
@@ -508,16 +512,16 @@ public:
             if (conn_type == "manual") ++m_manual_peers_count;
             if (DetailsRequested()) {
                 // Push data for this peer to the peers vector.
-                const int peer_id{peer["id"].get_int()};
-                const int mapped_as{peer["mapped_as"].isNull() ? 0 : peer["mapped_as"].get_int()};
-                const int version{peer["version"].get_int()};
-                const int64_t addr_processed{peer["addr_processed"].isNull() ? 0 : peer["addr_processed"].get_int64()};
-                const int64_t addr_rate_limited{peer["addr_rate_limited"].isNull() ? 0 : peer["addr_rate_limited"].get_int64()};
-                const int64_t conn_time{peer["conntime"].get_int64()};
-                const int64_t last_blck{peer["last_block"].get_int64()};
-                const int64_t last_recv{peer["lastrecv"].get_int64()};
-                const int64_t last_send{peer["lastsend"].get_int64()};
-                const int64_t last_trxn{peer["last_transaction"].get_int64()};
+                const int peer_id{peer["id"].getInt<int>()};
+                const int mapped_as{peer["mapped_as"].isNull() ? 0 : peer["mapped_as"].getInt<int>()};
+                const int version{peer["version"].getInt<int>()};
+                const int64_t addr_processed{peer["addr_processed"].isNull() ? 0 : peer["addr_processed"].getInt<int64_t>()};
+                const int64_t addr_rate_limited{peer["addr_rate_limited"].isNull() ? 0 : peer["addr_rate_limited"].getInt<int64_t>()};
+                const int64_t conn_time{peer["conntime"].getInt<int64_t>()};
+                const int64_t last_blck{peer["last_block"].getInt<int64_t>()};
+                const int64_t last_recv{peer["lastrecv"].getInt<int64_t>()};
+                const int64_t last_send{peer["lastsend"].getInt<int64_t>()};
+                const int64_t last_trxn{peer["last_transaction"].getInt<int64_t>()};
                 const double min_ping{peer["minping"].isNull() ? -1 : peer["minping"].get_real()};
                 const double ping{peer["pingtime"].isNull() ? -1 : peer["pingtime"].get_real()};
                 const std::string addr{peer["addr"].get_str()};
@@ -538,7 +542,7 @@ public:
         }
 
         // Generate report header.
-        std::string result{strprintf("%s client %s%s - server %i%s\n\n", PACKAGE_NAME, FormatFullVersion(), ChainToString(), networkinfo["protocolversion"].get_int(), networkinfo["subversion"].get_str())};
+        std::string result{strprintf("%s client %s%s - server %i%s\n\n", PACKAGE_NAME, FormatFullVersion(), ChainToString(), networkinfo["protocolversion"].getInt<int>(), networkinfo["subversion"].get_str())};
 
         // Report detailed peer connections list sorted by direction and minimum ping time.
         if (DetailsRequested() && !m_peers.empty()) {
@@ -556,7 +560,7 @@ public:
                     peer.is_outbound ? "out" : "in",
                     ConnectionTypeForNetinfo(peer.conn_type),
                     peer.network,
-                    peer.transport_protocol_type.rfind('v', 0) == 0 ? peer.transport_protocol_type[1] : ' ',
+                    peer.transport_protocol_type.starts_with('v') == 0 ? peer.transport_protocol_type[1] : ' ',
                     PingTimeToString(peer.min_ping),
                     PingTimeToString(peer.ping),
                     peer.last_send ? ToString(time_now - peer.last_send) : "",
@@ -627,7 +631,7 @@ public:
                 max_addr_size = std::max(addr["address"].get_str().length() + 1, max_addr_size);
             }
             for (const UniValue& addr : local_addrs) {
-                result += strprintf("\n%-*s    port %6i    score %6i", max_addr_size, addr["address"].get_str(), addr["port"].get_int(), addr["score"].get_int());
+                result += strprintf("\n%-*s    port %6i    score %6i", max_addr_size, addr["address"].get_str(), addr["port"].getInt<int>(), addr["score"].getInt<int>());
             }
         }
 
@@ -636,22 +640,22 @@ public:
 
     const std::string m_help_doc{
         "-netinfo level|\"help\" \n\n"
-        "Returns a network peer connections dashboard with information from the remote server.\n"
+        "Returns a network peer connections orinboard with information from the remote server.\n"
         "This human-readable interface will change regularly and is not intended to be a stable API.\n"
         "Under the hood, -netinfo fetches the data by calling getpeerinfo and getnetworkinfo.\n"
         + strprintf("An optional integer argument from 0 to %d can be passed for different peers listings; %d to 255 are parsed as %d.\n", MAX_DETAIL_LEVEL, MAX_DETAIL_LEVEL, MAX_DETAIL_LEVEL) +
         "Pass \"help\" to see this detailed help documentation.\n"
         "If more than one argument is passed, only the first one is read and parsed.\n"
-        "Suggestion: use with the Linux watch(1) command for a live dashboard; see example below.\n\n"
+        "Suggestion: use with the Linux watch(1) command for a live orinboard; see example below.\n\n"
         "Arguments:\n"
-        + strprintf("1. level (integer 0-%d, optional)  Specify the info level of the peers dashboard (default 0):\n", MAX_DETAIL_LEVEL) +
+        + strprintf("1. level (integer 0-%d, optional)  Specify the info level of the peers orinboard (default 0):\n", MAX_DETAIL_LEVEL) +
         "                                  0 - Peer counts for each reachable network as well as for block relay peers\n"
         "                                      and manual peers, and the list of local addresses and ports\n"
         "                                  1 - Like 0 but preceded by a peers listing (without address and version columns)\n"
         "                                  2 - Like 1 but with an address column\n"
         "                                  3 - Like 1 but with a version column\n"
         "                                  4 - Like 1 but with both address and version columns\n"
-        "2. help (string \"help\", optional) Print this help documentation instead of the dashboard.\n\n"
+        "2. help (string \"help\", optional) Print this help documentation instead of the orinboard.\n\n"
         "Result:\n\n"
         + strprintf("* The peers listing in levels 1-%d displays all of the peers sorted by direction and minimum ping time:\n\n", MAX_DETAIL_LEVEL) +
         "  Column   Description\n"
@@ -672,7 +676,7 @@ public:
         "  send     Time since last message sent to the peer, in seconds\n"
         "  recv     Time since last message received from the peer, in seconds\n"
         "  txn      Time since last novel transaction received from the peer and accepted into our mempool, in minutes\n"
-        "           \"*\" - the peer requested we not relay transactions to it (relaytxes is false)\n"
+        "           \"*\" - we do not relay transactions to this peer (relaytxes is false)\n"
         "  blk      Time since last novel block passing initial validity checks received from the peer, in minutes\n"
         "  hb       High-bandwidth BIP152 compact block relay\n"
         "           \".\" (to)   - we selected the peer as a high-bandwidth peer\n"
@@ -691,15 +695,15 @@ public:
         "* The local addresses table lists each local address broadcast by the node, the port, and the score.\n\n"
         "Examples:\n\n"
         "Peer counts table of reachable networks and list of local addresses\n"
-        "> dash-cli -netinfo\n\n"
+        "> orin-cli -netinfo\n\n"
         "The same, preceded by a peers listing without address and version columns\n"
-        "> dash-cli -netinfo 1\n\n"
-        "Full dashboard\n"
-        + strprintf("> dash-cli -netinfo %d\n\n", MAX_DETAIL_LEVEL) +
-        "Full live dashboard, adjust --interval or --no-title as needed (Linux)\n"
-        + strprintf("> watch --interval 1 --no-title dash-cli -netinfo %d\n\n", MAX_DETAIL_LEVEL) +
+        "> orin-cli -netinfo 1\n\n"
+        "Full orinboard\n"
+        + strprintf("> orin-cli -netinfo %d\n\n", MAX_DETAIL_LEVEL) +
+        "Full live orinboard, adjust --interval or --no-title as needed (Linux)\n"
+        + strprintf("> watch --interval 1 --no-title orin-cli -netinfo %d\n\n", MAX_DETAIL_LEVEL) +
         "See this help\n"
-        "> dash-cli -netinfo help\n"};
+        "> orin-cli -netinfo help\n"};
 };
 
 /** Process RPC generatetoaddress request. */
@@ -753,7 +757,7 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
     //     3. default port for chain
     uint16_t port{BaseParams().RPCPort()};
     SplitHostPort(gArgs.GetArg("-rpcconnect", DEFAULT_RPCCONNECT), port, host);
-    port = static_cast<uint16_t>(gArgs.GetArg("-rpcport", port));
+    port = static_cast<uint16_t>(gArgs.GetIntArg("-rpcport", port));
 
     // Obtain event base
     raii_event_base base = obtain_event_base();
@@ -763,7 +767,7 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
 
     // Set connection timeout
     {
-        const int timeout = gArgs.GetArg("-rpcclienttimeout", DEFAULT_HTTP_CLIENT_TIMEOUT);
+        const int timeout = gArgs.GetIntArg("-rpcclienttimeout", DEFAULT_HTTP_CLIENT_TIMEOUT);
         if (timeout > 0) {
             evhttp_connection_set_timeout(evcon.get(), timeout);
         } else {
@@ -777,11 +781,11 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
 
     HTTPReply response;
     raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
-    if (req == nullptr)
+    if (req == nullptr) {
         throw std::runtime_error("create http request failed");
-#if LIBEVENT_VERSION_NUMBER >= 0x02010300
+    }
+
     evhttp_request_set_error_cb(req.get(), http_error_cb);
-#endif
 
     // Get credentials
     std::string strRPCUserColonPass;
@@ -832,12 +836,15 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
         if (response.error != -1) {
             responseErrorMessage = strprintf(" (error code %d - \"%s\")", response.error, http_errorstring(response.error));
         }
-        throw CConnectionFailed(strprintf("Could not connect to the server %s:%d%s\n\nMake sure the dashd server is running and that you are connecting to the correct RPC port.", host, port, responseErrorMessage));
+        throw CConnectionFailed(strprintf("Could not connect to the server %s:%d%s\n\n"
+                    "Make sure the orind server is running and that you are connecting to the correct RPC port.\n"
+                    "Use \"orin-cli -help\" for more info.",
+                    host, port, responseErrorMessage));
     } else if (response.status == HTTP_UNAUTHORIZED) {
         if (failedToGetAuthCookie) {
             throw std::runtime_error(strprintf(
                 "Could not locate RPC credentials. No authentication cookie could be found, and RPC password is not set.  See -rpcpassword and -stdinrpcpass.  Configuration file: (%s)",
-                fs::PathToString(GetConfigFile(gArgs.GetArg("-conf", BITCOIN_CONF_FILENAME)))));
+                fs::PathToString(GetConfigFile(gArgs.GetPathArg("-conf", BITCOIN_CONF_FILENAME)))));
         } else {
             throw std::runtime_error("Authorization failed: Incorrect rpcuser or rpcpassword");
         }
@@ -873,15 +880,15 @@ static UniValue ConnectAndCallRPC(BaseRequestHandler* rh, const std::string& str
     UniValue response(UniValue::VOBJ);
     // Execute and handle connection failures with -rpcwait.
     const bool fWait = gArgs.GetBoolArg("-rpcwait", false);
-    const int timeout = gArgs.GetArg("-rpcwaittimeout", DEFAULT_WAIT_CLIENT_TIMEOUT);
+    const int timeout = gArgs.GetIntArg("-rpcwaittimeout", DEFAULT_WAIT_CLIENT_TIMEOUT);
     const auto deadline{std::chrono::steady_clock::now() + 1s * timeout};
 
     do {
         try {
             response = CallRPC(rh, strMethod, args, rpcwallet);
             if (fWait) {
-                const UniValue& error = find_value(response, "error");
-                if (!error.isNull() && error["code"].get_int() == RPC_IN_WARMUP) {
+                const UniValue& error = response.find_value("error");
+                if (!error.isNull() && error["code"].getInt<int>() == RPC_IN_WARMUP) {
                     throw CConnectionFailed("server in warmup");
                 }
             }
@@ -908,21 +915,21 @@ static void ParseResult(const UniValue& result, std::string& strPrint)
 static void ParseError(const UniValue& error, std::string& strPrint, int& nRet)
 {
     if (error.isObject()) {
-        const UniValue& err_code = find_value(error, "code");
-        const UniValue& err_msg = find_value(error, "message");
+        const UniValue& err_code = error.find_value("code");
+        const UniValue& err_msg = error.find_value("message");
         if (!err_code.isNull()) {
             strPrint = "error code: " + err_code.getValStr() + "\n";
         }
         if (err_msg.isStr()) {
             strPrint += ("error message:\n" + err_msg.get_str());
         }
-        if (err_code.isNum() && err_code.get_int() == RPC_WALLET_NOT_SPECIFIED) {
-            strPrint += "\nTry adding \"-rpcwallet=<filename>\" option to dash-cli command line.";
+        if (err_code.isNum() && err_code.getInt<int>() == RPC_WALLET_NOT_SPECIFIED) {
+            strPrint += "\nTry adding \"-rpcwallet=<filename>\" option to orin-cli command line.";
         }
     } else {
         strPrint = "error: " + error.write();
     }
-    nRet = abs(error["code"].get_int());
+    nRet = abs(error["code"].getInt<int>());
 }
 
 /**
@@ -935,22 +942,22 @@ static void GetWalletBalances(UniValue& result)
 {
     DefaultRequestHandler rh;
     const UniValue listwallets = ConnectAndCallRPC(&rh, "listwallets", /* args=*/{});
-    if (!find_value(listwallets, "error").isNull()) return;
-    const UniValue& wallets = find_value(listwallets, "result");
+    if (!listwallets.find_value("error").isNull()) return;
+    const UniValue& wallets = listwallets.find_value("result");
     if (wallets.size() <= 1) return;
 
     UniValue balances(UniValue::VOBJ);
     for (const UniValue& wallet : wallets.getValues()) {
         const std::string wallet_name = wallet.get_str();
         const UniValue getbalances = ConnectAndCallRPC(&rh, "getbalances", /* args=*/{}, wallet_name);
-        const UniValue& balance = find_value(getbalances, "result")["mine"]["trusted"];
+        const UniValue& balance = getbalances.find_value("result")["mine"]["trusted"];
         balances.pushKV(wallet_name, balance);
     }
     result.pushKV("balances", balances);
 }
 
 /**
- * GetProgressBar contructs a progress bar with 5% intervals.
+ * GetProgressBar constructs a progress bar with 5% intervals.
  *
  * @param[in]   progress      The proportion of the progress bar to be filled between 0 and 1.
  * @param[out]  progress_bar  String representation of the progress bar.
@@ -979,7 +986,7 @@ static void GetProgressBar(double progress, std::string& progress_bar)
  */
 static void ParseGetInfoResult(UniValue& result)
 {
-    if (!find_value(result, "error").isNull()) return;
+    if (!result.find_value("error").isNull()) return;
 
     std::string RESET, GREEN, BLUE, YELLOW, MAGENTA, CYAN;
     bool should_colorize = false;
@@ -1195,9 +1202,9 @@ static int CommandLineRPC(int argc, char *argv[])
             rh.reset(new NetinfoRequestHandler());
         } else if (gArgs.GetBoolArg("-generate", false)) {
             const UniValue getnewaddress{GetNewAddress()};
-            const UniValue& error{find_value(getnewaddress, "error")};
+            const UniValue& error{getnewaddress.find_value("error")};
             if (error.isNull()) {
-                SetGenerateToAddressArgs(find_value(getnewaddress, "result").get_str(), args);
+                SetGenerateToAddressArgs(getnewaddress.find_value("result").get_str(), args);
                 rh.reset(new GenerateToAddressRequestHandler());
             } else {
                 ParseError(error, strPrint, nRet);
@@ -1219,8 +1226,8 @@ static int CommandLineRPC(int argc, char *argv[])
             const UniValue reply = ConnectAndCallRPC(rh.get(), method, args, wallet_name);
 
             // Parse reply
-            UniValue result = find_value(reply, "result");
-            const UniValue& error = find_value(reply, "error");
+            UniValue result = reply.find_value("result");
+            const UniValue& error = reply.find_value("error");
             if (error.isNull()) {
                 if (gArgs.GetBoolArg("-getinfo", false)) {
                     if (!gArgs.IsArgSet("-rpcwallet")) {

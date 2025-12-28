@@ -1,21 +1,19 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_GOVERNANCE_VOTE_H
 #define BITCOIN_GOVERNANCE_VOTE_H
 
+#include <hash.h>
 #include <primitives/transaction.h>
 #include <uint256.h>
+#include <util/string.h>
 
-class CActiveMasternodeManager;
 class CBLSPublicKey;
 class CDeterministicMNList;
 class CGovernanceVote;
-class CMasternodeSync;
-class CKey;
 class CKeyID;
-class PeerManager;
 
 // INTENTION OF MASTERNODES REGARDING ITEM
 enum vote_outcome_enum_t : int {
@@ -95,13 +93,16 @@ public:
 
     void SetSignature(const std::vector<unsigned char>& vchSigIn) { vchSig = vchSigIn; }
 
-    bool Sign(const CKey& key, const CKeyID& keyID);
     bool CheckSignature(const CKeyID& keyID) const;
-    bool Sign(const CActiveMasternodeManager& mn_activeman);
     bool CheckSignature(const CBLSPublicKey& pubKey) const;
     bool IsValid(const CDeterministicMNList& tip_mn_list, bool useVotingKey) const;
-    std::string GetSignatureString() const;
-    void Relay(PeerManager& peerman, const CMasternodeSync& mn_sync, const CDeterministicMNList& tip_mn_list) const;
+    std::string GetSignatureString() const
+    {
+        return masternodeOutpoint.ToStringShort() + "|" + nParentHash.ToString() + "|" +
+                                 ::ToString(nVoteSignal) + "|" +
+                                 ::ToString(nVoteOutcome) + "|" +
+                                 ::ToString(nTime);
+    }
 
     const COutPoint& GetMasternodeOutpoint() const { return masternodeOutpoint; }
 
@@ -112,7 +113,10 @@ public:
     */
 
     uint256 GetHash() const;
-    uint256 GetSignatureHash() const;
+    uint256 GetSignatureHash() const
+    {
+        return SerializeHash(*this);
+    }
 
     std::string ToString(const CDeterministicMNList& tip_mn_list) const;
 
@@ -125,5 +129,10 @@ public:
         SER_READ(obj, obj.UpdateHash());
     }
 };
+
+/**
+ * Sign a governance vote using wallet signing methods
+ * Handles different signing approaches for different networks
+ */
 
 #endif // BITCOIN_GOVERNANCE_VOTE_H

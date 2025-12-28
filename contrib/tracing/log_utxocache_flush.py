@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
+# Copyright (c) 2021 The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import sys
 import ctypes
 from bcc import BPF, USDT
 
-"""Example logging Dash Core utxo set cache flushes utilizing
+"""Example logging Orin Core utxo set cache flushes utilizing
     the utxocache:flush tracepoint."""
 
-# USAGE:  ./contrib/tracing/log_utxocache_flush.py path/to/dashd
+# USAGE:  ./contrib/tracing/log_utxocache_flush.py path/to/orind
 
 # BCC: The C program to be compiled to an eBPF program (by BCC) and loaded into
 # a sandboxed Linux kernel VM.
@@ -97,7 +100,7 @@ def main(bitcoind_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("USAGE: ", sys.argv[0], "path/to/dashd")
+        print("USAGE: ", sys.argv[0], "path/to/orind")
         exit(1)
 
     path = sys.argv[1]

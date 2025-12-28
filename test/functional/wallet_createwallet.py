@@ -26,6 +26,11 @@ class CreateWalletTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.generate(node, 1) # Leave IBD for sethdseed
 
+        self.log.info("Run createwallet with invalid parameters.")
+        # Run createwallet with invalid parameters. This must not prevent a new wallet with the same name from being created with the correct parameters.
+        assert_raises_rpc_error(-4, "Passphrase provided but private keys are disabled. A passphrase is only used to encrypt private keys, so cannot be used for wallets with private keys disabled.",
+            self.nodes[0].createwallet, wallet_name='w0', disable_private_keys=True, passphrase="passphrase")
+
         self.nodes[0].createwallet(wallet_name='w0')
         w0 = node.get_wallet_rpc('w0')
         address1 = w0.getnewaddress()
@@ -144,7 +149,7 @@ class CreateWalletTest(BitcoinTestFramework):
         w6.walletpassphrase('thisisapassphrase', 60)
         w6.signmessage(w6.getnewaddress(), "test")
         w6.keypoolrefill(1)
-        # There should only be 1 key for legacy, 1 for descriptors (dash has only one type of addresses)
+        # There should only be 1 key for legacy, 1 for descriptors (orin has only one type of addresses)
         walletinfo = w6.getwalletinfo()
         keys = 1 if self.options.descriptors else 1
         assert_equal(walletinfo['keypoolsize'], keys)

@@ -37,7 +37,6 @@ class ImportMultiTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [['-usehd=1']] * self.num_nodes
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -708,6 +707,25 @@ class ImportMultiTest(BitcoinTestFramework):
         for i in range(0, 5):
             addr = wrpc.getnewaddress('')
             assert_equal(addr, addresses[i])
+
+        # Create wallet with passphrase
+        self.log.info('Test watchonly imports on a wallet with a passphrase, without unlocking')
+        self.nodes[1].createwallet(wallet_name='w1', blank=True, passphrase='pass')
+        wrpc = self.nodes[1].get_wallet_rpc('w1')
+        assert_raises_rpc_error(-13, "Please enter the wallet passphrase with walletpassphrase first.",
+                                wrpc.importmulti, [{
+                                    'desc': descsum_create('pkh(' + pub1 + ')'),
+                                    "timestamp": "now",
+                                }])
+
+        result = wrpc.importmulti(
+            [{
+                'desc': descsum_create('pkh(' + pub1 + ')'),
+                "timestamp": "now",
+                "watchonly": True,
+            }]
+        )
+        assert result[0]['success']
 
 
 if __name__ == '__main__':

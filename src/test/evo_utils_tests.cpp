@@ -1,17 +1,16 @@
-// Copyright (c) 2022-2024 The Dash Core developers
+// Copyright (c) 2022-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test/util/setup_common.h>
 
-#include <llmq/params.h>
-#include <llmq/options.h>
-
 #include <chainparams.h>
-
+#include <llmq/options.h>
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
+
+using node::NodeContext;
 
 /* TODO: rename this file and test to llmq_options_test */
 BOOST_AUTO_TEST_SUITE(evo_utils_tests)

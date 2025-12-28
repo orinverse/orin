@@ -1,26 +1,33 @@
-// Copyright (c) 2019-2024 The Dash Core developers
+// Copyright (c) 2019-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <node/context.h>
-#include <validation.h>
-#include <coinjoin/context.h>
 #include <coinjoin/server.h>
-#include <rpc/blockchain.h>
+#include <coinjoin/walletman.h>
+#include <masternode/active/context.h>
+#include <node/context.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
-#include <util/check.h>
 #include <rpc/util.h>
-#include <util/strencodings.h>
+#include <util/check.h>
+#include <wallet/receive.h>
+#include <wallet/rpc/util.h>
+#include <walletinitinterface.h>
 
 #ifdef ENABLE_WALLET
-#include <coinjoin/client.h>
 #include <coinjoin/options.h>
 #include <interfaces/coinjoin.h>
-#include <wallet/rpcwallet.h>
 #endif // ENABLE_WALLET
 
 #include <univalue.h>
+
+using node::NodeContext;
+#ifdef ENABLE_WALLET
+using wallet::CWallet;
+using wallet::GetWalletForJSONRPCRequest;
+using wallet::DEFAULT_DISABLE_WALLET;
+using wallet::WALLET_FLAG_DISABLE_PRIVATE_KEYS;
+#endif // ENABLE_WALLET
 
 #ifdef ENABLE_WALLET
 namespace {
@@ -45,12 +52,13 @@ static RPCHelpMan coinjoin()
     return RPCHelpMan{"coinjoin",
         "\nAvailable commands:\n"
         "  start       - Start mixing\n"
+        "  status      - Get mixing status\n"
         "  stop        - Stop mixing\n"
         "  reset       - Reset mixing",
         {
             {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -73,8 +81,8 @@ static RPCHelpMan coinjoin_reset()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -84,8 +92,8 @@ static RPCHelpMan coinjoin_reset()
 
     ValidateCoinJoinArguments();
 
-    auto cj_clientman = CHECK_NONFATAL(node.coinjoin_loader)->walletman().Get(wallet->GetName());
-    CHECK_NONFATAL(cj_clientman)->ResetPool();
+    auto cj_clientman = CHECK_NONFATAL(node.coinjoin_loader)->GetClient(wallet->GetName());
+    CHECK_NONFATAL(cj_clientman)->resetPool();
 
     return "Mixing was reset";
 },
@@ -107,8 +115,8 @@ static RPCHelpMan coinjoin_start()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -124,16 +132,51 @@ static RPCHelpMan coinjoin_start()
             throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please unlock wallet for mixing with walletpassphrase first.");
     }
 
-    auto cj_clientman = CHECK_NONFATAL(CHECK_NONFATAL(node.coinjoin_loader)->walletman().Get(wallet->GetName()));
-    if (!cj_clientman->StartMixing()) {
+    auto cj_clientman = CHECK_NONFATAL(CHECK_NONFATAL(node.coinjoin_loader)->GetClient(wallet->GetName()));
+    if (!cj_clientman->startMixing()) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Mixing has been started already.");
     }
 
-    ChainstateManager& chainman = EnsureChainman(node);
-    CTxMemPool& mempool = EnsureMemPool(node);
-    CConnman& connman = EnsureConnman(node);
-    bool result = cj_clientman->DoAutomaticDenominating(chainman, connman, mempool);
-    return "Mixing " + (result ? "started successfully" : ("start failed: " + cj_clientman->GetStatuses().original + ", will retry"));
+    return "Mixing requested";
+},
+    };
+}
+
+static RPCHelpMan coinjoin_status()
+{
+    return RPCHelpMan{"coinjoin status",
+        "\nGet status on CoinJoin mixing sessions\n",
+        {},
+        RPCResult{
+            RPCResult::Type::ARR, "", "",
+            {{RPCResult::Type::STR, "", "Status of mixing session"}}},
+        RPCExamples{
+            HelpExampleCli("coinjoin status", "")
+          + HelpExampleRpc("coinjoin status", "")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return UniValue::VNULL;
+
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+
+    if (node.mn_activeman) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Client-side mixing is not supported on masternodes");
+    }
+
+    ValidateCoinJoinArguments();
+
+    auto cj_clientman = CHECK_NONFATAL(node.coinjoin_loader)->GetClient(wallet->GetName());
+    if (!CHECK_NONFATAL(cj_clientman)->isMixing()) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "No ongoing mix session");
+    }
+
+    UniValue ret(UniValue::VARR);
+    for (auto str_status : cj_clientman->getSessionStatuses()) {
+        ret.push_back(str_status);
+    }
+    return ret;
 },
     };
 }
@@ -152,8 +195,8 @@ static RPCHelpMan coinjoin_stop()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return UniValue::VNULL;
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
 
@@ -164,13 +207,13 @@ static RPCHelpMan coinjoin_stop()
     ValidateCoinJoinArguments();
 
     CHECK_NONFATAL(node.coinjoin_loader);
-    auto cj_clientman = node.coinjoin_loader->walletman().Get(wallet->GetName());
+    auto cj_clientman = node.coinjoin_loader->GetClient(wallet->GetName());
 
     CHECK_NONFATAL(cj_clientman);
-    if (!cj_clientman->IsMixing()) {
+    if (!cj_clientman->isMixing()) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "No mix session to stop");
     }
-    cj_clientman->StopMixing();
+    cj_clientman->stopMixing();
 
     return "Mixing was stopped";
 },
@@ -187,7 +230,7 @@ static RPCHelpMan coinjoinsalt()
         {
             {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
         },
-        RPCResults{},
+        RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -214,7 +257,7 @@ static RPCHelpMan coinjoinsalt_generate()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const auto str_wallet = wallet->GetName();
     if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
@@ -234,14 +277,14 @@ static RPCHelpMan coinjoinsalt_generate()
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     if (node.coinjoin_loader != nullptr) {
-        auto cj_clientman = node.coinjoin_loader->walletman().Get(wallet->GetName());
-        if (cj_clientman != nullptr && cj_clientman->IsMixing()) {
+        auto cj_clientman = node.coinjoin_loader->GetClient(wallet->GetName());
+        if (cj_clientman != nullptr && cj_clientman->isMixing()) {
             throw JSONRPCError(RPC_WALLET_ERROR,
                                strprintf("Wallet \"%s\" is currently mixing, cannot change salt!", str_wallet));
         }
     }
 
-    const auto wallet_balance{wallet->GetBalance()};
+    const auto wallet_balance{GetBalance(*wallet)};
     const bool has_balance{(wallet_balance.m_anonymized
                           + wallet_balance.m_denominated_trusted
                           + wallet_balance.m_denominated_untrusted_pending) > 0};
@@ -278,7 +321,7 @@ static RPCHelpMan coinjoinsalt_get()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const auto str_wallet = wallet->GetName();
     if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
@@ -316,7 +359,7 @@ static RPCHelpMan coinjoinsalt_set()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    if (!wallet) return UniValue::VNULL;
 
     const auto salt{ParseHashV(request.params[0], "salt")};
     if (salt == uint256::ZERO) {
@@ -336,14 +379,14 @@ static RPCHelpMan coinjoinsalt_set()
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     if (node.coinjoin_loader != nullptr) {
-        auto cj_clientman = node.coinjoin_loader->walletman().Get(wallet->GetName());
-        if (cj_clientman != nullptr && cj_clientman->IsMixing()) {
+        auto cj_clientman = node.coinjoin_loader->GetClient(wallet->GetName());
+        if (cj_clientman != nullptr && cj_clientman->isMixing()) {
             throw JSONRPCError(RPC_WALLET_ERROR,
                                strprintf("Wallet \"%s\" is currently mixing, cannot change salt!", str_wallet));
         }
     }
 
-    const auto wallet_balance{wallet->GetBalance()};
+    const auto wallet_balance{GetBalance(*wallet)};
     const bool has_balance{(wallet_balance.m_anonymized
                           + wallet_balance.m_denominated_trusted
                           + wallet_balance.m_denominated_untrusted_pending) > 0};
@@ -364,21 +407,6 @@ static RPCHelpMan coinjoinsalt_set()
     };
 }
 #endif // ENABLE_WALLET
-
-// TODO: remove it completely
-static RPCHelpMan getpoolinfo()
-{
-    return RPCHelpMan{"getpoolinfo",
-                "DEPRECATED. Please use getcoinjoininfo instead.\n",
-                {},
-                RPCResults{},
-                RPCExamples{""},
-                [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-        throw JSONRPCError(RPC_METHOD_DEPRECATED, "Please use getcoinjoininfo instead");
-},
-    };
-}
 
 static RPCHelpMan getcoinjoininfo()
 {
@@ -404,13 +432,18 @@ static RPCHelpMan getcoinjoininfo()
                                 {
                                     {RPCResult::Type::STR_HEX, "protxhash", "The ProTxHash of the masternode"},
                                     {RPCResult::Type::STR_HEX, "outpoint", "The outpoint of the masternode"},
-                                    {RPCResult::Type::STR, "service", "The IP address and port of the masternode"},
+                                    {RPCResult::Type::STR, "service", "(DEPRECATED) The IP address and port of the masternode"},
+                                    {RPCResult::Type::ARR, "addrs_core_p2p", "Network addresses of the masternode used for protocol P2P",
+                                        {
+                                            {RPCResult::Type::STR, "address", ""},
+                                        }
+                                    },
                                     {RPCResult::Type::NUM, "denomination", "The denomination of the mixing session in " + CURRENCY_UNIT + ""},
                                     {RPCResult::Type::STR_HEX, "state", "Current state of the mixing session"},
                                     {RPCResult::Type::NUM, "entries_count", "The number of entries in the mixing session"},
                                 }},
                             }},
-                            {RPCResult::Type::NUM, "keys_left", /* optional */ true, "How many new keys are left since last automatic backup (if applicable)"},
+                            {RPCResult::Type::NUM, "keys_left", /*optional=*/true, "How many new keys are left since last automatic backup (if applicable)"},
                             {RPCResult::Type::STR, "warnings", "Warnings if any"},
                         }},
                     RPCResult{"for masternodes",
@@ -432,24 +465,28 @@ static RPCHelpMan getcoinjoininfo()
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     if (node.mn_activeman) {
-        node.cj_ctx->server->GetJsonInfo(obj);
+        node.active_ctx->cj_server->GetJsonInfo(obj);
         return obj;
     }
 
 #ifdef ENABLE_WALLET
     CCoinJoinClientOptions::GetJsonInfo(obj);
 
-    obj.pushKV("queue_size", node.cj_ctx->queueman->GetQueueSize());
+    if (node.cj_walletman) {
+        if (auto queue_size = node.cj_walletman->getQueueSize()) {
+            obj.pushKV("queue_size", queue_size.value());
+        }
+    }
 
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+    const std::shared_ptr<const CWallet> wallet = GetWalletForJSONRPCRequest(request);
     if (!wallet) {
         return obj;
     }
 
-    auto* manager = CHECK_NONFATAL(node.coinjoin_loader->walletman().Get(wallet->GetName()));
-    manager->GetJsonInfo(obj);
+    auto cj_clientman = CHECK_NONFATAL(node.coinjoin_loader)->GetClient(wallet->GetName());
+    CHECK_NONFATAL(cj_clientman)->getJsonInfo(obj);
 
-    std::string warning_msg{""};
+    std::string warning_msg;
     if (wallet->IsLegacy()) {
         obj.pushKV("keys_left", wallet->nKeysLeftSinceAutoBackup);
         if (wallet->nKeysLeftSinceAutoBackup < COINJOIN_KEYS_THRESHOLD_WARNING) {
@@ -464,28 +501,43 @@ static RPCHelpMan getcoinjoininfo()
     };
 }
 
-void RegisterCoinJoinRPCCommands(CRPCTable &t)
-{
-// clang-format off
-static const CRPCCommand commands[] =
-{ //  category               actor (function)
-  //  ---------------------  -----------------------
-    { "dash",                &getcoinjoininfo,        },
 #ifdef ENABLE_WALLET
-    { "dash",                &coinjoin,               },
-    { "dash",                &coinjoin_reset,         },
-    { "dash",                &coinjoin_start,         },
-    { "dash",                &coinjoin_stop,          },
-    { "dash",                &coinjoinsalt,           },
-    { "dash",                &coinjoinsalt_generate,  },
-    { "dash",                &coinjoinsalt_get,       },
-    { "dash",                &coinjoinsalt_set,       },
-
-    { "hidden",              &getpoolinfo,            },
+Span<const CRPCCommand> GetWalletCoinJoinRPCCommands()
+{
+    static const CRPCCommand commands[]{
+        {"orin", &coinjoin},
+        {"orin", &coinjoin_reset},
+        {"orin", &coinjoin_start},
+        {"orin", &coinjoin_status},
+        {"orin", &coinjoin_stop},
+        {"orin", &coinjoinsalt},
+        {"orin", &coinjoinsalt_generate},
+        {"orin", &coinjoinsalt_get},
+        {"orin", &coinjoinsalt_set},
+        {"orin", &getcoinjoininfo},
+    };
+    return commands;
+}
 #endif // ENABLE_WALLET
-};
-// clang-format on
-    for (const auto& command : commands) {
-        t.appendCommand(command.name, &command);
+
+void RegisterCoinJoinRPCCommands(CRPCTable& t)
+{
+    static const CRPCCommand commands_wallet[]{
+        {"orin", &getcoinjoininfo},
+    };
+    // If we aren't compiling with wallet support, we still need to register RPCs that are
+    // capable of working without wallet support. We have to do this even if wallet support
+    // is compiled in but is disabled at runtime because runtime disablement prohibits
+    // registering wallet RPCs. We still want the reduced functionality RPC to be registered.
+    // TODO: Spin off these hybrid RPCs into dedicated wallet-only and/or wallet-free RPCs
+    //       and get rid of this workaround.
+    if (!g_wallet_init_interface.HasWalletSupport()
+#ifdef ENABLE_WALLET
+        || gArgs.GetBoolArg("-disablewallet", DEFAULT_DISABLE_WALLET)
+#endif // ENABLE_WALLET
+    ) {
+        for (const auto& command : commands_wallet) {
+            tableRPC.appendCommand(command.name, &command);
+        }
     }
 }

@@ -85,7 +85,6 @@ class WalletBackupTest(BitcoinTestFramework):
         # Must sync mempools before mining.
         self.sync_mempools()
         self.generate(self.nodes[3], 1)
-        self.sync_blocks()
 
     # As above, this mirrors the original bash test.
     def start_three(self, args=()):
@@ -134,21 +133,12 @@ class WalletBackupTest(BitcoinTestFramework):
         assert_raises_rpc_error(-36, error_message, node.restorewallet, wallet_name, backup_file)
         assert os.path.exists(wallet_file)
 
-    def init_three(self):
-        self.init_wallet(node=0)
-        self.init_wallet(node=1)
-        self.init_wallet(node=2)
-
     def run_test(self):
         self.log.info("Generating initial blockchain")
         self.generate(self.nodes[0], 1)
-        self.sync_blocks()
         self.generate(self.nodes[1], 1)
-        self.sync_blocks()
         self.generate(self.nodes[2], 1)
-        self.sync_blocks()
         self.generate(self.nodes[3], COINBASE_MATURITY)
-        self.sync_blocks()
 
         assert_equal(self.nodes[0].getbalance(), 500)
         assert_equal(self.nodes[1].getbalance(), 500)
@@ -230,7 +220,10 @@ class WalletBackupTest(BitcoinTestFramework):
             shutil.rmtree(os.path.join(self.nodes[2].datadir, self.chain, 'llmq'))
 
             self.start_three(["-nowallet"])
-            self.init_three()
+            # Create new wallets for the three nodes.
+            # We will use this empty wallets to test the 'importwallet()' RPC command below.
+            for node_num in range(3):
+                self.nodes[node_num].createwallet(wallet_name=self.default_wallet_name, descriptors=self.options.descriptors, load_on_startup=True)
 
             assert_equal(self.nodes[0].getbalance(), 0)
             assert_equal(self.nodes[1].getbalance(), 0)

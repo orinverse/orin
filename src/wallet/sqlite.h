@@ -5,11 +5,15 @@
 #ifndef BITCOIN_WALLET_SQLITE_H
 #define BITCOIN_WALLET_SQLITE_H
 
+#include <sync.h>
 #include <wallet/db.h>
 
-#include <sqlite3.h>
-
 struct bilingual_str;
+
+struct sqlite3_stmt;
+struct sqlite3;
+
+namespace wallet {
 class SQLiteDatabase;
 
 /** RAII class that provides access to a WalletDatabase */
@@ -61,13 +65,22 @@ private:
 
     const std::string m_file_path;
 
-    void Cleanup() noexcept;
+    /**
+     * This mutex protects SQLite initialization and shutdown.
+     * sqlite3_config() and sqlite3_shutdown() are not thread-safe (sqlite3_initialize() is).
+     * Concurrent threads that execute SQLiteDatabase::SQLiteDatabase() should have just one
+     * of them do the init and the rest wait for it to complete before all can proceed.
+     */
+    static Mutex g_sqlite_mutex;
+    static int g_sqlite_count GUARDED_BY(g_sqlite_mutex);
+
+    void Cleanup() noexcept EXCLUSIVE_LOCKS_REQUIRED(!g_sqlite_mutex);
 
 public:
     SQLiteDatabase() = delete;
 
     /** Create DB handle to real database */
-    SQLiteDatabase(const fs::path& dir_path, const fs::path& file_path, bool mock = false);
+    SQLiteDatabase(const fs::path& dir_path, const fs::path& file_path, const DatabaseOptions& options, bool mock = false);
 
     ~SQLiteDatabase();
 
@@ -111,10 +124,12 @@ public:
     std::unique_ptr<DatabaseBatch> MakeBatch(bool flush_on_close = true) override;
 
     sqlite3* m_db{nullptr};
+    bool m_use_unsafe_sync;
 };
 
 std::unique_ptr<SQLiteDatabase> MakeSQLiteDatabase(const fs::path& path, const DatabaseOptions& options, DatabaseStatus& status, bilingual_str& error);
 
 std::string SQLiteDatabaseVersion();
+} // namespace wallet
 
 #endif // BITCOIN_WALLET_SQLITE_H

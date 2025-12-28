@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2020 The Bitcoin Core developers
+// Copyright (c) 2016-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,7 +12,7 @@ const struct VBDeploymentInfo VersionBitsDeploymentInfo[Consensus::MAX_VERSION_B
         /*.gbt_force =*/ true,
     },
     {
-        /*.name =*/"withdrawals",
+        /*.name =*/"v24",
         /*.gbt_force =*/true,
     },
 };
@@ -49,6 +49,8 @@ std::string DeploymentName(Consensus::BuriedDeployment dep)
         return "v20";
     case Consensus::DEPLOYMENT_MN_RR:
         return "mn_rr";
+    case Consensus::DEPLOYMENT_WITHDRAWALS:
+        return "withdrawals";
     } // no default case, so the compiler can warn about missing cases
     return "";
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,13 +8,17 @@
 #include <univalue.h>
 #include <util/time.h>
 
-#include <sstream>
-
-const std::string MasternodeMetaStore::SERIALIZATION_VERSION_STRING = "CMasternodeMetaMan-Version-3";
+const std::string MasternodeMetaStore::SERIALIZATION_VERSION_STRING = "CMasternodeMetaMan-Version-5";
 
 CMasternodeMetaMan::CMasternodeMetaMan() :
     m_db{std::make_unique<db_type>("mncache.dat", "magicMasternodeCache")}
 {
+}
+
+CMasternodeMetaMan::~CMasternodeMetaMan()
+{
+    if (!is_valid) return;
+    m_db->Store(*this);
 }
 
 bool CMasternodeMetaMan::LoadCache(bool load_cache)
@@ -24,25 +28,24 @@ bool CMasternodeMetaMan::LoadCache(bool load_cache)
     return is_valid;
 }
 
-CMasternodeMetaMan::~CMasternodeMetaMan()
-{
-    if (!is_valid) return;
-    m_db->Store(*this);
-}
-
 UniValue CMasternodeMetaInfo::ToJson() const
 {
     UniValue ret(UniValue::VOBJ);
 
     int64_t now = GetTime<std::chrono::seconds>().count();
 
-    ret.pushKV("lastDSQ", nLastDsq);
-    ret.pushKV("mixingTxCount", nMixingTxCount);
-    ret.pushKV("outboundAttemptCount", outboundAttemptCount);
-    ret.pushKV("lastOutboundAttempt", lastOutboundAttempt);
-    ret.pushKV("lastOutboundAttemptElapsed", now - lastOutboundAttempt);
-    ret.pushKV("lastOutboundSuccess", lastOutboundSuccess);
-    ret.pushKV("lastOutboundSuccessElapsed", now - lastOutboundSuccess);
+    ret.pushKV("lastDSQ", nLastDsq.load());
+    ret.pushKV("mixingTxCount", nMixingTxCount.load());
+    ret.pushKV("outboundAttemptCount", outboundAttemptCount.load());
+    ret.pushKV("lastOutboundAttempt", lastOutboundAttempt.load());
+    ret.pushKV("lastOutboundAttemptElapsed", now - lastOutboundAttempt.load());
+    ret.pushKV("lastOutboundSuccess", lastOutboundSuccess.load());
+    ret.pushKV("lastOutboundSuccessElapsed", now - lastOutboundSuccess.load());
+    {
+        LOCK(cs);
+        ret.pushKV("is_platform_banned", m_platform_ban);
+        ret.pushKV("platform_ban_height_updated", m_platform_ban_updated);
+    }
 
     return ret;
 }
@@ -127,11 +130,67 @@ std::vector<uint256> CMasternodeMetaMan::GetAndClearDirtyGovernanceObjectHashes(
     return vecTmp;
 }
 
+bool CMasternodeMetaMan::AlreadyHavePlatformBan(const uint256& inv_hash) const
+{
+    LOCK(cs);
+    return m_seen_platform_bans.exists(inv_hash);
+}
+
+std::optional<PlatformBanMessage> CMasternodeMetaMan::GetPlatformBan(const uint256& inv_hash) const
+{
+    LOCK(cs);
+    PlatformBanMessage ret;
+    if (!m_seen_platform_bans.get(inv_hash, ret)) {
+        return std::nullopt;
+    }
+
+    return ret;
+}
+
+void CMasternodeMetaMan::RememberPlatformBan(const uint256& inv_hash, PlatformBanMessage&& msg)
+{
+    LOCK(cs);
+    m_seen_platform_bans.insert(inv_hash, std::move(msg));
+}
+
+void CMasternodeMetaMan::AddUsedMasternode(const uint256& proTxHash)
+{
+    LOCK(cs);
+    // Only add if not already present (prevents duplicates)
+    if (m_used_masternodes_set.insert(proTxHash).second) {
+        m_used_masternodes.push_back(proTxHash);
+    }
+}
+
+void CMasternodeMetaMan::RemoveUsedMasternodes(size_t count)
+{
+    LOCK(cs);
+    size_t removed = 0;
+    while (removed < count && !m_used_masternodes.empty()) {
+        // Remove from both the set and the deque
+        m_used_masternodes_set.erase(m_used_masternodes.front());
+        m_used_masternodes.pop_front();
+        ++removed;
+    }
+}
+
+size_t CMasternodeMetaMan::GetUsedMasternodesCount() const
+{
+    LOCK(cs);
+    return m_used_masternodes.size();
+}
+
+bool CMasternodeMetaMan::IsUsedMasternode(const uint256& proTxHash) const
+{
+    LOCK(cs);
+    return m_used_masternodes_set.find(proTxHash) != m_used_masternodes_set.end();
+}
+
 std::string MasternodeMetaStore::ToString() const
 {
-    std::ostringstream info;
     LOCK(cs);
-    info << "Masternodes: meta infos object count: " << (int)metaInfos.size() <<
-         ", nDsqCount: " << (int)nDsqCount;
-    return info.str();
+    return strprintf("Masternodes: meta infos object count: %d, nDsqCount: %d, used masternodes count: %d",
+                     metaInfos.size(), nDsqCount, m_used_masternodes.size());
 }
+
+uint256 PlatformBanMessage::GetHash() const { return ::SerializeHash(*this); }

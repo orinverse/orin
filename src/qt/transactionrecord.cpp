@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,9 +11,12 @@
 
 #include <wallet/ismine.h>
 
-#include <stdint.h>
+#include <cstdint>
 
-#include <QDateTime>
+using wallet::ISMINE_ALL;
+using wallet::ISMINE_SPENDABLE;
+using wallet::ISMINE_WATCH_ONLY;
+using wallet::isminetype;
 
 /* Return positive answer if transaction should be shown in list.
  */
@@ -27,7 +30,7 @@ bool TransactionRecord::showTransaction()
 /*
  * Decompose CWallet transaction to model transaction records.
  */
-QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wallet& wallet, const interfaces::WalletTx& wtx)
+QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Node& node, interfaces::Wallet& wallet, const interfaces::WalletTx& wtx)
 {
     QList<TransactionRecord> parts;
     int64_t nTime = wtx.time;
@@ -36,8 +39,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
     CAmount nNet = nCredit - nDebit;
     uint256 hash = wtx.tx->GetHash();
     std::map<std::string, std::string> mapValue = wtx.value_map;
-    auto node = interfaces::MakeNode();
-    auto& coinJoinOptions = node->coinJoinOptions();
+    auto& coinJoinOptions = node.coinJoinOptions();
 
     if (nNet > 0 || wtx.is_coinbase || wtx.is_platform_transfer)
     {
@@ -56,7 +58,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                 sub.involvesWatchAddress = mine & ISMINE_WATCH_ONLY;
                 if (wtx.txout_address_is_mine[i])
                 {
-                    // Received by Dash Address
+                    // Received by Orin Address
                     sub.type = TransactionRecord::RecvWithAddress;
                     sub.strAddress = EncodeDestination(wtx.txout_address[i]);
                     sub.txDest = wtx.txout_address[i];
@@ -126,7 +128,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                 CTxDestination address;
                 if (ExtractDestination(wtx.tx->vout[0].scriptPubKey, address))
                 {
-                    // Sent to Dash Address
+                    // Sent to Orin Address
                     sub.strAddress = EncodeDestination(address);
                     sub.txDest = address;
                     sub.updateLabel(wallet);
@@ -218,7 +220,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
 
                 if (!std::get_if<CNoDestination>(&wtx.txout_address[nOut]))
                 {
-                    // Sent to Dash Address
+                    // Sent to Orin Address
                     sub.type = TransactionRecord::SendToAddress;
                     sub.strAddress = EncodeDestination(wtx.txout_address[nOut]);
                     sub.txDest = wtx.txout_address[nOut];
@@ -279,21 +281,8 @@ void TransactionRecord::updateStatus(const interfaces::WalletTxStatus& wtx, cons
     status.lockedByChainLocks = wtx.is_chainlocked;
     status.lockedByInstantSend = wtx.is_islocked;
 
-    const bool up_to_date = ((int64_t)QDateTime::currentMSecsSinceEpoch() / 1000 - block_time < MAX_BLOCK_TIME_GAP);
-    if (up_to_date && !wtx.is_final) {
-        if (wtx.lock_time < LOCKTIME_THRESHOLD) {
-            status.status = TransactionStatus::OpenUntilBlock;
-            status.open_for = wtx.lock_time - numBlocks;
-        }
-        else
-        {
-            status.status = TransactionStatus::OpenUntilDate;
-            status.open_for = wtx.lock_time;
-        }
-    }
     // For generated transactions, determine maturity
-    else if(type == TransactionRecord::Generated)
-    {
+    if (type == TransactionRecord::Generated) {
         if (wtx.blocks_to_maturity > 0)
         {
             status.status = TransactionStatus::Immature;

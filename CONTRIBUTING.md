@@ -1,19 +1,18 @@
-Contributing to Dash Core
+Contributing to Orin Core
 ============================
 
-The Dash Core project operates an open contributor model where anyone is
+The Orin Core project operates an open contributor model where anyone is
 welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
 
-First, in terms of structure, there is no particular concept of "Dash Core
+First, in terms of structure, there is no particular concept of "Orin Core
 developers" in the sense of privileged people. Open source often naturally
 revolves around a meritocracy where contributors earn trust from the developer
 community over time. Nevertheless, some hierarchy is necessary for practical
-purposes. As such, there are repository "maintainers" who are responsible for
-merging pull requests, as well as a "lead maintainer" who is responsible for the
-[release cycle](/doc/release-process.md) as well as overall merging, moderation
-and appointment of maintainers.
+purposes. As such, there are repository maintainers who are responsible for
+merging pull requests, the [release cycle](/doc/release-process.md), and
+moderation.
 
 Getting Started
 ---------------
@@ -25,13 +24,13 @@ as a new contributor. It also will teach you much more about the code and
 process than opening pull requests. Please refer to the [peer review](#peer-review)
 section below.
 
-Before you start contributing, familiarize yourself with the Dash Core build
+Before you start contributing, familiarize yourself with the Orin Core build
 system and tests. Refer to the documentation in the repository on how to build
-Dash Core and how to run the unit and functional tests.
+Orin Core and how to run the unit and functional tests.
 
 There are many open issues of varying difficulty waiting to be fixed.
 If you're looking for somewhere to start contributing, check out the
-[good first issue](https://github.com/dashpay/dash/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
+[good first issue](https://github.com/orinpay/orin/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
 list.
 Some of them might no longer be applicable. So if you are interested, but
 unsure, you might want to leave a comment on the issue first.
@@ -52,7 +51,7 @@ and is also an effective way to request assistance if and when you need it.
 Communication Channels
 ----------------------
 
-Most communication about Dash Core development happens on Discord Server.
+Most communication about Orin Core development happens on Discord Server.
 
 Discussion about codebase improvements happens in GitHub issues and pull
 requests.
@@ -124,7 +123,7 @@ include:
   - *log* Changes to log messages
   - *mining* for changes to the mining code
   - *net* for changes to the peer-to-peer network code
-  - *qt* for changes to dash-qt
+  - *qt* for changes to orin-qt
   - *rest* for changes to the REST APIs
   - *rpc* for changes to the RPC APIs
   - *scripts* for changes to the scripts and tools
@@ -150,13 +149,13 @@ mailing list discussions).
 The description for a new pull request should not contain any `@` mentions. The
 PR description will be included in the commit message when the PR is merged and
 any users mentioned in the description will be annoyingly notified each time a
-fork of Dash Core copies the merge. Instead, make any username mentions in a
+fork of Orin Core copies the merge. Instead, make any username mentions in a
 subsequent comment to the PR.
 
 ### Translation changes
 
 Note that translations should not be submitted as pull requests. Please see
-[Translation Process](https://github.com/dashpay/dash/blob/master/doc/translation_process.md)
+[Translation Process](https://github.com/orinpay/orin/blob/master/doc/translation_process.md)
 for more information on helping with translations.
 
 ### Work in Progress Changes and Requests for Comments
@@ -267,12 +266,12 @@ where possible keep them short, uncomplex and easy to verify.
 "Decision Making" Process
 -------------------------
 
-The following applies to code changes to the Dash Core project (and related
-projects such as libsecp256k1), and is not to be confused with overall Dash
+The following applies to code changes to the Orin Core project (and related
+projects such as libsecp256k1), and is not to be confused with overall Orin
 Network Protocol consensus changes.
 
-Whether a pull request is merged into Dash Core rests with the project merge
-maintainers and ultimately the project lead.
+Whether a pull request is merged into Orin Core rests with the project merge
+maintainers.
 
 Maintainers will take into consideration if a patch is in line with the general
 principles of the project; meets the minimum standards for inclusion; and will
@@ -290,7 +289,7 @@ In general, all pull requests must:
     demonstrating the bug and also proving the fix. This helps prevent regression.
   - Change relevant comments and documentation when behaviour of code changes.
 
-Patches that change Dash consensus rules are considerably more involved than
+Patches that change Orin consensus rules are considerably more involved than
 normal because they affect the entire ecosystem and so must be preceded by
 extensive mailing list discussions and have a numbered BIP. While each case will
 be different, one should be prepared to expend more time and effort than for
@@ -353,7 +352,7 @@ higher in terms of discussion and peer review requirements, keeping in mind that
 mistakes could be very costly to the wider community. This includes refactoring
 of consensus-critical code.
 
-Where a patch set proposes to change the Dash consensus, it must have been
+Where a patch set proposes to change the Orin consensus, it must have been
 discussed extensively on the mailing list and IRC, be accompanied by a widely
 discussed BIP and have a generally widely perceived technical consensus of being
 a worthwhile change based on the judgement of the maintainers.
@@ -368,7 +367,7 @@ present locally. See chapter [rebasing changes](#rebasing-changes)
 
 ### Finding Reviewers
 
-The review process is normally fairly responsive on the Dash Core repository, however
+The review process is normally fairly responsive on the Orin Core repository, however
 this might not always be the case. If you find that you've been waiting
 for a pull request to be given attention for several months, there may be a number
 of reasons for this, some of which you can do something about:
@@ -424,10 +423,10 @@ https://github.com/bitcoin/bitcoin/pull/16189).
 Also see the [backport.py script](
 https://github.com/bitcoin-core/bitcoin-maintainer-tools#backport).
 
-Bitcoin Backports are an incredibly valuable part of Dash's development. Backporting allows us to easily implement new
+Bitcoin Backports are an incredibly valuable part of Orin's development. Backporting allows us to easily implement new
 features, improvements and fixes as bitcoin implements them.
 
-To see detailed statistics & progress see Google Sheet tracker: [Bitcoin backports for Dash](https://docs.google.com/spreadsheets/d/1DnKxat0S0H62CJOzXpKGPXTa8hgoVOjGYZzoClmGSB8/edit?usp=sharing).
+To see detailed statistics & progress see Google Sheet tracker: [Bitcoin backports for Orin](https://docs.google.com/spreadsheets/d/1DnKxat0S0H62CJOzXpKGPXTa8hgoVOjGYZzoClmGSB8/edit?usp=sharing).
 You should use this sheet to find what PRs to backport and its commit.
 
 Updating the Spreadsheet

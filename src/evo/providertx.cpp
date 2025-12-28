@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2024 The Dash Core developers
+// Copyright (c) 2018-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,17 +7,61 @@
 
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <deploymentstatus.h>
 #include <hash.h>
 #include <script/standard.h>
 #include <tinyformat.h>
 #include <util/underlying.h>
 
-bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+namespace ProTxVersion {
+template <typename T>
+[[nodiscard]] uint16_t GetMaxFromDeployment(gsl::not_null<const CBlockIndex*> pindexPrev,
+                                            std::optional<bool> is_basic_override)
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    constexpr bool is_extaddr_eligible{std::is_same_v<std::decay_t<T>, CProRegTx> || std::is_same_v<std::decay_t<T>, CProUpServTx>};
+    return ProTxVersion::GetMax(is_basic_override ? *is_basic_override
+                                                  : DeploymentActiveAfter(pindexPrev, Params().GetConsensus(),
+                                                                          Consensus::DEPLOYMENT_V19),
+                                is_extaddr_eligible ? DeploymentActiveAfter(pindexPrev, Params().GetConsensus(),
+                                                                            Consensus::DEPLOYMENT_V24)
+                                                    : false);
+}
+template uint16_t GetMaxFromDeployment<CProRegTx>(gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> is_basic_override);
+template uint16_t GetMaxFromDeployment<CProUpServTx>(gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> is_basic_override);
+template uint16_t GetMaxFromDeployment<CProUpRegTx>(gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> is_basic_override);
+template uint16_t GetMaxFromDeployment<CProUpRevTx>(gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> is_basic_override);
+} // namespace ProTxVersion
+
+template <typename ProTx>
+bool IsNetInfoTriviallyValid(const ProTx& proTx, TxValidationState& state)
+{
+    if (!proTx.netInfo->HasEntries(NetInfoPurpose::CORE_P2P)) {
+        // Mandatory for all nodes
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-empty");
+    }
+    if (proTx.nType == MnType::Regular) {
+        // Regular nodes shouldn't populate Platform-specific fields
+        if (proTx.netInfo->HasEntries(NetInfoPurpose::PLATFORM_HTTPS) ||
+            proTx.netInfo->HasEntries(NetInfoPurpose::PLATFORM_P2P)) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-bad");
+        }
+    }
+    if (proTx.netInfo->CanStorePlatform() && proTx.nType == MnType::Evo) {
+        // Platform fields are mandatory for EvoNodes
+        if (!proTx.netInfo->HasEntries(NetInfoPurpose::PLATFORM_HTTPS) ||
+            !proTx.netInfo->HasEntries(NetInfoPurpose::PLATFORM_P2P)) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-empty");
+        }
+    }
+    return true;
+}
+
+bool CProRegTx::IsTriviallyValid(gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state) const
+{
+    if (nVersion == 0 || nVersion > ProTxVersion::GetMaxFromDeployment<decltype(*this)>(pindexPrev)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
-    if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
+    if (nVersion < ProTxVersion::BasicBLS && nType == MnType::Evo) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-evo-version");
     }
     if (!IsValidMnType(nType)) {
@@ -30,11 +74,23 @@ bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState&
     if (keyIDOwner.IsNull() || !pubKeyOperator.Get().IsValid() || keyIDVoting.IsNull()) {
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-key-null");
     }
-    if (pubKeyOperator.IsLegacy() != (nVersion == LEGACY_BLS_VERSION)) {
+    if (pubKeyOperator.IsLegacy() != (nVersion == ProTxVersion::LegacyBLS)) {
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-operator-pubkey");
     }
     if (!scriptPayout.IsPayToPublicKeyHash() && !scriptPayout.IsPayToScriptHash()) {
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-payee");
+    }
+    if (netInfo->CanStorePlatform() != (nVersion == ProTxVersion::ExtAddr)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-netinfo-version");
+    }
+    if (!netInfo->IsEmpty() && !IsNetInfoTriviallyValid(*this, state)) {
+        // pass the state returned by the function above
+        return false;
+    }
+    for (const auto& entry : netInfo->GetEntries()) {
+        if (!entry.IsTriviallyValid()) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-bad");
+        }
     }
 
     CTxDestination payoutDest;
@@ -87,22 +143,38 @@ std::string CProRegTx::ToString() const
         payee = EncodeDestination(dest);
     }
 
-    return strprintf("CProRegTx(nVersion=%d, nType=%d, collateralOutpoint=%s, addr=%s, nOperatorReward=%f, "
-                     "ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, scriptPayout=%s, platformNodeID=%s, "
-                     "platformP2PPort=%d, platformHTTPPort=%d)",
-                     nVersion, ToUnderlying(nType), collateralOutpoint.ToStringShort(), addr.ToStringAddrPort(),
+    return strprintf("CProRegTx(nVersion=%d, nType=%d, collateralOutpoint=%s, netInfo=%s, nOperatorReward=%f, "
+                     "ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, scriptPayout=%s, platformNodeID=%s%s)\n",
+                     nVersion, ToUnderlying(nType), collateralOutpoint.ToStringShort(), netInfo->ToString(),
                      (double)nOperatorReward / 100, EncodeDestination(PKHash(keyIDOwner)), pubKeyOperator.ToString(),
-                     EncodeDestination(PKHash(keyIDVoting)), payee, platformNodeID.ToString(), platformP2PPort,
-                     platformHTTPPort);
+                     EncodeDestination(PKHash(keyIDVoting)), payee, platformNodeID.ToString(),
+                     (nVersion >= ProTxVersion::ExtAddr
+                          ? ""
+                          : strprintf(", platformP2PPort=%d, platformHTTPPort=%d", platformP2PPort, platformHTTPPort)));
 }
 
-bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProUpServTx::IsTriviallyValid(gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > ProTxVersion::GetMaxFromDeployment<decltype(*this)>(pindexPrev)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
-    if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
+    if (nVersion < ProTxVersion::BasicBLS && nType == MnType::Evo) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-evo-version");
+    }
+    if (netInfo->CanStorePlatform() != (nVersion == ProTxVersion::ExtAddr)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-netinfo-version");
+    }
+    if (netInfo->IsEmpty()) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-empty");
+    }
+    if (!IsNetInfoTriviallyValid(*this, state)) {
+        // pass the state returned by the function above
+        return false;
+    }
+    for (const auto& entry : netInfo->GetEntries()) {
+        if (!entry.IsTriviallyValid()) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-bad");
+        }
     }
 
     return true;
@@ -116,15 +188,18 @@ std::string CProUpServTx::ToString() const
         payee = EncodeDestination(dest);
     }
 
-    return strprintf("CProUpServTx(nVersion=%d, nType=%d, proTxHash=%s, addr=%s, operatorPayoutAddress=%s, "
-                     "platformNodeID=%s, platformP2PPort=%d, platformHTTPPort=%d)",
-                     nVersion, ToUnderlying(nType), proTxHash.ToString(), addr.ToStringAddrPort(), payee,
-                     platformNodeID.ToString(), platformP2PPort, platformHTTPPort);
+    return strprintf("CProUpServTx(nVersion=%d, nType=%d, proTxHash=%s, netInfo=%s, operatorPayoutAddress=%s, "
+                     "platformNodeID=%s%s)\n",
+                     nVersion, ToUnderlying(nType), proTxHash.ToString(), netInfo->ToString(), payee,
+                     platformNodeID.ToString(),
+                     (nVersion >= ProTxVersion::ExtAddr
+                          ? ""
+                          : strprintf(", platformP2PPort=%d, platformHTTPPort=%d", platformP2PPort, platformHTTPPort)));
 }
 
-bool CProUpRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProUpRegTx::IsTriviallyValid(gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > ProTxVersion::GetMaxFromDeployment<decltype(*this)>(pindexPrev)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
     if (nMode != 0) {
@@ -134,7 +209,7 @@ bool CProUpRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationStat
     if (!pubKeyOperator.Get().IsValid() || keyIDVoting.IsNull()) {
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-key-null");
     }
-    if (pubKeyOperator.IsLegacy() != (nVersion == LEGACY_BLS_VERSION)) {
+    if (pubKeyOperator.IsLegacy() != (nVersion == ProTxVersion::LegacyBLS)) {
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-operator-pubkey");
     }
     if (!scriptPayout.IsPayToPublicKeyHash() && !scriptPayout.IsPayToScriptHash()) {
@@ -155,9 +230,9 @@ std::string CProUpRegTx::ToString() const
         nVersion, proTxHash.ToString(), pubKeyOperator.ToString(), EncodeDestination(PKHash(keyIDVoting)), payee);
 }
 
-bool CProUpRevTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProUpRevTx::IsTriviallyValid(gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > ProTxVersion::GetMaxFromDeployment<decltype(*this)>(pindexPrev)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
 

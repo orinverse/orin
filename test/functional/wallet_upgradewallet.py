@@ -130,7 +130,7 @@ class UpgradeWalletTest(BitcoinTestFramework):
 
         def copy_v16():
             node_master.get_wallet_rpc(self.default_wallet_name).unloadwallet()
-            # Copy the 0.16.3 wallet to the last Dash Core version and open it:
+            # Copy the 0.16.3 wallet to the last Orin Core version and open it:
             shutil.rmtree(node_master_wallet_dir)
             os.mkdir(node_master_wallet_dir)
             shutil.copy(
@@ -141,7 +141,7 @@ class UpgradeWalletTest(BitcoinTestFramework):
 
         def copy_non_hd():
             node_master.get_wallet_rpc(self.default_wallet_name).unloadwallet()
-            # Copy the 19.3.0 wallet to the last Dash Core version and open it:
+            # Copy the 19.3.0 wallet to the last Orin Core version and open it:
             shutil.rmtree(node_master_wallet_dir)
             os.mkdir(node_master_wallet_dir)
             shutil.copy(
@@ -169,7 +169,7 @@ class UpgradeWalletTest(BitcoinTestFramework):
         self.test_upgradewallet(wallet, previous_version=61000, expected_version=120200, requested_version=169900)
         # after conversion master key hash should not be present yet
         assert 'hdchainid' not in wallet.getwalletinfo()
-        assert_equal(wallet.upgradetohd(), True)
+        assert_equal(wallet.upgradetohd(), "Make sure that you have backup of your mnemonic.")
         new_version = wallet.getwalletinfo()["walletversion"]
         assert_equal(new_version, 120200)
         assert_is_hex_string(wallet.getwalletinfo()['hdchainid'])

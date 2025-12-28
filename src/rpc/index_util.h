@@ -1,5 +1,5 @@
 // Copyright (c) 2016 BitPay Inc.
-// Copyright (c) 2024 The Dash Core developers
+// Copyright (c) 2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -27,7 +27,7 @@ extern RecursiveMutex cs_main;
 //! throws JSONRPCError if address index is unavailable
 bool GetAddressIndex(CBlockTreeDB& block_tree_db, const uint160& addressHash, const AddressType type,
                      std::vector<CAddressIndexEntry>& addressIndex,
-                     const int32_t start = 0, const int32_t end = 0)
+                     const int32_t start, const int32_t end)
     EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 //! throws JSONRPCError if address index is unavailable
 bool GetAddressUnspentIndex(CBlockTreeDB& block_tree_db, const uint160& addressHash, const AddressType type,

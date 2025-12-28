@@ -11,8 +11,11 @@ from test_framework.util import (
 )
 from test_framework.governance import EXPECTED_STDERR_NO_GOV_PRUNE
 
-# TODO: remove testactivationheight=v20@3000 when it will be activated from block 1
-DEPLOYMENT_ARGS = ["-testactivationheight=v20@3000", "-dip3params=3000:3000"]
+DEPLOYMENT_ARGS = [
+    "-dip3params=3000:3000",
+    "-testactivationheight=v20@3000",
+    "-testactivationheight=mn_rr@3000",
+]
 
 class FeatureIndexPruneTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -48,7 +51,6 @@ class FeatureIndexPruneTest(BitcoinTestFramework):
         for _ in range(n):
             self.generate(self.nodes[0], 250)
         self.generate(self.nodes[0], blocks % 250)
-        self.sync_blocks()
 
     def restart_without_indices(self):
         for i in range(3):
@@ -76,7 +78,7 @@ class FeatureIndexPruneTest(BitcoinTestFramework):
                 pruneheight_new = node.pruneblockchain(400)
                 # the prune heights used here and below are magic numbers that are determined by the
                 # thresholds at which block files wrap, so they depend on disk serialization and default block file size.
-                assert_equal(pruneheight_new, 366)
+                assert_equal(pruneheight_new, 367)
 
         self.log.info("check if we can access the tips blockfilter and coinstats when we have pruned some blocks")
         tip = self.nodes[0].getbestblockhash()
@@ -93,8 +95,8 @@ class FeatureIndexPruneTest(BitcoinTestFramework):
             assert(node.gettxoutsetinfo(hash_type="muhash", hash_or_height=height_hash)['muhash'])
 
         # mine and sync index up to a height that will later be the pruneheight
-        self.generate(self.nodes[0], 298)
-        self.sync_index(height=998)
+        self.generate(self.nodes[0], 51)
+        self.sync_index(height=751)
 
         self.restart_without_indices()
 
@@ -106,12 +108,12 @@ class FeatureIndexPruneTest(BitcoinTestFramework):
             msg = "Querying specific block heights requires coinstatsindex"
             assert_raises_rpc_error(-8, msg, node.gettxoutsetinfo, "muhash", height_hash)
 
-        self.mine_batches(502)
+        self.mine_batches(749)
 
         self.log.info("prune exactly up to the indices best blocks while the indices are disabled")
         for i in range(3):
             pruneheight_2 = self.nodes[i].pruneblockchain(1000)
-            assert_equal(pruneheight_2, 732)
+            assert_equal(pruneheight_2, 735)
             # Restart the nodes again with the indices activated
             self.restart_node(i, extra_args=self.extra_args[i], expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
 
@@ -146,13 +148,12 @@ class FeatureIndexPruneTest(BitcoinTestFramework):
         for node in self.nodes[:2]:
             with node.assert_debug_log(['limited pruning to height 2489']):
                 pruneheight_new = node.pruneblockchain(2500)
-                assert_equal(pruneheight_new, 2125)
+                assert_equal(pruneheight_new, 2207)
 
         self.log.info("ensure that prune locks don't prevent indices from failing in a reorg scenario")
         with self.nodes[0].assert_debug_log(['basic block filter index prune lock moved back to 2480']):
             self.nodes[3].invalidateblock(self.nodes[0].getblockhash(2480))
             self.generate(self.nodes[3], 30)
-            self.sync_blocks()
 
         for idx in range(self.num_nodes):
             self.nodes[idx].stop_node(expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE if idx != 3 else "")

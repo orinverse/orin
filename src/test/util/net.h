@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Bitcoin Core developers
+// Copyright (c) 2020-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -41,7 +41,7 @@ struct ConnmanTestMsg : public CConnman {
 
     std::vector<CNode*> TestNodes()
     {
-        LOCK(m_nodes_mutex);
+        READ_LOCK(m_nodes_mutex);
         return m_nodes;
     }
 
@@ -139,17 +139,12 @@ public:
         m_socket = INVALID_SOCKET - 1;
     }
 
-    ~StaticContentsSock() override { Reset(); }
+    ~StaticContentsSock() override { m_socket = INVALID_SOCKET; }
 
     StaticContentsSock& operator=(Sock&& other) override
     {
         assert(false && "Move of Sock into MockSock not allowed.");
         return *this;
-    }
-
-    void Reset() override
-    {
-        m_socket = INVALID_SOCKET;
     }
 
     ssize_t Send(const void*, size_t len, int) const override { return len; }
@@ -203,14 +198,26 @@ public:
 
     bool SetNonBlocking() const override { return true; }
 
-    bool IsSelectable() const override { return true; }
+    bool IsSelectable(bool is_select) const override { return true; }
 
     bool Wait(std::chrono::milliseconds timeout,
               Event requested,
+              SocketEventsParams event_params,
               Event* occurred = nullptr) const override
     {
         if (occurred != nullptr) {
             *occurred = requested;
+        }
+        return true;
+    }
+
+    bool WaitMany(std::chrono::milliseconds timeout,
+                  EventsPerSock& events_per_sock,
+                  SocketEventsParams event_params) const override
+    {
+        for (auto& [sock, events] : events_per_sock) {
+            (void)sock;
+            events.occurred = events.requested;
         }
         return true;
     }

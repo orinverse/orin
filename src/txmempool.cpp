@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,9 +14,9 @@
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
-#include <reverse_iterator.h>
 #include <util/check.h>
 #include <util/moneystr.h>
+#include <util/overflow.h>
 #include <util/system.h>
 #include <util/time.h>
 #include <validationinterface.h>
@@ -25,52 +25,11 @@
 #include <evo/assetlocktx.h>
 #include <evo/providertx.h>
 #include <evo/deterministicmns.h>
-#include <llmq/instantsend.h>
+#include <instantsend/instantsend.h>
 
 #include <cmath>
 #include <optional>
-
-// Helpers for modifying CTxMemPool::mapTx, which is a boost multi_index.
-struct update_descendant_state
-{
-    update_descendant_state(int64_t _modifySize, CAmount _modifyFee, int64_t _modifyCount) :
-        modifySize(_modifySize), modifyFee(_modifyFee), modifyCount(_modifyCount)
-    {}
-
-    void operator() (CTxMemPoolEntry &e)
-        { e.UpdateDescendantState(modifySize, modifyFee, modifyCount); }
-
-    private:
-        int64_t modifySize;
-        CAmount modifyFee;
-        int64_t modifyCount;
-};
-
-struct update_ancestor_state
-{
-    update_ancestor_state(int64_t _modifySize, CAmount _modifyFee, int64_t _modifyCount, int64_t _modifySigOpsCost) :
-        modifySize(_modifySize), modifyFee(_modifyFee), modifyCount(_modifyCount), modifySigOpsCost(_modifySigOpsCost)
-    {}
-
-    void operator() (CTxMemPoolEntry &e)
-        { e.UpdateAncestorState(modifySize, modifyFee, modifyCount, modifySigOpsCost); }
-
-    private:
-        int64_t modifySize;
-        CAmount modifyFee;
-        int64_t modifyCount;
-        int64_t modifySigOpsCost;
-};
-
-struct update_fee_delta
-{
-    explicit update_fee_delta(int64_t _feeDelta) : feeDelta(_feeDelta) { }
-
-    void operator() (CTxMemPoolEntry &e) { e.UpdateFeeDelta(feeDelta); }
-
-private:
-    int64_t feeDelta;
-};
+#include <ranges>
 
 bool TestLockPointValidity(CChain& active_chain, const LockPoints& lp)
 {
@@ -100,6 +59,7 @@ CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef& tx, CAmount fee,
       entryHeight{entry_height},
       spendsCoinbase{spends_coinbase},
       sigOpCount{sigops_count},
+      m_modified_fee{nFee},
       lockPoints{lp},
       nSizeWithDescendants{GetTxSize()},
       nModFeesWithDescendants{nFee},
@@ -107,11 +67,11 @@ CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef& tx, CAmount fee,
       nModFeesWithAncestors{nFee},
       nSigOpCountWithAncestors{sigOpCount} {}
 
-void CTxMemPoolEntry::UpdateFeeDelta(int64_t newFeeDelta)
+void CTxMemPoolEntry::UpdateModifiedFee(CAmount newFeeDelta)
 {
-    nModFeesWithDescendants += newFeeDelta - feeDelta;
-    nModFeesWithAncestors += newFeeDelta - feeDelta;
-    feeDelta = newFeeDelta;
+    nModFeesWithDescendants = SaturatingAdd(nModFeesWithDescendants, newFeeDelta);
+    nModFeesWithAncestors = SaturatingAdd(nModFeesWithAncestors, newFeeDelta);
+    m_modified_fee = SaturatingAdd(m_modified_fee, newFeeDelta);
 }
 
 void CTxMemPoolEntry::UpdateLockPoints(const LockPoints& lp)
@@ -162,7 +122,9 @@ void CTxMemPool::UpdateForDescendants(txiter updateIt, cacheMap& cachedDescendan
             modifyCount++;
             cachedDescendants[updateIt].insert(mapTx.iterator_to(descendant));
             // Update ancestor state for each descendant
-            mapTx.modify(mapTx.iterator_to(descendant), update_ancestor_state(updateIt->GetTxSize(), updateIt->GetModifiedFee(), 1, updateIt->GetSigOpCount()));
+            mapTx.modify(mapTx.iterator_to(descendant), [=](CTxMemPoolEntry& e) {
+                e.UpdateAncestorState(updateIt->GetTxSize(), updateIt->GetModifiedFee(), 1, updateIt->GetSigOpCount());
+            });
             // Don't directly remove the transaction here -- doing so would
             // invalidate iterators in cachedDescendants. Mark it for removal
             // by inserting into descendants_to_remove.
@@ -171,7 +133,7 @@ void CTxMemPool::UpdateForDescendants(txiter updateIt, cacheMap& cachedDescendan
             }
         }
     }
-    mapTx.modify(updateIt, update_descendant_state(modifySize, modifyFee, modifyCount));
+    mapTx.modify(updateIt, [=](CTxMemPoolEntry& e) { e.UpdateDescendantState(modifySize, modifyFee, modifyCount); });
 }
 
 void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<uint256> &vHashesToUpdate, uint64_t ancestor_size_limit, uint64_t ancestor_count_limit)
@@ -191,16 +153,16 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<uint256> &vHashes
     // Iterate in reverse, so that whenever we are looking at a transaction
     // we are sure that all in-mempool descendants have already been processed.
     // This maximizes the benefit of the descendant cache and guarantees that
-    // CTxMemPool::m_children will be updated, an assumption made in
+    // CTxMemPoolEntry::m_children will be updated, an assumption made in
     // UpdateForDescendants.
-    for (const uint256 &hash : reverse_iterate(vHashesToUpdate)) {
+    for (const uint256& hash : vHashesToUpdate | std::views::reverse) {
         // calculate children from mapNextTx
         txiter it = mapTx.find(hash);
         if (it == mapTx.end()) {
             continue;
         }
         auto iter = mapNextTx.lower_bound(COutPoint(hash, 0));
-        // First calculate the children, and update CTxMemPool::m_children to
+        // First calculate the children, and update CTxMemPoolEntry::m_children to
         // include them, and update their CTxMemPoolEntry::m_parents to include this tx.
         // we cache the in-mempool children to avoid duplicate updates
         {
@@ -346,7 +308,7 @@ bool CTxMemPool::CalculateMemPoolAncestors(const CTxMemPoolEntry &entry,
         staged_ancestors = it->GetMemPoolParentsConst();
     }
 
-    return CalculateAncestorsAndCheckLimits(entry.GetTxSize(), /* entry_count */ 1,
+    return CalculateAncestorsAndCheckLimits(entry.GetTxSize(), /*entry_count=*/1,
                                             setAncestors, staged_ancestors,
                                             limitAncestorCount, limitAncestorSize,
                                             limitDescendantCount, limitDescendantSize, errString);
@@ -363,7 +325,7 @@ void CTxMemPool::UpdateAncestorsOf(bool add, txiter it, setEntries &setAncestors
     const int64_t updateSize = updateCount * it->GetTxSize();
     const CAmount updateFee = updateCount * it->GetModifiedFee();
     for (txiter ancestorIt : setAncestors) {
-        mapTx.modify(ancestorIt, update_descendant_state(updateSize, updateFee, updateCount));
+        mapTx.modify(ancestorIt, [=](CTxMemPoolEntry& e) { e.UpdateDescendantState(updateSize, updateFee, updateCount); });
     }
 }
 
@@ -378,7 +340,7 @@ void CTxMemPool::UpdateEntryForAncestors(txiter it, const setEntries &setAncesto
         updateFee += ancestorIt->GetModifiedFee();
         updateSigOps += ancestorIt->GetSigOpCount();
     }
-    mapTx.modify(it, update_ancestor_state(updateSize, updateFee, updateCount, updateSigOps));
+    mapTx.modify(it, [=](CTxMemPoolEntry& e){ e.UpdateAncestorState(updateSize, updateFee, updateCount, updateSigOps); });
 }
 
 void CTxMemPool::UpdateChildrenForRemoval(txiter it)
@@ -409,7 +371,7 @@ void CTxMemPool::UpdateForRemoveFromMempool(const setEntries &entriesToRemove, b
             CAmount modifyFee = -removeIt->GetModifiedFee();
             int modifySigOps = -removeIt->GetSigOpCount();
             for (txiter dit : setDescendants) {
-                mapTx.modify(dit, update_ancestor_state(modifySize, modifyFee, -1, modifySigOps));
+                mapTx.modify(dit, [=](CTxMemPoolEntry& e){ e.UpdateAncestorState(modifySize, modifyFee, -1, modifySigOps); });
             }
         }
     }
@@ -453,7 +415,7 @@ void CTxMemPoolEntry::UpdateDescendantState(int64_t modifySize, CAmount modifyFe
 {
     nSizeWithDescendants += modifySize;
     assert(int64_t(nSizeWithDescendants) > 0);
-    nModFeesWithDescendants += modifyFee;
+    nModFeesWithDescendants = SaturatingAdd(nModFeesWithDescendants, modifyFee);
     nCountWithDescendants += modifyCount;
     assert(int64_t(nCountWithDescendants) > 0);
 }
@@ -462,7 +424,7 @@ void CTxMemPoolEntry::UpdateAncestorState(int64_t modifySize, CAmount modifyFee,
 {
     nSizeWithAncestors += modifySize;
     assert(int64_t(nSizeWithAncestors) > 0);
-    nModFeesWithAncestors += modifyFee;
+    nModFeesWithAncestors = SaturatingAdd(nModFeesWithAncestors, modifyFee);
     nCountWithAncestors += modifyCount;
     assert(int64_t(nCountWithAncestors) > 0);
     nSigOpCountWithAncestors += modifySigOps;
@@ -478,10 +440,16 @@ CTxMemPool::CTxMemPool(CBlockPolicyEstimator* estimator, int check_ratio)
 void CTxMemPool::ConnectManagers(gsl::not_null<CDeterministicMNManager*> dmnman, gsl::not_null<llmq::CInstantSendManager*> isman)
 {
     // Do not allow double-initialization
-    assert(m_dmnman == nullptr);
-    m_dmnman = dmnman;
-    assert(m_isman == nullptr);
-    m_isman = isman;
+    assert(m_dmnman.load(std::memory_order_acquire) == nullptr);
+    m_dmnman.store(dmnman, std::memory_order_release);
+    assert(m_isman.load(std::memory_order_acquire) == nullptr);
+    m_isman.store(isman, std::memory_order_release);
+}
+
+void CTxMemPool::DisconnectManagers()
+{
+    m_dmnman.store(nullptr, std::memory_order_release);
+    m_isman.store(nullptr, std::memory_order_release);
 }
 
 bool CTxMemPool::isSpent(const COutPoint& outpoint) const
@@ -510,8 +478,10 @@ void CTxMemPool::addUnchecked(const CTxMemPoolEntry &entry, setEntries &setAnces
     // Update transaction for any feeDelta created by PrioritiseTransaction
     CAmount delta{0};
     ApplyDelta(entry.GetTx().GetHash(), delta);
+    // The following call to UpdateModifiedFee assumes no previous fee modifications
+    Assume(entry.GetFee() == entry.GetModifiedFee());
     if (delta) {
-            mapTx.modify(newit, update_fee_delta(delta));
+        mapTx.modify(newit, [&delta](CTxMemPoolEntry& e) { e.UpdateModifiedFee(delta); });
     }
 
     // Update cachedInnerUsage to include contained transaction's usage.
@@ -552,8 +522,8 @@ void CTxMemPool::addUnchecked(const CTxMemPoolEntry &entry, setEntries &setAnces
     // Invalid ProTxes should never get this far because transactions should be
     // fully checked by AcceptToMemoryPool() at this point, so we just assume that
     // everything is fine here.
-    if (m_dmnman) {
-        addUncheckedProTx(newit, tx);
+    if (auto dmnman = m_dmnman.load(std::memory_order_acquire); dmnman) {
+        addUncheckedProTx(*dmnman, newit, tx);
     }
 }
 
@@ -605,7 +575,7 @@ bool CTxMemPool::getAddressIndex(const std::vector<CMempoolAddressDeltaKey>& add
 {
     LOCK(cs);
     for (const auto& address : addresses) {
-        addressDeltaMap::const_iterator ait = mapAddress.lower_bound(address);
+        auto ait = mapAddress.lower_bound(address);
         while (ait != mapAddress.end() && (*ait).first.m_address_bytes == address.m_address_bytes
                && (*ait).first.m_address_type == address.m_address_type) {
             results.push_back(*ait);
@@ -615,20 +585,15 @@ bool CTxMemPool::getAddressIndex(const std::vector<CMempoolAddressDeltaKey>& add
     return true;
 }
 
-bool CTxMemPool::removeAddressIndex(const uint256 txhash)
+void CTxMemPool::removeAddressIndex(const uint256 txhash)
 {
     LOCK(cs);
-    addressDeltaMapInserted::iterator it = mapAddressInserted.find(txhash);
-
-    if (it != mapAddressInserted.end()) {
-        std::vector<CMempoolAddressDeltaKey> keys = (*it).second;
-        for (std::vector<CMempoolAddressDeltaKey>::iterator mit = keys.begin(); mit != keys.end(); mit++) {
-            mapAddress.erase(*mit);
+    if (auto it = mapAddressInserted.find(txhash); it != mapAddressInserted.end()) {
+        for (const auto& key : (*it).second) {
+            mapAddress.erase(key);
         }
         mapAddressInserted.erase(it);
     }
-
-    return true;
 }
 
 void CTxMemPool::addSpentIndex(const CTxMemPoolEntry& entry, const CCoinsViewCache& view)
@@ -664,74 +629,71 @@ void CTxMemPool::addSpentIndex(const CTxMemPoolEntry& entry, const CCoinsViewCac
 bool CTxMemPool::getSpentIndex(const CSpentIndexKey& key, CSpentIndexValue& value) const
 {
     LOCK(cs);
-    mapSpentIndex::const_iterator it = mapSpent.find(key);
-
-    if (it != mapSpent.end()) {
+    if (auto it = mapSpent.find(key); it != mapSpent.end()) {
         value = it->second;
         return true;
     }
     return false;
 }
 
-bool CTxMemPool::removeSpentIndex(const uint256 txhash)
+void CTxMemPool::removeSpentIndex(const uint256 txhash)
 {
     LOCK(cs);
-    mapSpentIndexInserted::iterator it = mapSpentInserted.find(txhash);
-
-    if (it != mapSpentInserted.end()) {
-        std::vector<CSpentIndexKey> keys = (*it).second;
-        for (std::vector<CSpentIndexKey>::iterator mit = keys.begin(); mit != keys.end(); mit++) {
-            mapSpent.erase(*mit);
+    if (auto it = mapSpentInserted.find(txhash); it != mapSpentInserted.end()) {
+        for (const auto& key : (*it).second) {
+            mapSpent.erase(key);
         }
         mapSpentInserted.erase(it);
     }
-
-    return true;
 }
 
-void CTxMemPool::addUncheckedProTx(indexed_transaction_set::iterator& newit, const CTransaction& tx)
+void CTxMemPool::addUncheckedProTx(CDeterministicMNManager& dmnman, indexed_transaction_set::iterator& newit,
+                                   const CTransaction& tx)
 {
-    assert(m_dmnman);
-
+    const uint256 tx_hash{tx.GetHash()};
     if (tx.nType == TRANSACTION_PROVIDER_REGISTER) {
         auto proTx = *Assert(GetTxPayload<CProRegTx>(tx));
         if (!proTx.collateralOutpoint.hash.IsNull()) {
-            mapProTxRefs.emplace(tx.GetHash(), proTx.collateralOutpoint.hash);
+            mapProTxRefs.emplace(tx_hash, proTx.collateralOutpoint.hash);
         }
-        mapProTxAddresses.emplace(proTx.addr, tx.GetHash());
-        mapProTxPubKeyIDs.emplace(proTx.keyIDOwner, tx.GetHash());
-        mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx.GetHash());
+        for (const auto& entry : proTx.netInfo->GetEntries()) {
+            mapProTxAddresses.emplace(entry, tx_hash);
+        }
+        mapProTxPubKeyIDs.emplace(proTx.keyIDOwner, tx_hash);
+        mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx_hash);
         if (!proTx.collateralOutpoint.hash.IsNull()) {
-            mapProTxCollaterals.emplace(proTx.collateralOutpoint, tx.GetHash());
+            mapProTxCollaterals.emplace(proTx.collateralOutpoint, tx_hash);
         } else {
-            mapProTxCollaterals.emplace(COutPoint(tx.GetHash(), proTx.collateralOutpoint.n), tx.GetHash());
+            mapProTxCollaterals.emplace(COutPoint(tx_hash, proTx.collateralOutpoint.n), tx_hash);
         }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SERVICE) {
         auto proTx = *Assert(GetTxPayload<CProUpServTx>(tx));
-        mapProTxRefs.emplace(proTx.proTxHash, tx.GetHash());
-        mapProTxAddresses.emplace(proTx.addr, tx.GetHash());
+        mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
+        for (const auto& entry : proTx.netInfo->GetEntries()) {
+            mapProTxAddresses.emplace(entry, tx_hash);
+        }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
         auto proTx = *Assert(GetTxPayload<CProUpRegTx>(tx));
-        mapProTxRefs.emplace(proTx.proTxHash, tx.GetHash());
-        mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx.GetHash());
-        auto dmn = Assert(m_dmnman->GetListAtChainTip().GetMN(proTx.proTxHash));
+        mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
+        mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx_hash);
+        auto dmn = Assert(dmnman.GetListAtChainTip().GetMN(proTx.proTxHash));
         newit->validForProTxKey = ::SerializeHash(dmn->pdmnState->pubKeyOperator);
         if (dmn->pdmnState->pubKeyOperator != proTx.pubKeyOperator) {
             newit->isKeyChangeProTx = true;
         }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REVOKE) {
         auto proTx = *Assert(GetTxPayload<CProUpRevTx>(tx));
-        mapProTxRefs.emplace(proTx.proTxHash, tx.GetHash());
-        auto dmn = Assert(m_dmnman->GetListAtChainTip().GetMN(proTx.proTxHash));
+        mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
+        auto dmn = Assert(dmnman.GetListAtChainTip().GetMN(proTx.proTxHash));
         newit->validForProTxKey = ::SerializeHash(dmn->pdmnState->pubKeyOperator);
         if (dmn->pdmnState->pubKeyOperator.Get() != CBLSPublicKey()) {
             newit->isKeyChangeProTx = true;
         }
     } else if (tx.nType == TRANSACTION_ASSET_UNLOCK) {
         auto assetUnlockTx = *Assert(GetTxPayload<CAssetUnlockPayload>(tx));
-        mapAssetUnlockExpiry.insert({tx.GetHash(), assetUnlockTx.getHeightToExpiry()});
+        mapAssetUnlockExpiry.insert({tx_hash, assetUnlockTx.getHeightToExpiry()});
     } else if (tx.nType == TRANSACTION_MNHF_SIGNAL) {
-        PrioritiseTransaction(tx.GetHash(), 0.1 * COIN);
+        PrioritiseTransaction(tx_hash, 0.1 * COIN);
     }
 }
 
@@ -764,7 +726,7 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
     } else
         vTxHashes.clear();
 
-    if (m_dmnman) {
+    if (m_dmnman.load(std::memory_order_acquire)) {
         removeUncheckedProTx(it->GetTx());
     }
 
@@ -792,29 +754,34 @@ void CTxMemPool::removeUncheckedProTx(const CTransaction& tx)
         }
     };
 
+    const uint256 tx_hash{tx.GetHash()};
     if (tx.nType == TRANSACTION_PROVIDER_REGISTER) {
         auto proTx = *Assert(GetTxPayload<CProRegTx>(tx));
         if (!proTx.collateralOutpoint.IsNull()) {
-            eraseProTxRef(tx.GetHash(), proTx.collateralOutpoint.hash);
+            eraseProTxRef(tx_hash, proTx.collateralOutpoint.hash);
         }
-        mapProTxAddresses.erase(proTx.addr);
+        for (const auto& entry : proTx.netInfo->GetEntries()) {
+            mapProTxAddresses.erase(entry);
+        }
         mapProTxPubKeyIDs.erase(proTx.keyIDOwner);
         mapProTxBlsPubKeyHashes.erase(proTx.pubKeyOperator.GetHash());
         mapProTxCollaterals.erase(proTx.collateralOutpoint);
-        mapProTxCollaterals.erase(COutPoint(tx.GetHash(), proTx.collateralOutpoint.n));
+        mapProTxCollaterals.erase(COutPoint(tx_hash, proTx.collateralOutpoint.n));
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SERVICE) {
         auto proTx = *Assert(GetTxPayload<CProUpServTx>(tx));
-        eraseProTxRef(proTx.proTxHash, tx.GetHash());
-        mapProTxAddresses.erase(proTx.addr);
+        eraseProTxRef(proTx.proTxHash, tx_hash);
+        for (const auto& entry : proTx.netInfo->GetEntries()) {
+            mapProTxAddresses.erase(entry);
+        }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
         auto proTx = *Assert(GetTxPayload<CProUpRegTx>(tx));
-        eraseProTxRef(proTx.proTxHash, tx.GetHash());
+        eraseProTxRef(proTx.proTxHash, tx_hash);
         mapProTxBlsPubKeyHashes.erase(proTx.pubKeyOperator.GetHash());
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REVOKE) {
         auto proTx = *Assert(GetTxPayload<CProUpRevTx>(tx));
-        eraseProTxRef(proTx.proTxHash, tx.GetHash());
+        eraseProTxRef(proTx.proTxHash, tx_hash);
     } else if (tx.nType == TRANSACTION_ASSET_UNLOCK) {
-        mapAssetUnlockExpiry.erase(tx.GetHash());
+        mapAssetUnlockExpiry.erase(tx_hash);
     }
 }
 
@@ -964,7 +931,7 @@ void CTxMemPool::removeProTxCollateralConflicts(const CTransaction &tx, const CO
 
 void CTxMemPool::removeProTxSpentCollateralConflicts(const CTransaction &tx)
 {
-    assert(m_dmnman);
+    auto dmnman = Assert(m_dmnman.load(std::memory_order_acquire));
 
     // Remove TXs that refer to a MN for which the collateral was spent
     auto removeSpentCollateralConflict = [&](const uint256& proTxHash) EXCLUSIVE_LOCKS_REQUIRED(cs) {
@@ -986,7 +953,7 @@ void CTxMemPool::removeProTxSpentCollateralConflicts(const CTransaction &tx)
             }
         }
     };
-    auto mnList = m_dmnman->GetListAtChainTip();
+    auto mnList = dmnman->GetListAtChainTip();
     for (const auto& in : tx.vin) {
         auto collateralIt = mapProTxCollaterals.find(in.prevout);
         if (collateralIt != mapProTxCollaterals.end()) {
@@ -1023,18 +990,21 @@ void CTxMemPool::removeProTxConflicts(const CTransaction &tx)
 {
     removeProTxSpentCollateralConflicts(tx);
 
+    const uint256 tx_hash{tx.GetHash()};
     if (tx.nType == TRANSACTION_PROVIDER_REGISTER) {
         const auto opt_proTx = GetTxPayload<CProRegTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return;
         }
         auto& proTx = *opt_proTx;
 
-        if (mapProTxAddresses.count(proTx.addr)) {
-            uint256 conflictHash = mapProTxAddresses[proTx.addr];
-            if (conflictHash != tx.GetHash() && mapTx.count(conflictHash)) {
-                removeRecursive(mapTx.find(conflictHash)->GetTx(), MemPoolRemovalReason::CONFLICT);
+        for (const auto& entry : proTx.netInfo->GetEntries()) {
+            if (mapProTxAddresses.count(entry)) {
+                uint256 conflictHash = mapProTxAddresses[entry];
+                if (conflictHash != tx_hash && mapTx.count(conflictHash)) {
+                    removeRecursive(mapTx.find(conflictHash)->GetTx(), MemPoolRemovalReason::CONFLICT);
+                }
             }
         }
         removeProTxPubKeyConflicts(tx, proTx.keyIDOwner);
@@ -1042,25 +1012,27 @@ void CTxMemPool::removeProTxConflicts(const CTransaction &tx)
         if (!proTx.collateralOutpoint.hash.IsNull()) {
             removeProTxCollateralConflicts(tx, proTx.collateralOutpoint);
         } else {
-            removeProTxCollateralConflicts(tx, COutPoint(tx.GetHash(), proTx.collateralOutpoint.n));
+            removeProTxCollateralConflicts(tx, COutPoint(tx_hash, proTx.collateralOutpoint.n));
         }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SERVICE) {
         const auto opt_proTx = GetTxPayload<CProUpServTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return;
         }
 
-        if (mapProTxAddresses.count(opt_proTx->addr)) {
-            uint256 conflictHash = mapProTxAddresses[opt_proTx->addr];
-            if (conflictHash != tx.GetHash() && mapTx.count(conflictHash)) {
-                removeRecursive(mapTx.find(conflictHash)->GetTx(), MemPoolRemovalReason::CONFLICT);
+        for (const auto& entry : opt_proTx->netInfo->GetEntries()) {
+            if (mapProTxAddresses.count(entry)) {
+                uint256 conflictHash = mapProTxAddresses[entry];
+                if (conflictHash != tx_hash && mapTx.count(conflictHash)) {
+                    removeRecursive(mapTx.find(conflictHash)->GetTx(), MemPoolRemovalReason::CONFLICT);
+                }
             }
         }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
         const auto opt_proTx = GetTxPayload<CProUpRegTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return;
         }
 
@@ -1069,7 +1041,7 @@ void CTxMemPool::removeProTxConflicts(const CTransaction &tx)
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REVOKE) {
         const auto opt_proTx = GetTxPayload<CProUpRevTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return;
         }
 
@@ -1103,7 +1075,7 @@ void CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx, unsigne
             RemoveStaged(stage, true, MemPoolRemovalReason::BLOCK);
         }
         removeConflicts(*tx);
-        if (m_dmnman) {
+        if (m_dmnman.load(std::memory_order_acquire)) {
             removeProTxConflicts(*tx);
         }
         ClearPrioritisation(tx->GetHash());
@@ -1361,7 +1333,7 @@ TxMempoolInfo CTxMemPool::info(const uint256& hash) const
 }
 
 bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
-    assert(m_dmnman);
+    auto dmnman = Assert(m_dmnman.load(std::memory_order_acquire));
 
     LOCK(cs);
 
@@ -1379,15 +1351,22 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
         return false;
     };
 
+    const uint256 tx_hash{tx.GetHash()};
     if (tx.nType == TRANSACTION_PROVIDER_REGISTER) {
         const auto opt_proTx = GetTxPayload<CProRegTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return true; // i.e. can't decode payload == conflict
         }
         auto& proTx = *opt_proTx;
-        if (mapProTxAddresses.count(proTx.addr) || mapProTxPubKeyIDs.count(proTx.keyIDOwner) || mapProTxBlsPubKeyHashes.count(proTx.pubKeyOperator.GetHash()))
+        for (const auto& entry : proTx.netInfo->GetEntries()) {
+            if (mapProTxAddresses.count(entry)) {
+                return true;
+            }
+        }
+        if (mapProTxPubKeyIDs.count(proTx.keyIDOwner) || mapProTxBlsPubKeyHashes.count(proTx.pubKeyOperator.GetHash())) {
             return true;
+        }
         if (!proTx.collateralOutpoint.hash.IsNull()) {
             if (mapProTxCollaterals.count(proTx.collateralOutpoint)) {
                 // there is another ProRegTx that refers to the same collateral
@@ -1402,21 +1381,25 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SERVICE) {
         const auto opt_proTx = GetTxPayload<CProUpServTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return true; // i.e. can't decode payload == conflict
         }
-        auto it = mapProTxAddresses.find(opt_proTx->addr);
-        return it != mapProTxAddresses.end() && it->second != opt_proTx->proTxHash;
+        for (const auto& entry : opt_proTx->netInfo->GetEntries()) {
+            auto it = mapProTxAddresses.find(entry);
+            if (it != mapProTxAddresses.end() && it->second != opt_proTx->proTxHash) {
+                return true;
+            }
+        }
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
         const auto opt_proTx = GetTxPayload<CProUpRegTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return true; // i.e. can't decode payload == conflict
         }
         auto& proTx = *opt_proTx;
 
         // this method should only be called with validated ProTxs
-        auto dmn = m_dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
+        auto dmn = dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
         if (!dmn) {
             LogPrint(BCLog::MEMPOOL, "%s: ERROR: Masternode is not in the list, proTxHash: %s\n", __func__, proTx.proTxHash.ToString());
             return true; // i.e. failed to find validated ProTx == conflict
@@ -1433,12 +1416,12 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REVOKE) {
         const auto opt_proTx = GetTxPayload<CProUpRevTx>(tx);
         if (!opt_proTx) {
-            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx.GetHash().ToString());
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
             return true; // i.e. can't decode payload == conflict
         }
         auto& proTx = *opt_proTx;
         // this method should only be called with validated ProTxs
-        auto dmn = m_dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
+        auto dmn = dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
         if (!dmn) {
             LogPrint(BCLog::MEMPOOL, "%s: ERROR: Masternode is not in the list, proTxHash: %s\n", __func__, proTx.proTxHash.ToString());
             return true; // i.e. failed to find validated ProTx == conflict
@@ -1458,24 +1441,24 @@ void CTxMemPool::PrioritiseTransaction(const uint256& hash, const CAmount& nFeeD
     {
         LOCK(cs);
         CAmount &delta = mapDeltas[hash];
-        delta += nFeeDelta;
+        delta = SaturatingAdd(delta, nFeeDelta);
         txiter it = mapTx.find(hash);
         if (it != mapTx.end()) {
-            mapTx.modify(it, update_fee_delta(delta));
+            mapTx.modify(it, [&nFeeDelta](CTxMemPoolEntry& e) { e.UpdateModifiedFee(nFeeDelta); });
             // Now update all ancestors' modified fees with descendants
             setEntries setAncestors;
             uint64_t nNoLimit = std::numeric_limits<uint64_t>::max();
             std::string dummy;
             CalculateMemPoolAncestors(*it, setAncestors, nNoLimit, nNoLimit, nNoLimit, nNoLimit, dummy, false);
             for (txiter ancestorIt : setAncestors) {
-                mapTx.modify(ancestorIt, update_descendant_state(0, nFeeDelta, 0));
+                mapTx.modify(ancestorIt, [=](CTxMemPoolEntry& e){ e.UpdateDescendantState(0, nFeeDelta, 0);});
             }
             // Now update all descendants' modified fees with ancestors
             setEntries setDescendants;
             CalculateDescendants(it, setDescendants);
             setDescendants.erase(it);
             for (txiter descendantIt : setDescendants) {
-                mapTx.modify(descendantIt, update_ancestor_state(0, nFeeDelta, 0, 0));
+                mapTx.modify(descendantIt, [=](CTxMemPoolEntry& e){ e.UpdateAncestorState(0, nFeeDelta, 0, 0); });
             }
             ++nTransactionsUpdated;
         }
@@ -1588,12 +1571,12 @@ void CTxMemPool::RemoveStaged(setEntries &stage, bool updateDescendants, MemPool
 int CTxMemPool::Expire(std::chrono::seconds time)
 {
     AssertLockHeld(cs);
-    assert(m_isman);
+    auto isman = Assert(m_isman.load(std::memory_order_acquire));
     indexed_transaction_set::index<entry_time>::type::iterator it = mapTx.get<entry_time>().begin();
     setEntries toremove;
     while (it != mapTx.get<entry_time>().end() && it->GetTime() < time) {
         // locked txes do not expire until mined and have sufficient confirmations
-        if (m_isman->IsLocked(it->GetTx().GetHash())) {
+        if (isman->IsLocked(it->GetTx().GetHash())) {
             it++;
             continue;
         }
@@ -1736,12 +1719,14 @@ uint64_t CTxMemPool::CalculateDescendantMaximum(txiter entry) const {
     return maximum;
 }
 
-void CTxMemPool::GetTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants) const {
+void CTxMemPool::GetTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants, size_t* const ancestorsize, CAmount* const ancestorfees) const {
     LOCK(cs);
     auto it = mapTx.find(txid);
     ancestors = descendants = 0;
     if (it != mapTx.end()) {
         ancestors = it->GetCountWithAncestors();
+        if (ancestorsize) *ancestorsize = it->GetSizeWithAncestors();
+        if (ancestorfees) *ancestorfees = it->GetModFeesWithAncestors();
         descendants = CalculateDescendantMaximum(it);
     }
 }
@@ -1756,4 +1741,18 @@ void CTxMemPool::SetIsLoaded(bool loaded)
 {
     LOCK(cs);
     m_is_loaded = loaded;
+}
+
+
+std::string RemovalReasonToString(const MemPoolRemovalReason& r) noexcept
+{
+    switch (r) {
+        case MemPoolRemovalReason::EXPIRY: return "expiry";
+        case MemPoolRemovalReason::SIZELIMIT: return "sizelimit";
+        case MemPoolRemovalReason::REORG: return "reorg";
+        case MemPoolRemovalReason::BLOCK: return "block";
+        case MemPoolRemovalReason::CONFLICT: return "conflict";
+        case MemPoolRemovalReason::MANUAL: return "manual";
+    }
+    assert(false);
 }

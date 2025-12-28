@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2023 The Dash Core developers
+// Copyright (c) 2018-2023 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -49,6 +49,8 @@ private:
     std::vector<SigVerifyJob> sigVerifyQueue;
 
 public:
+    CBLSWorker(const CBLSWorker&) = delete;
+    CBLSWorker& operator=(CBLSWorker const&) = delete;
     CBLSWorker();
     ~CBLSWorker();
 

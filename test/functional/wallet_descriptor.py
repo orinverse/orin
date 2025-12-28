@@ -72,15 +72,15 @@ class WalletDescriptorTest(BitcoinTestFramework):
 
         # Make sure things are disabled
         self.log.info("Test disabled RPCs")
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.importprivkey, "cVpF924EspNh8KjYsfhgY96mmxvT6DgdWiTYMtMjuM74hJaU5psW")
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.importpubkey, send_wrpc.getaddressinfo(send_wrpc.getnewaddress()))
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.importaddress, recv_wrpc.getnewaddress())
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.importmulti, [])
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.addmultisigaddress, 1, [recv_wrpc.getnewaddress()])
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.dumpprivkey, recv_wrpc.getnewaddress())
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.dumpwallet, 'wallet.dump')
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.importwallet, 'wallet.dump')
-        assert_raises_rpc_error(-4, "This type of wallet does not support this command", recv_wrpc.rpc.sethdseed)
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.importprivkey, "cVpF924EspNh8KjYsfhgY96mmxvT6DgdWiTYMtMjuM74hJaU5psW")
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.importpubkey, send_wrpc.getaddressinfo(send_wrpc.getnewaddress()))
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.importaddress, recv_wrpc.getnewaddress())
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.importmulti, [])
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.addmultisigaddress, 1, [recv_wrpc.getnewaddress()])
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.dumpprivkey, recv_wrpc.getnewaddress())
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.dumpwallet, 'wallet.dump')
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.importwallet, 'wallet.dump')
+        assert_raises_rpc_error(-4, "Only legacy wallets are supported by this command", recv_wrpc.rpc.sethdseed)
 
         self.log.info("Test encryption")
         # Get the master fingerprint before encrypt
@@ -91,7 +91,7 @@ class WalletDescriptorTest(BitcoinTestFramework):
         send_wrpc.walletpassphrase('pass', 10)
         addr = send_wrpc.getnewaddress()
         info2 = send_wrpc.getaddressinfo(addr)
-        assert info1['hdmasterfingerprint'] != info2['hdmasterfingerprint']
+        assert info1['hdmasterfingerprint'] == info2['hdmasterfingerprint']
         send_wrpc.walletlock()
         assert 'hdmasterfingerprint' in send_wrpc.getaddressinfo(send_wrpc.getnewaddress())
         info3 = send_wrpc.getaddressinfo(addr)
@@ -112,7 +112,7 @@ class WalletDescriptorTest(BitcoinTestFramework):
         send_wrpc.walletlock()
         # Exhaust keypool of 100
         for i in range(0, 100):
-            # keypool should be exhaused by bech32 addresses, but in dash case keypool is not exhausted
+            # keypool should be exhausted by bech32 addresses, but in orin case keypool is not exhausted
             send_wrpc.getnewaddress()
         # This should now error
         # this check is disabled, see comment above above

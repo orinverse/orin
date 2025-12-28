@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,15 +14,12 @@
 
 #include <QApplication>
 #include <QEvent>
-#include <QHeaderView>
 #include <QItemDelegate>
 #include <QLabel>
-#include <QMessageBox>
 #include <QMetaObject>
 #include <QObject>
 #include <QProgressBar>
 #include <QString>
-#include <QTableView>
 
 #include <cassert>
 #include <chrono>
@@ -43,6 +40,7 @@ class QAbstractItemView;
 class QAction;
 class QButtonGroup;
 class QDateTime;
+class QDialog;
 class QFont;
 class QKeySequence;
 class QLineEdit;
@@ -53,7 +51,7 @@ class QUrl;
 class QWidget;
 QT_END_NAMESPACE
 
-/** Utility functions used by the Dash Qt UI.
+/** Utility functions used by the Orin Qt UI.
  */
 namespace GUIUtil
 {
@@ -144,7 +142,7 @@ namespace GUIUtil
      */
     void AddButtonShortcut(QAbstractButton* button, const QKeySequence& shortcut);
 
-    // Parse "dash:" URI into recipient object, return true on successful parsing
+    // Parse "orin:" URI into recipient object, return true on successful parsing
     bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out);
     bool parseBitcoinURI(QString uri, SendCoinsRecipient *out);
     bool validateBitcoinURI(const QString& uri);
@@ -190,6 +188,14 @@ namespace GUIUtil
      * Determine default data directory for operating system.
      */
     QString getDefaultDataDirectory();
+
+    /**
+     * Extract first suffix from filter pattern "Description (*.foo)" or "Description (*.foo *.bar ...).
+     *
+     * @param[in] filter Filter specification such as "Comma Separated Files (*.csv)"
+     * @return QString
+     */
+    QString ExtractFirstSuffixFromFilter(const QString& filter);
 
     /** Get save filename, mimics QFileDialog::getSaveFileName, except that it appends a default suffix
         when no suffix is provided by the user.
@@ -237,7 +243,7 @@ namespace GUIUtil
     // Open debug.log
     void openDebugLogfile();
 
-    // Open dash.conf
+    // Open orin.conf
     void openConfigfile();
 
     // Browse backup folder
@@ -287,13 +293,13 @@ namespace GUIUtil
     bool isStyleSheetDirectoryCustom();
 
     /** Return a list of all required css files */
-    const std::vector<QString> listStyleSheets();
+    std::vector<QString> listStyleSheets();
 
     /** Return a list of all theme css files */
-    const std::vector<QString> listThemes();
+    std::vector<QString> listThemes();
 
     /** Return the name of the default theme `*/
-    const QString getDefaultTheme();
+    QString getDefaultTheme();
 
     /** Check if the given theme name is valid or not */
     bool isValidTheme(const QString& strTheme);
@@ -345,7 +351,7 @@ namespace GUIUtil
     /** get font size with GUIUtil::fontScale applied */
     double getScaledFontSize(int nSize);
 
-    /** Load dash specific appliciation fonts */
+    /** Load orin specific appliciation fonts */
     bool loadFonts();
     /** Check if the fonts have been loaded successfully */
     bool fontsLoaded();
@@ -389,8 +395,8 @@ namespace GUIUtil
     /** Return the name of the currently active theme.*/
     QString getActiveTheme();
 
-    /** Check if a dash specific theme is activated (light/dark).*/
-    bool dashThemeActive();
+    /** Check if a orin specific theme is activated (light/dark).*/
+    bool orinThemeActive();
 
     /** Load the theme and update all UI elements according to the appearance settings. */
     void loadTheme(bool fForce = false);
@@ -536,18 +542,6 @@ namespace GUIUtil
     #endif
     }
 
-    /**
-     * Queue a function to run in an object's event loop. This can be
-     * replaced by a call to the QMetaObject::invokeMethod functor overload after Qt 5.10, but
-     * for now use a QObject::connect for compatibility with older Qt versions, based on
-     * https://stackoverflow.com/questions/21646467/how-to-execute-a-functor-or-a-lambda-in-a-given-thread-in-qt-gcd-style
-     */
-    template <typename Fn>
-    void ObjectInvoke(QObject* object, Fn&& function, Qt::ConnectionType connection = Qt::QueuedConnection)
-    {
-        QObject source;
-        QObject::connect(&source, &QObject::destroyed, object, std::forward<Fn>(function), connection);
-    }
 
     /**
      * Replaces a plain text link with an HTML tagged one.
@@ -599,6 +593,20 @@ namespace GUIUtil
                 assert(ok);
             },
             type);
+    }
+
+    /**
+     * Shows a QDialog instance asynchronously, and deletes it on close.
+     */
+    void ShowModalDialogAsynchronously(QDialog* dialog);
+
+    inline bool IsEscapeOrBack(int key)
+    {
+        if (key == Qt::Key_Escape) return true;
+#ifdef Q_OS_ANDROID
+        if (key == Qt::Key_Back) return true;
+#endif // Q_OS_ANDROID
+        return false;
     }
 
 } // namespace GUIUtil

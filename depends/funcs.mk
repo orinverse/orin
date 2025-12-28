@@ -34,9 +34,8 @@ define fetch_file_inner
 endef
 
 define fetch_file
-    ( test -f $$($(1)_source_dir)/$(4) || \
     ( $(call fetch_file_inner,$(1),$(2),$(3),$(4),$(5)) || \
-      $(call fetch_file_inner,$(1),$(FALLBACK_DOWNLOAD_PATH),$(3),$(4),$(5))))
+      $(call fetch_file_inner,$(1),$(FALLBACK_DOWNLOAD_PATH),$(3),$(4),$(5)))
 endef
 
 define int_get_build_recipe_hash
@@ -70,7 +69,7 @@ $(1)_build_log:=$(BASEDIR)/$(1)-$($(1)_version)-$($(1)_build_id).log
 $(1)_all_sources=$($(1)_file_name) $($(1)_extra_sources)
 
 #stamps
-$(1)_fetched=$(SOURCES_PATH)/download-stamps/.stamp_fetched-$(1)-$($(1)_file_name).hash
+$(1)_fetched=$(SOURCES_PATH)/download-stamps/.stamp_fetched-$(1)-$($(1)_version)-$($(1)_sha256_hash).hash
 $(1)_extracted=$$($(1)_extract_dir)/.stamp_extracted
 $(1)_preprocessed=$$($(1)_extract_dir)/.stamp_preprocessed
 $(1)_cleaned=$$($(1)_extract_dir)/.stamp_cleaned
@@ -138,9 +137,9 @@ $(1)_config_env+=PKG_CONFIG_LIBDIR=$($($(1)_type)_prefix)/lib/pkgconfig
 $(1)_config_env+=PKG_CONFIG_PATH=$($($(1)_type)_prefix)/share/pkgconfig
 $(1)_config_env+=PKG_CONFIG_SYSROOT_DIR=/
 $(1)_config_env+=CMAKE_MODULE_PATH=$($($(1)_type)_prefix)/lib/cmake
-$(1)_config_env+=PATH=$(build_prefix)/bin:$(PATH)
-$(1)_build_env+=PATH=$(build_prefix)/bin:$(PATH)
-$(1)_stage_env+=PATH=$(build_prefix)/bin:$(PATH)
+$(1)_config_env+=PATH="$(build_prefix)/bin:$(PATH)"
+$(1)_build_env+=PATH="$(build_prefix)/bin:$(PATH)"
+$(1)_stage_env+=PATH="$(build_prefix)/bin:$(PATH)"
 
 # Setting a --build type that differs from --host will explicitly enable
 # cross-compilation mode. Note that --build defaults to the output of
@@ -206,7 +205,6 @@ endif
 $($(1)_fetched):
 	mkdir -p $$(@D) $(SOURCES_PATH)
 	rm -f $$@
-	touch $$@
 	cd $$(@D); $($(1)_fetch_cmds)
 	cd $($(1)_source_dir); $(foreach source,$($(1)_all_sources),$(build_SHA256SUM) $(source) >> $$(@);)
 	touch $$@

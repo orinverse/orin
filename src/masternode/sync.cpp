@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,15 +14,15 @@
 #include <util/translation.h>
 #include <validation.h>
 
-class CMasternodeSync;
-
 CMasternodeSync::CMasternodeSync(CConnman& _connman, CNetFulfilledRequestManager& netfulfilledman) :
-    nTimeAssetSyncStarted(GetTime()),
-    nTimeLastBumped(GetTime()),
-    connman(_connman),
-    m_netfulfilledman(netfulfilledman)
+    nTimeAssetSyncStarted{GetTime()},
+    nTimeLastBumped{GetTime()},
+    connman{_connman},
+    m_netfulfilledman{netfulfilledman}
 {
 }
+
+CMasternodeSync::~CMasternodeSync() = default;
 
 void CMasternodeSync::Reset(bool fForce, bool fNotifyReset)
 {
@@ -121,12 +121,12 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
     static int nTick = 0;
     nTick++;
 
-    const static int64_t nSyncStart = GetTimeMillis();
+    const static int64_t nSyncStart = TicksSinceEpoch<std::chrono::milliseconds>(SystemClock::now());
     const static std::string strAllow = strprintf("allow-sync-%lld", nSyncStart);
 
     // reset the sync process if the last call to this function was more than 60 minutes ago (client was in sleep mode)
     static int64_t nTimeLastProcess = GetTime();
-    if (!Params().IsMockableChain() && GetTime() - nTimeLastProcess > 60 * 60 && !fMasternodeMode) {
+    if (!Params().IsMockableChain() && GetTime() - nTimeLastProcess > 60 * 60 && !connman.IsActiveMasternode()) {
         LogPrintf("CMasternodeSync::ProcessTick -- WARNING: no actions for too long, restarting sync...\n");
         Reset(true);
         nTimeLastProcess = GetTime();
@@ -139,7 +139,7 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
     }
 
     nTimeLastProcess = GetTime();
-    const CConnman::NodesSnapshot snap{connman, /* filter = */ CConnman::FullyConnectedOnly};
+    const CConnman::NodesSnapshot snap{connman, /* cond = */ CConnman::FullyConnectedOnly};
 
     // gradually request the rest of the votes after sync finished
     if(IsSynced()) {
@@ -159,7 +159,7 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
         // Don't try to sync any data from outbound non-relay "masternode" connections.
         // Inbound connection this early is most likely a "masternode" connection
         // initiated from another node, so skip it too.
-        if (!pnode->CanRelay() || (fMasternodeMode && pnode->IsInboundConn())) continue;
+        if (!pnode->CanRelay() || (connman.IsActiveMasternode() && pnode->IsInboundConn())) continue;
 
         {
             if ((pnode->HasPermission(NetPermissionFlags::NoBan) || pnode->IsManualConn()) && !m_netfulfilledman.HasFulfilledRequest(pnode->addr, strAllow)) {

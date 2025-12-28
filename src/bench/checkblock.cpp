@@ -7,8 +7,12 @@
 
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <stats/client.h>
 #include <streams.h>
+#include <util/system.h>
 #include <validation.h>
+
+#include <memory>
 
 // These are the two major time-sinks which happen after we have fully received
 // a block off the wire, but before we can relay the block on to peers using
@@ -36,6 +40,9 @@ static void DeserializeAndCheckBlockTest(benchmark::Bench& bench)
 
     ArgsManager bench_args;
     const auto chainParams = CreateChainParams(bench_args, CBaseChainParams::MAIN);
+    // CheckBlock calls g_stats_client internally, we aren't using a testing setup
+    // so we need to do this manually. We can use the stub interface for this.
+    ::g_stats_client = std::make_unique<StatsdClient>();
 
     bench.unit("block").run([&] {
         CBlock block; // Note that CBlock caches its checked state, so we need to recreate it here

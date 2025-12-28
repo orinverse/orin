@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -59,14 +59,14 @@ void TestRpcCommand(RPCConsole* console)
 //! Entry point for BitcoinApplication tests.
 void AppTests::appTests()
 {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
     if (QApplication::platformName() == "minimal") {
         // Disable for mac on "minimal" platform to avoid crashes inside the Qt
         // framework when it tries to look up unimplemented cocoa functions,
         // and fails to handle returned nulls
         // (https://bugreports.qt.io/browse/QTBUG-49686).
         QWARN("Skipping AppTests on mac build with 'minimal' platform set due to Qt bugs. To run AppTests, invoke "
-              "with 'QT_QPA_PLATFORM=cocoa test_dash-qt' on mac, or else use a linux or windows build.");
+              "with 'QT_QPA_PLATFORM=cocoa test_orin-qt' on mac, or else use a linux or windows build.");
         return;
     }
 #endif
@@ -122,6 +122,6 @@ AppTests::HandleCallback::~HandleCallback()
     assert(it != callbacks.end());
     callbacks.erase(it);
     if (callbacks.empty()) {
-        m_app_tests.m_app.quit();
+        m_app_tests.m_app.exit(0);
     }
 }

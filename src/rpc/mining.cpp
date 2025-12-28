@@ -1,13 +1,15 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chain.h>
+#include <chainlock/chainlock.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <core_io.h>
@@ -16,8 +18,6 @@
 #include <key_io.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/context.h>
-#include <llmq/chainlocks.h>
-#include <llmq/instantsend.h>
 #include <evo/evodb.h>
 #include <net.h>
 #include <node/context.h>
@@ -50,6 +50,11 @@
 
 #include <memory>
 #include <stdint.h>
+
+using node::BlockAssembler;
+using node::CBlockTemplate;
+using node::NodeContext;
+using node::UpdateTime;
 
 /**
  * Return average network hashes per second based on the last 'lookup' blocks,
@@ -115,20 +120,16 @@ static RPCHelpMan getnetworkhashps()
 
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
     LOCK(cs_main);
-    return GetNetworkHashPS(!request.params[0].isNull() ? request.params[0].get_int() : 120, !request.params[1].isNull() ? request.params[1].get_int() : -1, chainman.ActiveChain());
+    return GetNetworkHashPS(!request.params[0].isNull() ? request.params[0].getInt<int>() : 120, !request.params[1].isNull() ? request.params[1].getInt<int>() : -1, chainman.ActiveChain());
 },
     };
 }
 
 #if ENABLE_MINER
-static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& max_tries, unsigned int& extra_nonce, uint256& block_hash)
+static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& max_tries, uint256& block_hash)
 {
     block_hash.SetNull();
-
-    {
-        LOCK(cs_main);
-        IncrementExtraNonce(&block, chainman.ActiveChain().Tip(), extra_nonce);
-    }
+    block.hashMerkleRoot = BlockMerkleRoot(block);
 
     CChainParams chainparams(Params());
 
@@ -157,30 +158,20 @@ static UniValue generateBlocks(ChainstateManager& chainman, const NodeContext& n
 {
     EnsureLLMQContext(node);
 
-    int nHeightEnd = 0;
-    int nHeight = 0;
-
-    {   // Don't keep cs_main locked
-        LOCK(cs_main);
-        nHeight = chainman.ActiveChain().Height();
-        nHeightEnd = nHeight+nGenerate;
-    }
-    unsigned int nExtraNonce = 0;
     UniValue blockHashes(UniValue::VARR);
-    while (nHeight < nHeightEnd && !ShutdownRequested())
-    {
-        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler(chainman.ActiveChainstate(), node, mempool, Params()).CreateNewBlock(coinbase_script));
+    while (nGenerate > 0 && !ShutdownRequested()) {
+        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler(chainman.ActiveChainstate(), node, &mempool, Params()).CreateNewBlock(coinbase_script));
         if (!pblocktemplate.get())
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         CBlock *pblock = &pblocktemplate->block;
 
         uint256 block_hash;
-        if (!GenerateBlock(chainman, *pblock, nMaxTries, nExtraNonce, block_hash)) {
+        if (!GenerateBlock(chainman, *pblock, nMaxTries, block_hash)) {
             break;
         }
 
         if (!block_hash.IsNull()) {
-            ++nHeight;
+            --nGenerate;
             blockHashes.push_back(block_hash.GetHex());
         }
     }
@@ -225,9 +216,9 @@ static RPCHelpMan generatetodescriptor()
 {
     return RPCHelpMan{
         "generatetodescriptor",
-        "\nMine blocks immediately to a specified descriptor (before the RPC call returns)\n",
+        "Mine to a specified descriptor and return the block hashes.",
         {
-            {"num_blocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated immediately."},
+            {"num_blocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated."},
             {"descriptor", RPCArg::Type::STR, RPCArg::Optional::NO, "The descriptor to send the newly generated coins to."},
             {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
         },
@@ -241,8 +232,8 @@ static RPCHelpMan generatetodescriptor()
             "\nGenerate 11 blocks to mydesc\n" + HelpExampleCli("generatetodescriptor", "11 \"mydesc\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const int num_blocks{request.params[0].get_int()};
-    const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].get_int()};
+    const int num_blocks{request.params[0].getInt<int>()};
+    const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
 
     CScript coinbase_script;
     std::string error;
@@ -262,9 +253,9 @@ static RPCHelpMan generatetodescriptor()
 static RPCHelpMan generatetoaddress()
 {
     return RPCHelpMan{"generatetoaddress",
-        "\nMine blocks immediately to a specified address (before the RPC call returns)\n",
+        "\nMine to a specified address and return the block hashes.\n",
         {
-            {"nblocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated immediately."},
+            {"nblocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated."},
             {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated coins to."},
             {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
         },
@@ -280,8 +271,8 @@ static RPCHelpMan generatetoaddress()
             + HelpExampleCli("getnewaddress", "")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const int num_blocks{request.params[0].get_int()};
-    const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].get_int()};
+    const int num_blocks{request.params[0].getInt<int>()};
+    const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
 
     CTxDestination destination = DecodeDestination(request.params[1].get_str());
     if (!IsValidDestination(destination)) {
@@ -302,7 +293,7 @@ static RPCHelpMan generatetoaddress()
 static RPCHelpMan generateblock()
 {
     return RPCHelpMan{"generateblock",
-        "\nMine a block with a set of ordered transactions immediately to a specified address or descriptor (before the RPC call returns)\n",
+        "Mine a set of ordered transactions to a specified address or descriptor and return the block hash.",
         {
             {"output", RPCArg::Type::STR, RPCArg::Optional::NO, "The address or descriptor to send the newly generated coins to."},
             {"transactions", RPCArg::Type::ARR, RPCArg::Optional::NO, "An array of hex strings which are either txids or raw transactions.\n"
@@ -375,8 +366,7 @@ static RPCHelpMan generateblock()
     {
         LOCK(cs_main);
 
-        CTxMemPool empty_mempool;
-        std::unique_ptr<CBlockTemplate> blocktemplate(BlockAssembler(active_chainstate, node, empty_mempool, chainparams).CreateNewBlock(coinbase_script));
+        std::unique_ptr<CBlockTemplate> blocktemplate(BlockAssembler(active_chainstate, node, nullptr, chainparams).CreateNewBlock(coinbase_script));
         if (!blocktemplate) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         }
@@ -401,9 +391,8 @@ static RPCHelpMan generateblock()
 
     uint256 block_hash;
     uint64_t max_tries{DEFAULT_MAX_TRIES};
-    unsigned int extra_nonce{0};
 
-    if (!GenerateBlock(chainman, block, max_tries, extra_nonce, block_hash) || block_hash.IsNull()) {
+    if (!GenerateBlock(chainman, block, max_tries, block_hash) || block_hash.IsNull()) {
         throw JSONRPCError(RPC_MISC_ERROR, "Failed to make block.");
     }
 
@@ -452,8 +441,8 @@ static RPCHelpMan getmininginfo()
                     RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::NUM, "blocks", "The current block"},
-                        {RPCResult::Type::NUM, "currentblocksize", /* optional */ true, "The block size of the last assembled block (only present if a block was ever assembled)"},
-                        {RPCResult::Type::NUM, "currentblocktx", /* optional */ true, "The number of block transactions of the last assembled block (only present if a block was ever assembled)"},
+                        {RPCResult::Type::NUM, "currentblocksize", /*optional=*/true, "The block size of the last assembled block (only present if a block was ever assembled)"},
+                        {RPCResult::Type::NUM, "currentblocktx", /*optional=*/true, "The number of block transactions of the last assembled block (only present if a block was ever assembled)"},
                         {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
                         {RPCResult::Type::NUM, "networkhashps", "The network hashes per second"},
                         {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
@@ -514,7 +503,7 @@ static RPCHelpMan prioritisetransaction()
     LOCK(cs_main);
 
     uint256 hash(ParseHashV(request.params[0].get_str(), "txid"));
-    CAmount nAmount = request.params[1].get_int64();
+    CAmount nAmount = request.params[1].getInt<int64_t>();
 
     EnsureAnyMemPool(request.context).PrioritiseTransaction(hash, nAmount);
     return true;
@@ -527,7 +516,7 @@ static RPCHelpMan prioritisetransaction()
 static UniValue BIP22ValidationResult(const BlockValidationState& state)
 {
     if (state.IsValid())
-        return NullUniValue;
+        return UniValue::VNULL;
 
     if (state.IsError())
         throw JSONRPCError(RPC_VERIFY_ERROR, state.ToString());
@@ -595,6 +584,10 @@ static RPCHelpMan getblocktemplate()
                     {
                         {RPCResult::Type::NUM, "rulename", "identifies the bit number as indicating acceptance and readiness for the named softfork rule"},
                     }},
+                {RPCResult::Type::ARR, "capabilities", "",
+                {
+                    {RPCResult::Type::STR, "value", "A supported feature, for example 'proposal'"},
+                }},
                 {RPCResult::Type::NUM, "vbrequired", "bit mask of versionbits the server requires set in submissions"},
                 {RPCResult::Type::STR, "previousblockhash", "The hash of current highest block"},
                 {RPCResult::Type::ARR, "transactions", "contents of non-coinbase transactions that should be included in the next block",
@@ -670,13 +663,12 @@ static RPCHelpMan getblocktemplate()
     std::string strMode = "template";
     UniValue lpval = NullUniValue;
     std::set<std::string> setClientRules;
-    int64_t nMaxVersionPreVB = -1;
     CChainState& active_chainstate = chainman.ActiveChainstate();
     CChain& active_chain = active_chainstate.m_chain;
     if (!request.params[0].isNull())
     {
         const UniValue& oparam = request.params[0].get_obj();
-        const UniValue& modeval = find_value(oparam, "mode");
+        const UniValue& modeval = oparam.find_value("mode");
         if (modeval.isStr())
             strMode = modeval.get_str();
         else if (modeval.isNull())
@@ -685,11 +677,11 @@ static RPCHelpMan getblocktemplate()
         }
         else
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mode");
-        lpval = find_value(oparam, "longpollid");
+        lpval = oparam.find_value("longpollid");
 
         if (strMode == "proposal")
         {
-            const UniValue& dataval = find_value(oparam, "data");
+            const UniValue& dataval = oparam.find_value("data");
             if (!dataval.isStr())
                 throw JSONRPCError(RPC_TYPE_ERROR, "Missing data String key for proposal");
 
@@ -719,17 +711,11 @@ static RPCHelpMan getblocktemplate()
             return BIP22ValidationResult(state);
         }
 
-        const UniValue& aClientRules = find_value(oparam, "rules");
+        const UniValue& aClientRules = oparam.find_value("rules");
         if (aClientRules.isArray()) {
             for (unsigned int i = 0; i < aClientRules.size(); ++i) {
                 const UniValue& v = aClientRules[i];
                 setClientRules.insert(v.get_str());
-            }
-        } else {
-            // NOTE: It is important that this NOT be read if versionbits is supported
-            const UniValue& uvMaxVersion = find_value(oparam, "maxversion");
-            if (uvMaxVersion.isNum()) {
-                nMaxVersionPreVB = uvMaxVersion.get_int64();
             }
         }
     }
@@ -738,14 +724,19 @@ static RPCHelpMan getblocktemplate()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mode");
 
     const CConnman& connman = EnsureConnman(node);
-    CHECK_NONFATAL(node.sporkman);
-    if (connman.GetNodeCount(ConnectionDirection::Both) == 0)
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, PACKAGE_NAME " is not connected!");
 
-    if (active_chainstate.IsInitialBlockDownload())
-        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, PACKAGE_NAME " is in initial sync and waiting for blocks...");
+    if (!Params().IsTestChain()) {
+        if (connman.GetNodeCount(ConnectionDirection::Both) == 0) {
+            throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, PACKAGE_NAME " is not connected!");
+        }
+
+        if (active_chainstate.IsInitialBlockDownload()) {
+            throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, PACKAGE_NAME " is in initial sync and waiting for blocks...");
+        }
+    }
 
     // next bock is a superblock and we need governance info to correctly construct it
+    CHECK_NONFATAL(node.sporkman);
     if (AreSuperblocksEnabled(*node.sporkman)
         && !node.mn_sync->IsSynced()
         && CSuperblock::IsValidBlockHeight(active_chain.Height() + 1))
@@ -819,7 +810,7 @@ static RPCHelpMan getblocktemplate()
         // Create new block
         CScript scriptDummy = CScript() << OP_TRUE;
         EnsureLLMQContext(node);
-        pblocktemplate = BlockAssembler(active_chainstate, node, mempool, Params()).CreateNewBlock(scriptDummy);
+        pblocktemplate = BlockAssembler(active_chainstate, node, &mempool, Params()).CreateNewBlock(scriptDummy);
         if (!pblocktemplate)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
@@ -915,7 +906,6 @@ static RPCHelpMan getblocktemplate()
                 if (setClientRules.find(vbinfo.name) == setClientRules.end()) {
                     // Not supported by the client; make sure it's safe to proceed
                     if (!vbinfo.gbt_force) {
-                        // If we do anything other than throw an exception here, be sure version/force isn't sent to old clients
                         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Support for '%s' rule requires explicit client support", vbinfo.name));
                     }
                 }
@@ -927,14 +917,6 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("rules", aRules);
     result.pushKV("vbavailable", vbavailable);
     result.pushKV("vbrequired", int(0));
-
-    if (nMaxVersionPreVB >= 2) {
-        // If VB is supported by the client, nMaxVersionPreVB is -1, so we won't get here
-        // Because BIP 34 changed how the generation transaction is serialized, we can only use version/force back to v2 blocks
-        // This is safe to do [otherwise-]unconditionally only because we are throwing an exception above if a non-force deployment gets activated
-        // Note that this can probably also be removed entirely after the first BIP9 non-force deployment (ie, probably segwit) gets activated
-        aMutable.push_back("version/force");
-    }
 
     const bool fDIP0001Active_context{DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DIP0001)};
     result.pushKV("previousblockhash", pblock->hashPrevBlock.GetHex());
@@ -996,10 +978,10 @@ class submitblock_StateCatcher final : public CValidationInterface
 {
 public:
     uint256 hash;
-    bool found;
+    bool found{false};
     BlockValidationState state;
 
-    explicit submitblock_StateCatcher(const uint256 &hashIn) : hash(hashIn), found(false), state() {}
+    explicit submitblock_StateCatcher(const uint256 &hashIn) : hash(hashIn), state() {}
 
 protected:
     void BlockChecked(const CBlock& block, const BlockValidationState& stateIn) override {
@@ -1101,7 +1083,7 @@ static RPCHelpMan submitheader()
 
     BlockValidationState state;
     chainman.ProcessNewBlockHeaders({h}, state, Params());
-    if (state.IsValid()) return NullUniValue;
+    if (state.IsValid()) return UniValue::VNULL;
     if (state.IsError()) {
         throw JSONRPCError(RPC_VERIFY_ERROR, state.ToString());
     }
@@ -1112,31 +1094,18 @@ static RPCHelpMan submitheader()
 
 void RegisterMiningRPCCommands(CRPCTable& t)
 {
-// clang-format off
-static const CRPCCommand commands[] =
-{ //  category               actor (function)
-  //  ---------------------  -----------------------
-    { "mining",              &getnetworkhashps,        },
-    { "mining",              &getmininginfo,           },
-    { "mining",              &prioritisetransaction,   },
-    { "mining",              &getblocktemplate,        },
-    { "mining",              &submitblock,             },
-    { "mining",              &submitheader,            },
-
-#if ENABLE_MINER
-    { "generating",          &generatetoaddress,       },
-    { "generating",          &generatetodescriptor,    },
-    { "generating",          &generateblock,           },
-#else
-// Hidden as it isn't functional, just an error to let people know if miner isn't compiled
-    { "hidden",              &generatetoaddress,       },
-    { "hidden",              &generatetodescriptor,    },
-    { "hidden",              &generateblock,           },
-#endif // ENABLE_MINER
-
-    { "hidden",              &generate,                },
-};
-// clang-format on
+    static const CRPCCommand commands[]{
+        {"mining", &getnetworkhashps},
+        {"mining", &getmininginfo},
+        {"mining", &prioritisetransaction},
+        {"mining", &getblocktemplate},
+        {"mining", &submitblock},
+        {"mining", &submitheader},
+        {"hidden", &generatetoaddress},
+        {"hidden", &generatetodescriptor},
+        {"hidden", &generateblock},
+        {"hidden", &generate},
+    };
     for (const auto& c : commands) {
         t.appendCommand(c.name, &c);
     }

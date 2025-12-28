@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 The Dash Core developers
+// Copyright (c) 2021-2022 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 // Original implementation here: https://github.com/whoshuu/cpp_range/blob/cd6897e40176c3031ad1e4c8069d672b2e544996/include/range.h under MIT software license
@@ -40,7 +40,7 @@ public:
                                                                            positive_step_(step_ > 0) {}
         iterator operator++() { value_ += step_; return *this; }
         reference operator*() { return value_; }
-        const pointer operator->() { return &value_; }
+        pointer operator->() { return &value_; }
         bool operator==(const iterator& rhs) const { return positive_step_ ? (value_ >= rhs.value_ && value_ > boundary_)
                                                                            : (value_ <= rhs.value_ && value_ < boundary_); }
         bool operator!=(const iterator& rhs) const { return positive_step_ ? (value_ < rhs.value_ && value_ >= boundary_)

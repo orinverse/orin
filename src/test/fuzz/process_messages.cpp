@@ -13,7 +13,6 @@
 #include <test/util/net.h>
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
-#include <txorphanage.h>
 #include <validation.h>
 #include <validationinterface.h>
 
@@ -33,7 +32,7 @@ void initialize_process_messages()
     SyncWithValidationInterfaceQueue();
 }
 
-FUZZ_TARGET_INIT(process_messages, initialize_process_messages)
+FUZZ_TARGET(process_messages, .init = initialize_process_messages)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
 
@@ -55,7 +54,7 @@ FUZZ_TARGET_INIT(process_messages, initialize_process_messages)
         connman.AddTestNode(p2p_node);
     }
 
-    while (fuzzed_data_provider.ConsumeBool()) {
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
         const std::string random_message_type{fuzzed_data_provider.ConsumeBytesAsString(CMessageHeader::COMMAND_SIZE).c_str()};
 
         const auto mock_time = ConsumeTime(fuzzed_data_provider);

@@ -1,11 +1,10 @@
-// Copyright (c) 2014-2023 The Dash Core developers
+// Copyright (c) 2014-2023 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <governance/common.h>
 
 #include <util/strencodings.h>
-#include <util/underlying.h>
 #include <hash.h>
 #include <univalue.h>
 

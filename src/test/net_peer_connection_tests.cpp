@@ -18,6 +18,8 @@
 #include <tinyformat.h>
 #include <version.h>
 
+#include <masternode/active/context.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -83,10 +85,11 @@ BOOST_AUTO_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection)
 {
     const auto& chainparams = Params();
     auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman);
-    auto peerman = PeerManager::make(chainparams, *connman, *m_node.addrman, nullptr,
+    auto peerman = PeerManager::make(chainparams, *connman, *m_node.addrman, /*banman=*/nullptr, *m_node.dstxman,
                                      *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
-                                     *m_node.govman, *m_node.sporkman, /* mn_activeman = */ nullptr, m_node.dmnman,
-                                     m_node.cj_ctx, m_node.llmq_ctx, /* ignore_incoming_txs = */ false);
+                                     *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
+                                     /*active_ctx=*/nullptr, /*cj_walletman=*/nullptr, m_node.llmq_ctx,
+                                     /*ignore_incoming_txs=*/false);
     NodeId id{0};
     std::vector<CNode*> nodes;
 
@@ -109,6 +112,12 @@ BOOST_AUTO_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection)
     AddPeer(id, nodes, *peerman, *connman, ConnectionType::OUTBOUND_FULL_RELAY);
     AddPeer(id, nodes, *peerman, *connman, ConnectionType::BLOCK_RELAY, /*onion_peer=*/true);
     AddPeer(id, nodes, *peerman, *connman, ConnectionType::INBOUND);
+
+    // Add a CJDNS peer connection.
+    AddPeer(id, nodes, *peerman, *connman, ConnectionType::INBOUND, /*onion_peer=*/false,
+            /*address=*/"[fc00:3344:5566:7788:9900:aabb:ccdd:eeff]:1234");
+    BOOST_CHECK(nodes.back()->IsInboundConn());
+    BOOST_CHECK_EQUAL(nodes.back()->ConnectedThroughNetwork(), Network::NET_CJDNS);
 
     BOOST_TEST_MESSAGE("Call AddNode() for all the peers");
     for (auto node : connman->TestNodes()) {

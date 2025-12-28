@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 The Bitcoin Core developers
+// Copyright (c) 2012-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -322,7 +322,7 @@ struct StringContentsSerializer {
     // Used to make two serialized objects the same while letting them have different lengths
     // This is a terrible idea
     std::string str;
-    StringContentsSerializer() {}
+    StringContentsSerializer() = default;
     explicit StringContentsSerializer(const std::string& inp) : str(inp) {}
 
     template<typename Stream>

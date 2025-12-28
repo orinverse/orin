@@ -1,0 +1,25 @@
+<!DOCTYPE RCC><RCC version="1.0">
+    <qresource prefix="/translations">
+        <file alias="ar">locale/orin_ar.qm</file>
+        <file alias="bg">locale/orin_bg.qm</file>
+        <file alias="de">locale/orin_de.qm</file>
+        <file alias="en">locale/orin_en.qm</file>
+        <file alias="es">locale/orin_es.qm</file>
+        <file alias="fi">locale/orin_fi.qm</file>
+        <file alias="fr">locale/orin_fr.qm</file>
+        <file alias="it">locale/orin_it.qm</file>
+        <file alias="ja">locale/orin_ja.qm</file>
+        <file alias="ko">locale/orin_ko.qm</file>
+        <file alias="nl">locale/orin_nl.qm</file>
+        <file alias="pl">locale/orin_pl.qm</file>
+        <file alias="pt">locale/orin_pt.qm</file>
+        <file alias="ro">locale/orin_ro.qm</file>
+        <file alias="ru">locale/orin_ru.qm</file>
+        <file alias="sk">locale/orin_sk.qm</file>
+        <file alias="th">locale/orin_th.qm</file>
+        <file alias="tr">locale/orin_tr.qm</file>
+        <file alias="vi">locale/orin_vi.qm</file>
+        <file alias="zh_CN">locale/orin_zh_CN.qm</file>
+        <file alias="zh_TW">locale/orin_zh_TW.qm</file>
+    </qresource>
+</RCC>

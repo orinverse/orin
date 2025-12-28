@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2019-2021 The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 export LC_ALL=C
 set -e -o pipefail
 export TZ=UTC
@@ -73,11 +76,9 @@ unset OBJCPLUS_INCLUDE_PATH
 
 export C_INCLUDE_PATH="${NATIVE_GCC}/include"
 export CPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include"
-export OBJC_INCLUDE_PATH="${NATIVE_GCC}/include"
-export OBJCPLUS_INCLUDE_PATH="${NATIVE_GCC}/include/c++:${NATIVE_GCC}/include"
 
 case "$HOST" in
-    *darwin*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;;
+    *darwin*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;; # Required for qt/qmake
     *mingw*) export LIBRARY_PATH="${NATIVE_GCC}/lib" ;;
     *)
         NATIVE_GCC_STATIC="$(store_path gcc-toolchain static)"
@@ -182,6 +183,14 @@ make -C depends --jobs="$JOBS" HOST="$HOST" \
                                    x86_64_linux_NM=x86_64-linux-gnu-gcc-nm \
                                    x86_64_linux_STRIP=x86_64-linux-gnu-strip
 
+case "$HOST" in
+    *darwin*)
+        # Unset now that Qt is built
+        unset C_INCLUDE_PATH
+        unset CPLUS_INCLUDE_PATH
+        unset LIBRARY_PATH
+        ;;
+esac
 
 ###########################
 # Source Tarball Building #
@@ -229,8 +238,6 @@ case "$HOST" in
     *mingw*)  HOST_LDFLAGS="-Wl,--no-insert-timestamp" ;;
 esac
 
-# Make $HOST-specific native binaries from depends available in $PATH
-export PATH="${BASEPREFIX}/${HOST}/native/bin:${PATH}"
 mkdir -p "$DISTSRC"
 (
     cd "$DISTSRC"
@@ -252,10 +259,10 @@ mkdir -p "$DISTSRC"
                     ${HOST_CXXFLAGS:+CXXFLAGS="${HOST_CXXFLAGS}"} \
                     ${HOST_LDFLAGS:+LDFLAGS="${HOST_LDFLAGS}"}
 
-    sed -i.old 's/-lstdc++ //g' {./,src/dashbls/,src/secp256k1/}{config.status,libtool}
+    sed -i.old 's/-lstdc++ //g' {./,src/orinbls/,src/secp256k1/}{config.status,libtool}
 
 
-    # Build Dash Core
+    # Build Orin Core
     make --jobs="$JOBS" ${V:+V=1}
 
     # Make macos-specific debug symbols
@@ -281,12 +288,12 @@ mkdir -p "$DISTSRC"
             ;;
     esac
 
-    # Setup the directory where our Dash Core build for HOST will be
+    # Setup the directory where our Orin Core build for HOST will be
     # installed. This directory will also later serve as the input for our
     # binary tarballs.
     INSTALLPATH="${PWD}/installed/${DISTNAME}"
     mkdir -p "${INSTALLPATH}"
-    # Install built Dash Core to $INSTALLPATH
+    # Install built Orin Core to $INSTALLPATH
     make install DESTDIR="${INSTALLPATH}" ${V:+V=1}
 
     case "$HOST" in
@@ -345,6 +352,12 @@ mkdir -p "$DISTSRC"
                 cp "${DISTSRC}/README.md" "${DISTNAME}/"
                 ;;
         esac
+
+        # copy over the example orin.conf file. if contrib/devtools/gen-orin-conf.sh
+        # has not been run before buildling, this file will be a stub
+        cp "${DISTSRC}/contrib/debian/examples/orin.conf" "${DISTNAME}/"
+
+        cp -r "${DISTSRC}/share/rpcauth" "${DISTNAME}/share/"
 
         # Finally, deterministically produce {non-,}debug binary tarballs ready
         # for release

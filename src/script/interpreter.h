@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -189,10 +189,30 @@ public:
 using TransactionSignatureChecker = GenericTransactionSignatureChecker<CTransaction>;
 using MutableTransactionSignatureChecker = GenericTransactionSignatureChecker<CMutableTransaction>;
 
+class DeferringSignatureChecker : public BaseSignatureChecker
+{
+protected:
+    BaseSignatureChecker& m_checker;
+
+public:
+    DeferringSignatureChecker(BaseSignatureChecker& checker) : m_checker(checker) {}
+
+    bool CheckSig(const std::vector<unsigned char>& scriptSig, const std::vector<unsigned char>& vchPubKey, const CScript& scriptCode, SigVersion sigversion) const override
+    {
+        return m_checker.CheckSig(scriptSig, vchPubKey, scriptCode, sigversion);
+    }
+    bool CheckLockTime(const CScriptNum& nLockTime) const override
+    {
+        return m_checker.CheckLockTime(nLockTime);
+    }
+    bool CheckSequence(const CScriptNum& nSequence) const override
+    {
+        return m_checker.CheckSequence(nSequence);
+    }
+};
+
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptError* error = nullptr);
 bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, unsigned int flags, const BaseSignatureChecker& checker, ScriptError* error = nullptr);
-
-bool CheckMinimalPush(const std::vector<unsigned char>& data, opcodetype opcode);
 
 int FindAndDelete(CScript& script, const CScript& b);
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,7 +6,6 @@
 #define BITCOIN_CORE_IO_H
 
 #include <consensus/amount.h>
-#include <attributes.h>
 
 #include <string>
 #include <vector>
@@ -15,12 +14,22 @@ class CBlock;
 class CBlockHeader;
 class CScript;
 class CTransaction;
-struct CMutableTransaction;
-class uint256;
-class UniValue;
 class CTxUndo;
-
+class uint256;
+struct CMutableTransaction;
 struct CSpentIndexTxInfo;
+struct RPCResult;
+
+class UniValue;
+
+/**
+ * Verbose level for block's transaction
+ */
+enum class TxVerbosity {
+    SHOW_TXID,                //!< Only TXID for each block's transaction
+    SHOW_DETAILS,             //!< Include TXID, inputs, outputs, and other common block's transaction information
+    SHOW_DETAILS_AND_PREVOUT  //!< The same as previous option with information about prevouts if available
+};
 
 // core_read.cpp
 CScript ParseScript(const std::string& s);
@@ -45,8 +54,10 @@ UniValue ValueFromAmount(const CAmount amount);
 std::string FormatScript(const CScript& script);
 std::string EncodeHexTx(const CTransaction& tx);
 std::string SighashToStr(unsigned char sighash_type);
-void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fIncludeHex, bool include_addresses);
-void ScriptToUniv(const CScript& script, UniValue& out, bool include_address);
-void TxToUniv(const CTransaction& tx, const uint256& hashBlock, bool include_addresses, UniValue& entry, bool include_hex = true, const CTxUndo* txundo = nullptr, const CSpentIndexTxInfo* ptxSpentInfo = nullptr);
+void ScriptToUniv(const CScript& script, UniValue& out, bool include_hex = true, bool include_address = false);
+void TxToUniv(const CTransaction& tx, const uint256& block_hash, UniValue& entry, bool include_hex = true, int serialize_flags = 0, const CTxUndo* txundo = nullptr, TxVerbosity verbosity = TxVerbosity::SHOW_DETAILS, const CSpentIndexTxInfo* ptxSpentInfo = nullptr);
+
+// evo/core_write.cpp
+RPCResult GetRpcResult(const std::string& key, bool optional = false);
 
 #endif // BITCOIN_CORE_IO_H

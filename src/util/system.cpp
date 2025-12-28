@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -54,13 +54,6 @@
 
 #else
 
-#ifdef _MSC_VER
-#pragma warning(disable:4786)
-#pragma warning(disable:4804)
-#pragma warning(disable:4805)
-#pragma warning(disable:4717)
-#endif
-
 #include <codecvt>
 
 #include <io.h> /* for _commit */
@@ -86,8 +79,7 @@
 // Application startup time (used for uptime calculation)
 const int64_t nStartupTime = GetTime();
 
-//Dash only features
-bool fMasternodeMode = false;
+//Orin only features
 const std::string gCoinJoinName = "CoinJoin";
 
 /**
@@ -99,13 +91,13 @@ const std::string gCoinJoinName = "CoinJoin";
 */
 int nWalletBackups = 10;
 
-const char * const BITCOIN_CONF_FILENAME = "dash.conf";
+const char * const BITCOIN_CONF_FILENAME = "orin.conf";
 const char * const BITCOIN_SETTINGS_FILENAME = "settings.json";
 
 ArgsManager gArgs;
 
 /** Mutex to protect dir_locks. */
-static Mutex cs_dir_locks;
+static GlobalMutex cs_dir_locks;
 
 /** A map that contains all the currently held directory locks. After
  * successful locking, these will be held here until the global destructor
@@ -114,7 +106,7 @@ static Mutex cs_dir_locks;
  */
 static std::map<std::string, std::unique_ptr<fsbridge::FileLock>> dir_locks GUARDED_BY(cs_dir_locks);
 
-bool LockDirectory(const fs::path& directory, const std::string lockfile_name, bool probe_only)
+bool LockDirectory(const fs::path& directory, const fs::path& lockfile_name, bool probe_only)
 {
     LOCK(cs_dir_locks);
     fs::path pathLockFile = directory / lockfile_name;
@@ -138,7 +130,7 @@ bool LockDirectory(const fs::path& directory, const std::string lockfile_name, b
     return true;
 }
 
-void UnlockDirectory(const fs::path& directory, const std::string& lockfile_name)
+void UnlockDirectory(const fs::path& directory, const fs::path& lockfile_name)
 {
     LOCK(cs_dir_locks);
     dir_locks.erase(fs::PathToString(directory / lockfile_name));
@@ -272,10 +264,10 @@ static std::optional<util::SettingsValue> InterpretValue(const KeyInfo& key, con
 // Define default constructor and destructor that are not inline, so code instantiating this class doesn't need to
 // #include class definitions for all members.
 // For example, m_settings has an internal dependency on univalue.
-ArgsManager::ArgsManager() {}
-ArgsManager::~ArgsManager() {}
+ArgsManager::ArgsManager() = default;
+ArgsManager::~ArgsManager() = default;
 
-const std::set<std::string> ArgsManager::GetUnsuitableSectionOnlyArgs() const
+std::set<std::string> ArgsManager::GetUnsuitableSectionOnlyArgs() const
 {
     std::set<std::string> unsuitables;
 
@@ -295,7 +287,7 @@ const std::set<std::string> ArgsManager::GetUnsuitableSectionOnlyArgs() const
     return unsuitables;
 }
 
-const std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const
+std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const
 {
     // Section names to be recognized in the config file.
     static const std::set<std::string> available_sections{
@@ -311,7 +303,7 @@ const std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const
     return unrecognized;
 }
 
-const std::map<std::string, std::vector<util::SettingsValue>> ArgsManager::GetCommandLineArgs() const {
+std::map<std::string, std::vector<util::SettingsValue>> ArgsManager::GetCommandLineArgs() const {
     LOCK(cs_args);
     return m_settings.command_line_options;
 }
@@ -329,7 +321,7 @@ bool ArgsManager::ParseParameters(int argc, const char* const argv[], std::strin
 
     for (int i = 1; i < argc; i++) {
         std::string key(argv[i]);
-        if (key == "-") break; //dash-tx using stdin
+        if (key == "-") break; //orin-tx using stdin
 
 #ifdef MAC_OSX
         // At the first time when a user gets the "App downloaded from the
@@ -353,7 +345,7 @@ bool ArgsManager::ParseParameters(int argc, const char* const argv[], std::strin
 
         if (key[0] != '-') {
             if (!m_accept_any_command && m_command.empty()) {
-                // The first non-dash arg is a registered command
+                // The first non-orin arg is a registered command
                 std::optional<unsigned int> flags = GetArgFlags(key);
                 if (!flags || !(*flags & ArgsManager::COMMAND)) {
                     error = strprintf("Invalid command '%s'", argv[i]);
@@ -425,7 +417,7 @@ fs::path ArgsManager::GetPathArg(std::string arg, const fs::path& default_value)
     return result.has_filename() ? result : result.parent_path();
 }
 
-const fs::path ArgsManager::GetBlocksDirPath() const
+fs::path ArgsManager::GetBlocksDirPath() const
 {
     LOCK(cs_args);
     fs::path& path = m_cached_blocks_path;
@@ -450,13 +442,12 @@ const fs::path ArgsManager::GetBlocksDirPath() const
     return path;
 }
 
-const fs::path ArgsManager::GetDataDir(bool net_specific) const
+fs::path ArgsManager::GetDataDir(bool net_specific) const
 {
     LOCK(cs_args);
     fs::path& path = net_specific ? m_cached_network_datadir_path : m_cached_datadir_path;
 
-    // Cache the path to avoid calling fs::create_directories on every call of
-    // this function
+    // Used cached path if available
     if (!path.empty()) return path;
 
     const fs::path datadir{GetPathArg("-datadir")};
@@ -470,15 +461,8 @@ const fs::path ArgsManager::GetDataDir(bool net_specific) const
         path = GetDefaultDataDir();
     }
 
-    if (!fs::exists(path)) {
-        fs::create_directories(path / "wallets");
-    }
-
     if (net_specific && !BaseParams().DataDir().empty()) {
         path /= fs::PathFromString(BaseParams().DataDir());
-        if (!fs::exists(path)) {
-            fs::create_directories(path / "wallets");
-        }
     }
 
     return path;
@@ -490,6 +474,27 @@ fs::path ArgsManager::GetBackupsDirPath()
         return GetDataDirNet() / "backups";
 
     return fs::absolute(GetPathArg("-walletbackupsdir"));
+}
+
+void ArgsManager::EnsureDataDir() const
+{
+    /**
+     * "/wallets" subdirectories are created in all **new**
+     * datadirs, because wallet code will create new wallets in the "wallets"
+     * subdirectory only if exists already, otherwise it will create them in
+     * the top-level datadir where they could interfere with other files.
+     * Wallet init code currently avoids creating "wallets" directories itself
+     * for backwards compatibility, but this be changed in the future and
+     * wallet code here could go away (#16220).
+     */
+    auto path{GetDataDir(false)};
+    if (!fs::exists(path)) {
+        fs::create_directories(path / "wallets");
+    }
+    path = GetDataDir(true);
+    if (!fs::exists(path)) {
+        fs::create_directories(path / "wallets");
+    }
 }
 
 void ArgsManager::ClearPathCache()
@@ -537,6 +542,7 @@ bool ArgsManager::IsArgSet(const std::string& strArg) const
 
 bool ArgsManager::InitSettings(std::string& error)
 {
+    EnsureDataDir();
     if (!GetSettingsPath()) {
         return true; // Do nothing if settings file disabled.
     }
@@ -553,11 +559,14 @@ bool ArgsManager::InitSettings(std::string& error)
     return true;
 }
 
-bool ArgsManager::GetSettingsPath(fs::path* filepath, bool temp) const
+bool ArgsManager::GetSettingsPath(fs::path* filepath, bool temp, bool backup) const
 {
-    fs::path settings = GetPathArg("-settings", fs::path{BITCOIN_SETTINGS_FILENAME});
+    fs::path settings = GetPathArg("-settings", BITCOIN_SETTINGS_FILENAME);
     if (settings.empty()) {
         return false;
+    }
+    if (backup) {
+        settings += ".bak";
     }
     if (filepath) {
         *filepath = fsbridge::AbsPathJoin(GetDataDirNet(), temp ? settings + ".tmp" : settings);
@@ -599,10 +608,10 @@ bool ArgsManager::ReadSettingsFile(std::vector<std::string>* errors)
     return true;
 }
 
-bool ArgsManager::WriteSettingsFile(std::vector<std::string>* errors) const
+bool ArgsManager::WriteSettingsFile(std::vector<std::string>* errors, bool backup) const
 {
     fs::path path, path_tmp;
-    if (!GetSettingsPath(&path, /* temp= */ false) || !GetSettingsPath(&path_tmp, /* temp= */ true)) {
+    if (!GetSettingsPath(&path, /*temp=*/false, backup) || !GetSettingsPath(&path_tmp, /*temp=*/true, backup)) {
         throw std::logic_error("Attempt to write settings file when dynamic settings are disabled.");
     }
 
@@ -619,6 +628,13 @@ bool ArgsManager::WriteSettingsFile(std::vector<std::string>* errors) const
     return true;
 }
 
+util::SettingsValue ArgsManager::GetPersistentSetting(const std::string& name) const
+{
+    LOCK(cs_args);
+    return util::GetSetting(m_settings, m_network, name, !UseDefaultSection("-" + name),
+        /*ignore_nonpersistent=*/true, /*get_chain_name=*/false);
+}
+
 bool ArgsManager::IsArgNegated(const std::string& strArg) const
 {
     return GetSetting(strArg).isFalse();
@@ -627,18 +643,33 @@ bool ArgsManager::IsArgNegated(const std::string& strArg) const
 std::string ArgsManager::GetArg(const std::string& strArg, const std::string& strDefault) const
 {
     const util::SettingsValue value = GetSetting(strArg);
-    return value.isNull() ? strDefault : value.isFalse() ? "0" : value.isTrue() ? "1" : value.get_str();
+    return SettingToString(value, strDefault);
 }
 
-int64_t ArgsManager::GetArg(const std::string& strArg, int64_t nDefault) const
+std::string SettingToString(const util::SettingsValue& value, const std::string& strDefault)
+{
+    return value.isNull() ? strDefault : value.isFalse() ? "0" : value.isTrue() ? "1" : value.isNum() ? value.getValStr() : value.get_str();
+}
+
+int64_t ArgsManager::GetIntArg(const std::string& strArg, int64_t nDefault) const
 {
     const util::SettingsValue value = GetSetting(strArg);
-    return value.isNull() ? nDefault : value.isFalse() ? 0 : value.isTrue() ? 1 : value.isNum() ? value.get_int64() : LocaleIndependentAtoi<int64_t>(value.get_str());
+    return SettingToInt(value, nDefault);
+}
+
+int64_t SettingToInt(const util::SettingsValue& value, int64_t nDefault)
+{
+    return value.isNull() ? nDefault : value.isFalse() ? 0 : value.isTrue() ? 1 : value.isNum() ? value.getInt<int64_t>() : LocaleIndependentAtoi<int64_t>(value.get_str());
 }
 
 bool ArgsManager::GetBoolArg(const std::string& strArg, bool fDefault) const
 {
     const util::SettingsValue value = GetSetting(strArg);
+    return SettingToBool(value, fDefault);
+}
+
+bool SettingToBool(const util::SettingsValue& value, bool fDefault)
+{
     return value.isNull() ? fDefault : value.isBool() ? value.get_bool() : InterpretBool(value.get_str());
 }
 
@@ -689,7 +720,6 @@ void ArgsManager::AddArg(const std::string& name, const std::string& help, unsig
 
     LOCK(cs_args);
     std::map<std::string, Arg>& arg_map = m_available_args[cat];
-    if ((flags & (ALLOW_ANY | ALLOW_BOOL)) == 0) flags |= DISALLOW_NEGATION; // Temporary, removed in next scripted-diff
     auto ret = arg_map.emplace(arg_name, Arg{name.substr(eq_index, name.size() - eq_index), help, flags});
     assert(ret.second); // Make sure an insertion actually happened
 
@@ -709,7 +739,7 @@ std::string ArgsManager::GetHelpMessage() const
 {
     const bool show_debug = GetBoolArg("-help-debug", false);
 
-    std::string usage = "";
+    std::string usage;
     LOCK(cs_args);
     for (const auto& arg_map : m_available_args) {
         switch(arg_map.first) {
@@ -844,12 +874,12 @@ void PrintExceptionContinue(const std::exception_ptr pex, const char* pszExcepti
 
 fs::path GetDefaultDataDir()
 {
-    // Windows: C:\Users\Username\AppData\Roaming\DashCore
-    // macOS: ~/Library/Application Support/DashCore
-    // Unix-like: ~/.dashcore
+    // Windows: C:\Users\Username\AppData\Roaming\OrinCore
+    // macOS: ~/Library/Application Support/OrinCore
+    // Unix-like: ~/.orincore
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "DashCore";
+    return GetSpecialFolderPath(CSIDL_APPDATA) / "OrinCore";
 #else
     fs::path pathRet;
     char* pszHome = getenv("HOME");
@@ -859,10 +889,10 @@ fs::path GetDefaultDataDir()
         pathRet = fs::path(pszHome);
 #ifdef MAC_OSX
     // macOS
-    return pathRet / "Library/Application Support/DashCore";
+    return pathRet / "Library/Application Support/OrinCore";
 #else
     // Unix-like
-    return pathRet / ".dashcore";
+    return pathRet / ".orincore";
 #endif
 #endif
 }
@@ -878,9 +908,9 @@ bool CheckDataDirOption()
     return datadir.empty() || fs::is_directory(fs::absolute(datadir));
 }
 
-fs::path GetConfigFile(const std::string& confPath)
+fs::path GetConfigFile(const fs::path& configuration_file_path)
 {
-    return AbsPathForConfigVal(fs::PathFromString(confPath), false);
+    return AbsPathForConfigVal(configuration_file_path, /*net_specific=*/false);
 }
 
 static bool GetConfigOptions(std::istream& stream, const std::string& filepath, std::string& error, std::vector<std::pair<std::string, std::string>>& options, std::list<SectionInfo>& sections)
@@ -928,6 +958,20 @@ static bool GetConfigOptions(std::istream& stream, const std::string& filepath, 
     return true;
 }
 
+bool IsConfSupported(KeyInfo& key, std::string& error) {
+    if (key.name == "conf") {
+        error = "conf cannot be set in the configuration file; use includeconf= if you want to include additional config files";
+        return false;
+    }
+    if (key.name == "reindex") {
+        // reindex can be set in a config file but it is strongly discouraged as this will cause the node to reindex on
+        // every restart. Allow the config but throw a warning
+        LogPrintf("Warning: reindex=1 is set in the configuration file, which will significantly slow down startup. Consider removing or commenting out this option for better performance, unless there is currently a condition which makes rebuilding the indexes necessary\n");
+        return true;
+    }
+    return true;
+}
+
 bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& filepath, std::string& error, bool ignore_invalid_keys)
 {
     LOCK(cs_args);
@@ -938,6 +982,7 @@ bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& file
     for (const std::pair<std::string, std::string>& option : options) {
         KeyInfo key = InterpretKey(option.first);
         std::optional<unsigned int> flags = GetArgFlags('-' + key.name);
+        if (!IsConfSupported(key, error)) return false;
         if (flags) {
             std::optional<util::SettingsValue> value = InterpretValue(key, &option.second, *flags, error);
             if (!value) {
@@ -956,6 +1001,11 @@ bool ArgsManager::ReadConfigStream(std::istream& stream, const std::string& file
     return true;
 }
 
+fs::path ArgsManager::GetConfigFilePath() const
+{
+    return GetConfigFile(GetPathArg("-conf", BITCOIN_CONF_FILENAME));
+}
+
 bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
 {
     {
@@ -964,17 +1014,17 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
         m_config_sections.clear();
     }
 
-    const std::string confPath = GetArg("-conf", BITCOIN_CONF_FILENAME);
-    std::ifstream stream{GetConfigFile(confPath)};
+    const auto conf_path{GetConfigFilePath()};
+    std::ifstream stream = fsbridge::ifstream(conf_path);
 
     // not ok to have a config file specified that cannot be opened
     if (IsArgSet("-conf") && !stream.good()) {
-        error = strprintf("specified config file \"%s\" could not be opened.", confPath);
+        error = strprintf("specified config file \"%s\" could not be opened.", fs::PathToString(conf_path));
         return false;
     }
     // ok to not have a config file
     if (stream.good()) {
-        if (!ReadConfigStream(stream, confPath, error, ignore_invalid_keys)) {
+        if (!ReadConfigStream(stream, fs::PathToString(conf_path), error, ignore_invalid_keys)) {
             return false;
         }
         // `-includeconf` cannot be included in the command line arguments except
@@ -1012,7 +1062,7 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
             const size_t default_includes = add_includes({});
 
             for (const std::string& conf_file_name : conf_file_names) {
-                std::ifstream conf_file_stream{GetConfigFile(conf_file_name)};
+                std::ifstream conf_file_stream = fsbridge::ifstream(GetConfigFile(fs::PathFromString(conf_file_name)));
                 if (conf_file_stream.good()) {
                     if (!ReadConfigStream(conf_file_stream, conf_file_name, error, ignore_invalid_keys)) {
                         return false;
@@ -1038,10 +1088,22 @@ bool ArgsManager::ReadConfigFiles(std::string& error, bool ignore_invalid_keys)
             }
         }
     } else {
-        // Create an empty dash.conf if it does not exist
-        std::ofstream configFile{GetConfigFile(confPath), std::ios_base::app};
-        if (!configFile.good())
+        // Create an empty orin.conf if it does not exist
+        const fs::path config_file{GetConfigFile(conf_path)};
+        const fs::path config_dir{config_file.parent_path()};
+        if (!config_dir.empty() && !fs::exists(config_dir)) {
+            try {
+                TryCreateDirectories(config_dir);
+            } catch (const fs::filesystem_error& e) {
+                error = strprintf("could not create configuration directory \"%s\": %s", fs::PathToString(config_dir), e.what());
+                return false;
+            }
+        }
+        std::ofstream configFile = fsbridge::ofstream(config_file, std::ios_base::app);
+        if (!configFile.good()) {
+            error = strprintf("could not create configuration file \"%s\".", fs::PathToString(config_file));
             return false;
+        }
         configFile.close();
         return true; // Nothing to read, so just return
     }
@@ -1061,6 +1123,7 @@ std::string ArgsManager::GetChainName() const
         LOCK(cs_args);
         util::SettingsValue value = util::GetSetting(m_settings, /* section= */ "", SettingName(arg),
             /* ignore_default_section_config= */ false,
+            /*ignore_nonpersistent=*/false,
             /* get_chain_name= */ true);
         return value.isNull() ? false : value.isBool() ? value.get_bool() : (!interpret_bool || InterpretBool(value.get_str()));
     };
@@ -1129,7 +1192,8 @@ util::SettingsValue ArgsManager::GetSetting(const std::string& arg) const
 {
     LOCK(cs_args);
     return util::GetSetting(
-        m_settings, m_network, SettingName(arg), !UseDefaultSection(arg), /* get_chain_name= */ false);
+        m_settings, m_network, SettingName(arg), !UseDefaultSection(arg),
+        /*ignore_nonpersistent=*/false, /*get_chain_name=*/false);
 }
 
 std::vector<util::SettingsValue> ArgsManager::GetSettingsList(const std::string& arg) const
@@ -1140,20 +1204,9 @@ std::vector<util::SettingsValue> ArgsManager::GetSettingsList(const std::string&
 
 bool RenameOver(fs::path src, fs::path dest)
 {
-#ifdef __MINGW64__
-    // This is a workaround for a bug in libstdc++ which
-    // implements std::filesystem::rename with _wrename function.
-    // This bug has been fixed in upstream:
-    //  - GCC 10.3: 8dd1c1085587c9f8a21bb5e588dfe1e8cdbba79e
-    //  - GCC 11.1: 1dfd95f0a0ca1d9e6cbc00e6cbfd1fa20a98f312
-    // For more details see the commits mentioned above.
-    return MoveFileExW(src.wstring().c_str(), dest.wstring().c_str(),
-                       MOVEFILE_REPLACE_EXISTING) != 0;
-#else
     std::error_code error;
     fs::rename(src, dest, error);
     return !error;
-#endif
 }
 
 /**
@@ -1178,28 +1231,28 @@ bool TryCreateDirectories(const fs::path& p)
 bool FileCommit(FILE *file)
 {
     if (fflush(file) != 0) { // harmless if redundantly called
-        LogPrintf("%s: fflush failed: %d\n", __func__, errno);
+        LogPrintf("fflush failed: %s\n", SysErrorString(errno));
         return false;
     }
 #ifdef WIN32
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
     if (FlushFileBuffers(hFile) == 0) {
-        LogPrintf("%s: FlushFileBuffers failed: %d\n", __func__, GetLastError());
+        LogPrintf("FlushFileBuffers failed: %s\n", Win32ErrorString(GetLastError()));
         return false;
     }
 #elif defined(MAC_OSX) && defined(F_FULLFSYNC)
     if (fcntl(fileno(file), F_FULLFSYNC, 0) == -1) { // Manpage says "value other than -1" is returned on success
-        LogPrintf("%s: fcntl F_FULLFSYNC failed: %d\n", __func__, errno);
+        LogPrintf("fcntl F_FULLFSYNC failed: %s\n", SysErrorString(errno));
         return false;
     }
 #elif HAVE_FDATASYNC
     if (fdatasync(fileno(file)) != 0 && errno != EINVAL) { // Ignore EINVAL for filesystems that don't support sync
-        LogPrintf("%s: fdatasync failed: %d\n", __func__, errno);
+        LogPrintf("fdatasync failed: %d\n", SysErrorString(errno));
         return false;
     }
 #else
     if (fsync(fileno(file)) != 0 && errno != EINVAL) {
-        LogPrintf("%s: fsync failed: %d\n", __func__, errno);
+        LogPrintf("fsync failed: %d\n", SysErrorString(errno));
         return false;
     }
 #endif
@@ -1454,23 +1507,6 @@ bool SetupNetworking()
 int GetNumCores()
 {
     return std::thread::hardware_concurrency();
-}
-
-std::string CopyrightHolders(const std::string& strPrefix, unsigned int nStartYear, unsigned int nEndYear)
-{
-//    std::string strCopyrightHolders = strPrefix + strprintf(" %u-%u ", nStartYear, nEndYear) + strprintf(_(COPYRIGHT_HOLDERS).translated, _(COPYRIGHT_HOLDERS_SUBSTITUTION));
-    const auto copyright_devs = strprintf(_(COPYRIGHT_HOLDERS).translated, COPYRIGHT_HOLDERS_SUBSTITUTION);
-    std::string strCopyrightHolders = strPrefix + strprintf(" %u-%u ", nStartYear, nEndYear) + copyright_devs;
-
-    // Check for untranslated substitution to make sure Dash Core copyright is not removed by accident
-    if (copyright_devs.find("Dash Core") == std::string::npos) {
-        strCopyrightHolders += "\n" + strPrefix + strprintf(" %u-%u ", 2014, nEndYear) + "The Dash Core developers";
-    }
-    // Check for untranslated substitution to make sure Bitcoin Core copyright is not removed by accident
-    if (copyright_devs.find("Bitcoin Core") == std::string::npos) {
-        strCopyrightHolders += "\n" + strPrefix + strprintf(" %u-%u ", 2009, nEndYear) + "The Bitcoin Core developers";
-    }
-    return strCopyrightHolders;
 }
 
 // Obtain the application startup time (used for uptime calculation)

@@ -1,19 +1,18 @@
-// Copyright (c) 2021-2024 The Dash Core developers
+// Copyright (c) 2021-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test/util/setup_common.h>
 
 #include <chainparams.h>
-#include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <node/miner.h>
-#include <script/interpreter.h>
-#include <spork.h>
 #include <validation.h>
 #include <versionbits.h>
 
 #include <boost/test/unit_test.hpp>
+
+using node::BlockAssembler;
 
 const auto deployment_id = Consensus::DEPLOYMENT_TESTDUMMY;
 constexpr int window{100}, th_start{80}, th_end{60};
@@ -30,21 +29,23 @@ static constexpr int threshold(int attempt)
 
 struct TestChainDATSetup : public TestChainSetup
 {
-    TestChainDATSetup() : TestChainSetup(window - 2, {"-vbparams=testdummy:0:999999999999:0:100:80:60:5:0"}) {}
+    TestChainDATSetup() :
+        TestChainSetup(window - 2, CBaseChainParams::REGTEST, {"-vbparams=testdummy:0:999999999999:0:100:80:60:5:0"}) {}
 
     void signal(int num_blocks, bool expected_lockin)
     {
         const auto& consensus_params = Params().GetConsensus();
+        CScript coinbasePubKey = GetScriptForRawPubKey(coinbaseKey.GetPubKey());
         // Mine non-signalling blocks
         gArgs.ForceSetArg("-blockversion", "536870912");
         for (int i = 0; i < window - num_blocks; ++i) {
-            CreateAndProcessBlock({}, coinbaseKey);
+            CreateAndProcessBlock({}, coinbasePubKey);
         }
         gArgs.ForceRemoveArg("blockversion");
         if (num_blocks > 0) {
             // Mine signalling blocks
             for (int i = 0; i < num_blocks; ++i) {
-                CreateAndProcessBlock({}, coinbaseKey);
+                CreateAndProcessBlock({}, coinbasePubKey);
             }
         }
         LOCK(cs_main);
@@ -58,7 +59,7 @@ struct TestChainDATSetup : public TestChainSetup
     void test(int activation_index, bool check_activation_at_min)
     {
         const auto& consensus_params = Params().GetConsensus();
-        CScript coinbasePubKey = CScript() <<  ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
+        CScript coinbasePubKey = GetScriptForRawPubKey(coinbaseKey.GetPubKey());
 
         {
             LOCK(cs_main);
@@ -66,7 +67,7 @@ struct TestChainDATSetup : public TestChainSetup
             BOOST_CHECK_EQUAL(g_versionbitscache.State(m_node.chainman->ActiveChain().Tip(), consensus_params, deployment_id), ThresholdState::DEFINED);
         }
 
-        CreateAndProcessBlock({}, coinbaseKey);
+        CreateAndProcessBlock({}, coinbasePubKey);
 
         {
             LOCK(cs_main);
@@ -75,7 +76,7 @@ struct TestChainDATSetup : public TestChainSetup
             BOOST_CHECK_EQUAL(g_versionbitscache.State(m_node.chainman->ActiveChain().Tip(), consensus_params, deployment_id), ThresholdState::STARTED);
             BOOST_CHECK_EQUAL(g_versionbitscache.Statistics(m_node.chainman->ActiveChain().Tip(), consensus_params, deployment_id).threshold, threshold(0));
             // Next block should be signaling by default
-            const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
+            const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, m_node.mempool.get(), Params()).CreateNewBlock(coinbasePubKey);
             const uint32_t bitmask = ((uint32_t)1) << consensus_params.vDeployments[deployment_id].bit;
             BOOST_CHECK_EQUAL(m_node.chainman->ActiveChain().Tip()->nVersion & bitmask, 0);
             BOOST_CHECK_EQUAL(pblocktemplate->block.nVersion & bitmask, bitmask);
@@ -105,7 +106,7 @@ struct TestChainDATSetup : public TestChainSetup
         // activate
         signal(threshold(activation_index), true);
         for (int i = 0; i < window; ++i) {
-            CreateAndProcessBlock({}, coinbaseKey);
+            CreateAndProcessBlock({}, coinbasePubKey);
         }
         {
             LOCK(cs_main);

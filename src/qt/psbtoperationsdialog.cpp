@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,6 +20,9 @@
 #include <iostream>
 #include <string>
 
+using node::AnalyzePSBT;
+using node::DEFAULT_MAX_RAW_TX_FEE_RATE;
+using node::PSBTAnalysis;
 
 PSBTOperationsDialog::PSBTOperationsDialog(
     QWidget* parent, WalletModel* wallet_model, ClientModel* client_model) : QDialog(parent, GUIUtil::dialog_flags),
@@ -178,7 +181,7 @@ std::string PSBTOperationsDialog::renderTransaction(const PartiallySignedTransac
         ExtractDestination(out.scriptPubKey, address);
         totalAmount += out.nValue;
         tx_description.append(tr(" * Sends %1 to %2")
-            .arg(BitcoinUnits::formatWithUnit(BitcoinUnits::DASH, out.nValue))
+            .arg(BitcoinUnits::formatWithUnit(BitcoinUnit::ORIN, out.nValue))
             .arg(QString::fromStdString(EncodeDestination(address))));
         // Check if the address is one of ours
         if (m_wallet_model != nullptr && m_wallet_model->wallet().txoutIsMine(out)) tx_description.append(" (" + tr("own address") + ")");
@@ -192,7 +195,7 @@ std::string PSBTOperationsDialog::renderTransaction(const PartiallySignedTransac
         tx_description.append(tr("Unable to calculate transaction fee or total transaction amount."));
     } else {
         tx_description.append(tr("Pays transaction fee: "));
-        tx_description.append(BitcoinUnits::formatWithUnit(BitcoinUnits::DASH, *analysis.fee));
+        tx_description.append(BitcoinUnits::formatWithUnit(BitcoinUnit::ORIN, *analysis.fee));
 
         // add total amount in all subdivision units
         tx_description.append("<hr />");

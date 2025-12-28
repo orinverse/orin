@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,8 +12,6 @@
 #include <netbase.h>
 #include <protocol.h>
 #include <util/check.h>
-#include <validation.h>
-#include <warnings.h>
 
 namespace {
 bool GetLocal(CService& addr, const CNetAddr* paddrPeer)
@@ -51,8 +49,9 @@ bool GetLocal(CService& addr, const CNetAddr* paddrPeer)
 }
 } // anonymous namespace
 
-CActiveMasternodeManager::CActiveMasternodeManager(const CBLSSecretKey& sk, CConnman& connman, const std::unique_ptr<CDeterministicMNManager>& dmnman) :
-    m_info(sk, sk.GetPublicKey()),
+CActiveMasternodeManager::CActiveMasternodeManager(const CBLSSecretKey& sk, CConnman& connman,
+                                                   const std::unique_ptr<CDeterministicMNManager>& dmnman) :
+    m_info{sk, sk.GetPublicKey()},
     m_connman{connman},
     m_dmnman{dmnman}
 {
@@ -61,6 +60,8 @@ CActiveMasternodeManager::CActiveMasternodeManager(const CBLSSecretKey& sk, CCon
             m_info.blsPubKeyOperator.ToString(/*specificLegacyScheme=*/ true),
             m_info.blsPubKeyOperator.ToString(/*specificLegacyScheme=*/ false));
 }
+
+CActiveMasternodeManager::~CActiveMasternodeManager() = default;
 
 std::string CActiveMasternodeManager::GetStateString() const
 {
@@ -146,7 +147,7 @@ void CActiveMasternodeManager::InitInternal(const CBlockIndex* pindex)
 
     LogPrintf("CActiveMasternodeManager::Init -- proTxHash=%s, proTx=%s\n", dmn->proTxHash.ToString(), dmn->ToString());
 
-    if (m_info.service != dmn->pdmnState->addr) {
+    if (m_info.service != dmn->pdmnState->netInfo->GetPrimary()) {
         m_state = MasternodeState::SOME_ERROR;
         m_error = "Local address does not match the address from ProTx";
         LogPrintf("CActiveMasternodeManager::Init -- ERROR: %s\n", m_error);
@@ -155,16 +156,9 @@ void CActiveMasternodeManager::InitInternal(const CBlockIndex* pindex)
 
     // Check socket connectivity
     LogPrintf("CActiveMasternodeManager::Init -- Checking inbound connection to '%s'\n", m_info.service.ToStringAddrPort());
-    std::unique_ptr<Sock> sock = CreateSock(m_info.service);
-    if (!sock) {
-        m_state = MasternodeState::SOME_ERROR;
-        m_error = "Could not create socket to connect to " + m_info.service.ToStringAddrPort();
-        LogPrintf("CActiveMasternodeManager::Init -- ERROR: %s\n", m_error);
-        return;
-    }
-    bool fConnected = ConnectSocketDirectly(m_info.service, *sock, nConnectTimeout, true) && sock->IsSelectable();
-    sock->Reset();
-
+    std::unique_ptr<Sock> sock{ConnectDirectly(m_info.service, /*manual_connection=*/true)};
+    bool fConnected{sock && sock->IsSelectable(/*is_select=*/::g_socket_events_mode == SocketEventsMode::Select)};
+    sock = std::make_unique<Sock>(INVALID_SOCKET);
     if (!fConnected && Params().RequireRoutableExternalIP()) {
         m_state = MasternodeState::SOME_ERROR;
         m_error = "Could not connect to " + m_info.service.ToStringAddrPort();
@@ -208,7 +202,7 @@ void CActiveMasternodeManager::UpdatedBlockTip(const CBlockIndex* pindexNew, con
             // MN operator key changed or revoked
             return reset(MasternodeState::OPERATOR_KEY_CHANGED);
         }
-        if (newDmn->pdmnState->addr != oldDmn->pdmnState->addr) {
+        if (newDmn->pdmnState->netInfo->GetPrimary() != oldDmn->pdmnState->netInfo->GetPrimary()) {
             // MN IP changed
             return reset(MasternodeState::PROTX_IP_CHANGED);
         }
@@ -239,10 +233,14 @@ bool CActiveMasternodeManager::GetLocalAddress(CService& addrRet)
     if (!fFoundLocal) {
         bool empty = true;
         // If we have some peers, let's try to find our local address from one of them
-        auto service = m_info.service;
         m_connman.ForEachNodeContinueIf(CConnman::AllNodes, [&](CNode* pnode) {
             empty = false;
-            if (pnode->addr.IsIPv4()) fFoundLocal = GetLocal(service, *pnode) && IsValidNetAddr(service);
+            if (pnode->addr.IsIPv4()) {
+                if (auto addr = ::GetLocalAddress(*pnode); IsValidNetAddr(addr)) {
+                    addrRet = addr;
+                    fFoundLocal = true;
+                }
+            }
             return !fFoundLocal;
         });
         // nothing and no live connections, can't do anything for now
@@ -257,10 +255,10 @@ bool CActiveMasternodeManager::GetLocalAddress(CService& addrRet)
 
 bool CActiveMasternodeManager::IsValidNetAddr(const CService& addrIn)
 {
+    if (!addrIn.IsValid() || !addrIn.IsIPv4()) return false;
     // TODO: regtest is fine with any addresses for now,
     // should probably be a bit smarter if one day we start to implement tests for this
-    return !Params().RequireRoutableExternalIP() ||
-           (addrIn.IsIPv4() && IsReachable(addrIn) && addrIn.IsRoutable());
+    return !Params().RequireRoutableExternalIP() || (g_reachable_nets.Contains(addrIn) && addrIn.IsRoutable());
 }
 
 template <template <typename> class EncryptedObj, typename Obj>
@@ -279,6 +277,14 @@ template bool CActiveMasternodeManager::Decrypt(const CBLSIESMultiRecipientObjec
 {
     AssertLockNotHeld(cs);
     return WITH_READ_LOCK(cs, return m_info.blsKeyOperator.Sign(hash, is_legacy));
+}
+
+[[nodiscard]] std::vector<uint8_t> CActiveMasternodeManager::SignBasic(const uint256& hash) const
+{
+    AssertLockNotHeld(cs);
+    auto sig = Sign(hash, /*is_legacy=*/false);
+    assert(sig.IsValid());
+    return sig.ToByteVector(/*specificLegacyScheme=*/false);
 }
 
 // We need to pass a copy as opposed to a const ref because CBLSPublicKeyVersionWrapper

@@ -1,23 +1,19 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <evo/dmn_types.h>
 #include <governance/vote.h>
 
 #include <bls/bls.h>
-#include <chainparams.h>
-#include <key.h>
-#include <masternode/node.h>
+#include <evo/deterministicmns.h>
+#include <evo/dmn_types.h>
 #include <masternode/sync.h>
 #include <messagesigner.h>
-#include <net_processing.h>
+
+#include <chainparams.h>
+#include <logging.h>
 #include <timedata.h>
 #include <util/string.h>
-#include <util/system.h>
-#include <validation.h>
-
-#include <evo/deterministicmns.h>
 
 std::string CGovernanceVoting::ConvertOutcomeToString(vote_outcome_enum_t nOutcome)
 {
@@ -100,30 +96,10 @@ std::string CGovernanceVote::ToString(const CDeterministicMNList& tip_mn_list) c
 {
     auto dmn = tip_mn_list.GetMNByCollateral(masternodeOutpoint);
     int voteWeight = dmn != nullptr ? GetMnType(dmn->nType).voting_weight : 0;
-    std::ostringstream ostr;
-    ostr << masternodeOutpoint.ToStringShort() << ":"
-         << nTime << ":"
-         << CGovernanceVoting::ConvertOutcomeToString(GetOutcome()) << ":"
-         << CGovernanceVoting::ConvertSignalToString(GetSignal()) << ":"
-         << voteWeight;
-    return ostr.str();
-}
-
-void CGovernanceVote::Relay(PeerManager& peerman, const CMasternodeSync& mn_sync, const CDeterministicMNList& tip_mn_list) const
-{
-    // Do not relay until fully synced
-    if (!mn_sync.IsSynced()) {
-        LogPrint(BCLog::GOBJECT, "CGovernanceVote::Relay -- won't relay until fully synced\n");
-        return;
-    }
-
-    auto dmn = tip_mn_list.GetMNByCollateral(masternodeOutpoint);
-    if (!dmn) {
-        return;
-    }
-
-    CInv inv(MSG_GOVERNANCE_OBJECT_VOTE, GetHash());
-    peerman.RelayInv(inv);
+    return strprintf("%s:%d:%s:%s:%d",
+        masternodeOutpoint.ToStringShort(), nTime,
+        CGovernanceVoting::ConvertOutcomeToString(GetOutcome()), CGovernanceVoting::ConvertSignalToString(GetSignal()),
+        voteWeight);
 }
 
 void CGovernanceVote::UpdateHash() const
@@ -144,10 +120,6 @@ uint256 CGovernanceVote::GetHash() const
     return hash;
 }
 
-uint256 CGovernanceVote::GetSignatureHash() const
-{
-    return SerializeHash(*this);
-}
 
 bool CGovernanceVote::CheckSignature(const CKeyID& keyID) const
 {
@@ -166,16 +138,6 @@ bool CGovernanceVote::CheckSignature(const CKeyID& keyID) const
         }
     }
 
-    return true;
-}
-
-bool CGovernanceVote::Sign(const CActiveMasternodeManager& mn_activeman)
-{
-    CBLSSignature sig = mn_activeman.Sign(GetSignatureHash(), false);
-    if (!sig.IsValid()) {
-        return false;
-    }
-    vchSig = sig.ToByteVector(false);
     return true;
 }
 
@@ -222,13 +184,6 @@ bool CGovernanceVote::IsValid(const CDeterministicMNList& tip_mn_list, bool useV
     }
 }
 
-std::string CGovernanceVote::GetSignatureString() const
-{
-    return masternodeOutpoint.ToStringShort() + "|" + nParentHash.ToString() + "|" +
-                             ::ToString(nVoteSignal) + "|" +
-                             ::ToString(nVoteOutcome) + "|" +
-                             ::ToString(nTime);
-}
 
 bool operator==(const CGovernanceVote& vote1, const CGovernanceVote& vote2)
 {

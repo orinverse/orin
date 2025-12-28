@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2025 The Dash Core developers
+# Copyright (c) 2015-2025 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -16,10 +16,21 @@ from test_framework.messages import CBlock, CCbTx
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error, force_finish_mnsync
 
+import time
 
 class LLMQChainLocksTest(DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(5, 4)
+        self.set_orin_test_params(5, 4)
+        self.delay_v20_and_mn_rr(height=200)
+
+    def sleep_and_assert_no_cl(self, block_hash, sleep_time=5):
+        time.sleep(sleep_time)
+
+        for node in self.nodes:
+            self.log.info(f"Expecting no ChainLock for {block_hash}")
+            block = node.getblock(block_hash)
+            #assert_equal(block["confirmations"], 0)
+            assert not block["chainlock"]
 
     def run_test(self):
         # Connect all nodes to node1 so that we always have the whole network connected
@@ -30,8 +41,8 @@ class LLMQChainLocksTest(DashTestFramework):
 
         self.test_coinbase_best_cl(self.nodes[0], expected_cl_in_cb=False)
 
-        self.activate_mn_rr(expected_activation_height=900)
-        self.log.info("Activated MN_RR at height:" + str(self.nodes[0].getblockcount()))
+        self.activate_v20(expected_activation_height=200)
+        self.log.info("Activated v20 at height:" + str(self.nodes[0].getblockcount()))
 
         # v20 is active for the next block, not for the tip
         self.test_coinbase_best_cl(self.nodes[0], expected_cl_in_cb=False)
@@ -83,7 +94,7 @@ class LLMQChainLocksTest(DashTestFramework):
         previous_block_hash = self.nodes[0].getbestblockhash()
         for _ in range(2):
             block_hash = self.generate(self.nodes[0], 1, sync_fun=self.no_op)[0]
-            self.wait_for_chainlocked_block_all_nodes(block_hash, timeout=5, expected=False)
+            self.sleep_and_assert_no_cl(block_hash)
             assert self.nodes[0].getblock(previous_block_hash)["chainlock"]
 
         self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 0)

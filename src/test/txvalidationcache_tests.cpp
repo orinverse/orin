@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,10 +14,13 @@
 
 struct Dersig100Setup : public TestChain100Setup {
     Dersig100Setup()
-        : TestChain100Setup{{"-testactivationheight=dersig@102"}} {}
+        : TestChain100Setup{CBaseChainParams::REGTEST, {"-testactivationheight=dersig@102"}} {}
 };
 
-bool CheckInputScripts(const CTransaction& tx, TxValidationState &state, const CCoinsViewCache &inputs, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks);
+bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
+                       const CCoinsViewCache& inputs, unsigned int flags, bool cacheSigStore,
+                       bool cacheFullScriptStore, PrecomputedTransactionData& txdata,
+                       std::vector<CScriptCheck>* pvChecks) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 BOOST_AUTO_TEST_SUITE(txvalidationcache_tests)
 

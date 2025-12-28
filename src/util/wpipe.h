@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2024 The Dash Core developers
+// Copyright (c) 2020-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -21,6 +21,10 @@ class EdgeTriggeredEvents;
  */
 class WakeupPipe
 {
+private:
+    /* Iterate through m_pipe and ::close() them */
+    void Close();
+
 public:
     explicit WakeupPipe(EdgeTriggeredEvents* edge_trig_events);
     ~WakeupPipe();

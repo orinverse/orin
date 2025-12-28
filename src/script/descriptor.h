@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -66,11 +66,11 @@ public:
     bool GetCachedLastHardenedExtPubKey(uint32_t key_exp_pos, CExtPubKey& xpub) const;
 
     /** Retrieve all cached parent xpubs */
-    const ExtPubKeyMap GetCachedParentExtPubKeys() const;
+    ExtPubKeyMap GetCachedParentExtPubKeys() const;
     /** Retrieve all cached derived xpubs */
-    const std::unordered_map<uint32_t, ExtPubKeyMap> GetCachedDerivedExtPubKeys() const;
+    std::unordered_map<uint32_t, ExtPubKeyMap> GetCachedDerivedExtPubKeys() const;
     /** Retrieve all cached last hardened xpubs */
-    const ExtPubKeyMap GetCachedLastHardenedExtPubKeys() const;
+    ExtPubKeyMap GetCachedLastHardenedExtPubKeys() const;
 
     /** Combine another DescriptorCache into this one.
      * Returns a cache containing the items from the other cache unknown to current cache

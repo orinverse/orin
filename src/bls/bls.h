@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,14 +11,14 @@
 #include <util/strencodings.h>
 #include <util/ranges.h>
 
-// bls-dash uses relic, which may define DEBUG and ERROR, which leads to many warnings in some build setups
+// bls-orin uses relic, which may define DEBUG and ERROR, which leads to many warnings in some build setups
 #undef ERROR
 #undef DEBUG
-#include <dashbls/bls.hpp>
-#include <dashbls/privatekey.hpp>
-#include <dashbls/elements.hpp>
-#include <dashbls/schemes.hpp>
-#include <dashbls/threshold.hpp>
+#include <orinbls/bls.hpp>
+#include <orinbls/privatekey.hpp>
+#include <orinbls/elements.hpp>
+#include <orinbls/schemes.hpp>
+#include <orinbls/threshold.hpp>
 #undef DOUBLE
 #undef SEED
 
@@ -391,12 +391,13 @@ private:
     mutable std::mutex mutex;
 
     mutable std::array<uint8_t, BLSObject::SerSize> vecBytes;
-    // Indicates if the value contained in vecBytes is valid
-    mutable bool bufValid{false};
-    mutable bool bufLegacyScheme{true};
 
     mutable BLSObject obj;
     mutable bool objInitialized{false};
+
+    // Indicates if the value contained in vecBytes is valid
+    mutable bool bufValid{false};
+    mutable bool bufLegacyScheme{true};
 
     mutable uint256 hash;
 
@@ -508,19 +509,23 @@ public:
 
     bool operator==(const CBLSLazyWrapper& r) const
     {
-        // If neither bufValid or objInitialized are set, then the object is the default object.
-        const bool is_default{!bufValid && !objInitialized};
-        const bool r_is_default{!r.bufValid && !r.objInitialized};
-        // If both are default; they are equal.
-        if (is_default && r_is_default) return true;
-        // If one is default and the other isn't, we are not equal
-        if (is_default != r_is_default) return false;
+        if (&r == this) return true;
+        {
+            std::scoped_lock lock(mutex, r.mutex);
+            // If neither bufValid or objInitialized are set, then the object is the default object.
+            const bool is_default{!bufValid && !objInitialized};
+            const bool r_is_default{!r.bufValid && !r.objInitialized};
+            // If both are default; they are equal.
+            if (is_default && r_is_default) return true;
+            // If one is default and the other isn't, we are not equal
+            if (is_default != r_is_default) return false;
 
-        if (bufValid && r.bufValid && bufLegacyScheme == r.bufLegacyScheme) {
-            return vecBytes == r.vecBytes;
-        }
-        if (objInitialized && r.objInitialized) {
-            return obj == r.obj;
+            if (bufValid && r.bufValid && bufLegacyScheme == r.bufLegacyScheme) {
+                return vecBytes == r.vecBytes;
+            }
+            if (objInitialized && r.objInitialized) {
+                return obj == r.obj;
+            }
         }
         return Get() == r.Get();
     }

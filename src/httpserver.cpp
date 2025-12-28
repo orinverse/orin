@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 The Bitcoin Core developers
+// Copyright (c) 2015-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,17 +19,19 @@
 #include <util/threadnames.h>
 #include <util/translation.h>
 
+#include <cstdio>
 #include <deque>
-#include <stdio.h>
+#include <optional>
 #include <string>
 
 #include <sys/types.h>
 
-#include <event2/thread.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
-#include <event2/util.h>
+#include <event2/http.h>
 #include <event2/keyvalq_struct.h>
+#include <event2/thread.h>
+#include <event2/util.h>
 
 #include <support/events.h>
 
@@ -70,20 +72,18 @@ private:
     std::condition_variable cond GUARDED_BY(cs);
     std::deque<std::unique_ptr<WorkItem>> queue GUARDED_BY(cs);
     std::deque<std::unique_ptr<WorkItem>> external_queue GUARDED_BY(cs);
-    bool running GUARDED_BY(cs);
+    bool running GUARDED_BY(cs){true};
     const size_t maxDepth;
     const size_t m_external_depth;
 
 public:
-    explicit WorkQueue(size_t _maxDepth, size_t external_depth) : running(true),
+    explicit WorkQueue(size_t _maxDepth, size_t external_depth) :
                                  maxDepth(_maxDepth), m_external_depth(external_depth)
     {
     }
     /** Precondition: worker threads have all stopped (they have been joined).
      */
-    ~WorkQueue()
-    {
-    }
+    ~WorkQueue() = default;
     /** Enqueue a work item */
     bool Enqueue(WorkItem* item, bool is_external) EXCLUSIVE_LOCKS_REQUIRED(!cs)
     {
@@ -157,7 +157,8 @@ static std::unique_ptr<WorkQueue<HTTPClosure>> g_work_queue{nullptr};
 //! List of 'external' RPC users (global variable, used by httprpc)
 std::vector<std::string> g_external_usernames;
 //! Handlers for (sub)paths
-static std::vector<HTTPPathHandler> pathHandlers;
+static GlobalMutex g_httppathhandlers_mutex;
+static std::vector<HTTPPathHandler> pathHandlers GUARDED_BY(g_httppathhandlers_mutex);
 //! Bound listening sockets
 static std::vector<evhttp_bound_socket *> boundSockets;
 
@@ -179,8 +180,7 @@ static bool InitHTTPAllowList()
     rpc_allow_subnets.push_back(CSubNet{LookupHost("127.0.0.1", false).value(), 8});  // always allow IPv4 local subnet
     rpc_allow_subnets.push_back(CSubNet{LookupHost("::1", false).value()});  // always allow IPv6 localhost
     for (const std::string& strAllow : gArgs.GetArgs("-rpcallowip")) {
-        CSubNet subnet;
-        LookupSubNet(strAllow, subnet);
+        const CSubNet subnet{LookupSubNet(strAllow)};
         if (!subnet.IsValid()) {
             uiInterface.ThreadSafeMessageBox(
                 strprintf(Untranslated("Invalid -rpcallowip subnet specification: %s. Valid are a single IP (e.g. 1.2.3.4), a network/netmask (e.g. 1.2.3.4/255.255.255.0) or a network/CIDR (e.g. 1.2.3.4/24)."), strAllow),
@@ -217,8 +217,10 @@ std::string RequestMethodString(HTTPRequest::RequestMethod m)
 /** HTTP request callback */
 static void http_request_cb(struct evhttp_request* req, void* arg)
 {
-    // Disable reading to work around a libevent bug, fixed in 2.2.0.
-    if (event_get_version_number() >= 0x02010600 && event_get_version_number() < 0x02020001) {
+    // Disable reading to work around a libevent bug, fixed in 2.1.9
+    // See https://github.com/libevent/libevent/commit/5ff8eb26371c4dc56f384b2de35bea2d87814779
+    // and https://github.com/bitcoin/bitcoin/pull/11593.
+    if (event_get_version_number() >= 0x02010600 && event_get_version_number() < 0x02010900) {
         evhttp_connection* conn = evhttp_request_get_connection(req);
         if (conn) {
             bufferevent* bev = evhttp_connection_get_bufferevent(conn);
@@ -251,6 +253,7 @@ static void http_request_cb(struct evhttp_request* req, void* arg)
     // Find registered handler for prefix
     std::string strURI = hreq->GetURI();
     std::string path;
+    LOCK(g_httppathhandlers_mutex);
     std::vector<HTTPPathHandler>::const_iterator i = pathHandlers.begin();
     std::vector<HTTPPathHandler>::const_iterator iend = pathHandlers.end();
     for (; i != iend; ++i) {
@@ -322,7 +325,7 @@ static void ThreadHTTP(struct event_base* base)
 /** Bind HTTP server to specified addresses */
 static bool HTTPBindAddresses(struct evhttp* http)
 {
-    uint16_t http_port{static_cast<uint16_t>(gArgs.GetArg("-rpcport", BaseParams().RPCPort()))};
+    uint16_t http_port{static_cast<uint16_t>(gArgs.GetIntArg("-rpcport", BaseParams().RPCPort()))};
     std::vector<std::pair<std::string, uint16_t>> endpoints;
 
     // Determine what addresses to bind to
@@ -399,12 +402,8 @@ bool InitHTTPServer()
 
     // Redirect libevent's logging to our own log
     event_set_log_callback(&libevent_log_cb);
-    // Update libevent's log handling. Returns false if our version of
-    // libevent doesn't support debug logging, in which case we should
-    // clear the BCLog::LIBEVENT flag.
-    if (!UpdateHTTPServerLogging(LogInstance().WillLogCategory(BCLog::LIBEVENT))) {
-        LogInstance().DisableCategory(BCLog::LIBEVENT);
-    }
+    // Update libevent's log handling.
+    UpdateHTTPServerLogging(LogInstance().WillLogCategory(BCLog::LIBEVENT));
 
 #ifdef WIN32
     evthread_use_windows_threads();
@@ -422,7 +421,7 @@ bool InitHTTPServer()
         return false;
     }
 
-    evhttp_set_timeout(http, gArgs.GetArg("-rpcservertimeout", DEFAULT_HTTP_SERVER_TIMEOUT));
+    evhttp_set_timeout(http, gArgs.GetIntArg("-rpcservertimeout", DEFAULT_HTTP_SERVER_TIMEOUT));
     evhttp_set_max_headers_size(http, MAX_HEADERS_SIZE);
     evhttp_set_max_body_size(http, MAX_SIZE);
     evhttp_set_gencb(http, http_request_cb, nullptr);
@@ -433,13 +432,13 @@ bool InitHTTPServer()
     }
 
     LogPrint(BCLog::HTTP, "Initialized HTTP server\n");
-    int workQueueDepth = std::max((long)gArgs.GetArg("-rpcworkqueue", DEFAULT_HTTP_WORKQUEUE), 1L);
+    int workQueueDepth = std::max((long)gArgs.GetIntArg("-rpcworkqueue", DEFAULT_HTTP_WORKQUEUE), 1L);
     int workQueueDepthExternal = 0;
     if (const std::string rpc_externaluser{gArgs.GetArg("-rpcexternaluser", "")}; !rpc_externaluser.empty()) {
-        workQueueDepthExternal = std::max((long)gArgs.GetArg("-rpcexternalworkqueue", DEFAULT_HTTP_WORKQUEUE), 1L);
+        workQueueDepthExternal = std::max((long)gArgs.GetIntArg("-rpcexternalworkqueue", DEFAULT_HTTP_WORKQUEUE), 1L);
         g_external_usernames = SplitString(rpc_externaluser, ',');
     }
-    LogPrintf("HTTP: creating work queue of depth %d external_depth %d\n", workQueueDepth, workQueueDepthExternal);
+    LogPrintfCategory(BCLog::HTTP, "creating work queue of depth %d external_depth %d\n", workQueueDepth, workQueueDepthExternal);
     g_work_queue = std::make_unique<WorkQueue<HTTPClosure>>(workQueueDepth, workQueueDepthExternal);
     // transfer ownership to eventBase/HTTP via .release()
     eventBase = base_ctr.release();
@@ -447,18 +446,12 @@ bool InitHTTPServer()
     return true;
 }
 
-bool UpdateHTTPServerLogging(bool enable) {
-#if LIBEVENT_VERSION_NUMBER >= 0x02010100
+void UpdateHTTPServerLogging(bool enable) {
     if (enable) {
         event_enable_debug_logging(EVENT_DBG_ALL);
     } else {
         event_enable_debug_logging(EVENT_DBG_NONE);
     }
-    return true;
-#else
-    // Can't update libevent logging if version < 02010100
-    return false;
-#endif
 }
 
 static std::thread g_thread_http;
@@ -467,8 +460,8 @@ static std::vector<std::thread> g_thread_http_workers;
 void StartHTTPServer()
 {
     LogPrint(BCLog::HTTP, "Starting HTTP server\n");
-    int rpcThreads = std::max((long)gArgs.GetArg("-rpcthreads", DEFAULT_HTTP_THREADS), 1L);
-    LogPrintf("HTTP: starting %d worker threads\n", rpcThreads);
+    int rpcThreads = std::max((long)gArgs.GetIntArg("-rpcthreads", DEFAULT_HTTP_THREADS), 1L);
+    LogPrintfCategory(BCLog::HTTP, "starting %d worker threads\n", rpcThreads);
     g_thread_http = std::thread(ThreadHTTP, eventBase);
 
     for (int i = 0; i < rpcThreads; i++) {
@@ -623,7 +616,7 @@ void HTTPRequest::WriteReply(int nStatus, const std::string& strReply)
         evhttp_send_reply(req_copy, nStatus, nullptr, nullptr);
         // Re-enable reading from the socket. This is the second part of the libevent
         // workaround above.
-        if (event_get_version_number() >= 0x02010600 && event_get_version_number() < 0x02020001) {
+        if (event_get_version_number() >= 0x02010600 && event_get_version_number() < 0x02010900) {
             evhttp_connection* conn = evhttp_request_get_connection(req_copy);
             if (conn) {
                 bufferevent* bev = evhttp_connection_get_bufferevent(conn);
@@ -653,7 +646,7 @@ CService HTTPRequest::GetPeer() const
         evhttp_connection_get_peer(con, (char**)&address, &port);
 #endif // HAVE_EVHTTP_CONNECTION_GET_PEER_CONST_CHAR
 
-        peer = LookupNumeric(address, port);
+        peer = MaybeFlipIPv6toCJDNS(LookupNumeric(address, port));
     }
     return peer;
 }
@@ -679,14 +672,47 @@ HTTPRequest::RequestMethod HTTPRequest::GetRequestMethod() const
     }
 }
 
+std::optional<std::string> HTTPRequest::GetQueryParameter(const std::string& key) const
+{
+    const char* uri{evhttp_request_get_uri(req)};
+
+    return GetQueryParameterFromUri(uri, key);
+}
+
+std::optional<std::string> GetQueryParameterFromUri(const char* uri, const std::string& key)
+{
+    evhttp_uri* uri_parsed{evhttp_uri_parse(uri)};
+    const char* query{evhttp_uri_get_query(uri_parsed)};
+    std::optional<std::string> result;
+
+    if (query) {
+        // Parse the query string into a key-value queue and iterate over it
+        struct evkeyvalq params_q;
+        evhttp_parse_query_str(query, &params_q);
+
+        for (struct evkeyval* param{params_q.tqh_first}; param != nullptr; param = param->next.tqe_next) {
+            if (param->key == key) {
+                result = param->value;
+                break;
+            }
+        }
+        evhttp_clear_headers(&params_q);
+    }
+    evhttp_uri_free(uri_parsed);
+
+    return result;
+}
+
 void RegisterHTTPHandler(const std::string &prefix, bool exactMatch, const HTTPRequestHandler &handler)
 {
     LogPrint(BCLog::HTTP, "Registering HTTP handler for %s (exactmatch %d)\n", prefix, exactMatch);
+    LOCK(g_httppathhandlers_mutex);
     pathHandlers.push_back(HTTPPathHandler(prefix, exactMatch, handler));
 }
 
 void UnregisterHTTPHandler(const std::string &prefix, bool exactMatch)
 {
+    LOCK(g_httppathhandlers_mutex);
     std::vector<HTTPPathHandler>::iterator i = pathHandlers.begin();
     std::vector<HTTPPathHandler>::iterator iend = pathHandlers.end();
     for (; i != iend; ++i)

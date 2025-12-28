@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -47,7 +47,7 @@ void initialize_integer()
     SelectParams(CBaseChainParams::REGTEST);
 }
 
-FUZZ_TARGET_INIT(integer, initialize_integer)
+FUZZ_TARGET(integer, .init = initialize_integer)
 {
     if (buffer.size() < sizeof(uint256) + sizeof(uint160)) {
         return;
@@ -75,7 +75,6 @@ FUZZ_TARGET_INIT(integer, initialize_integer)
     static const uint256 u256_max(uint256S("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
     const std::vector<uint256> v256{u256, u256_min, u256_max};
     (void)ComputeMerkleRoot(v256);
-    (void)CountBits(u64);
     (void)DecompressAmount(u64);
     {
 

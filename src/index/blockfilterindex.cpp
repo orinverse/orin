@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,6 +9,9 @@
 #include <index/blockfilterindex.h>
 #include <node/blockstorage.h>
 #include <serialize.h>
+#include <util/system.h>
+
+using node::UndoReadFromDisk;
 
 /* The index database stores three items for each block: the disk location of the encoded filter,
  * its dSHA256 hash, and the header. Those belonging to blocks on the active chain are indexed by
@@ -28,6 +31,7 @@
 constexpr uint8_t DB_BLOCK_HASH{'s'};
 constexpr uint8_t DB_BLOCK_HEIGHT{'t'};
 constexpr uint8_t DB_FILTER_POS{'P'};
+constexpr uint8_t DB_VERSION{'V'};
 
 constexpr unsigned int MAX_FLTR_FILE_SIZE = 0x1000000; // 16 MiB
 /** The pre-allocation chunk size for fltr?????.dat files */
@@ -104,16 +108,39 @@ BlockFilterIndex::BlockFilterIndex(BlockFilterType filter_type,
     const std::string& filter_name = BlockFilterTypeName(filter_type);
     if (filter_name.empty()) throw std::invalid_argument("unknown filter_type");
 
-    fs::path path = gArgs.GetDataDirNet() / "indexes" / "blockfilter" / filter_name;
+    fs::path path = gArgs.GetDataDirNet() / "indexes" / "blockfilter" / fs::u8path(filter_name);
     fs::create_directories(path);
 
     m_name = filter_name + " block filter index";
     m_db = std::make_unique<BaseIndex::DB>(path / "db", n_cache_size, f_memory, f_wipe);
+
+    // Check version
+    int version = 0;
+    if (!m_db->Read(DB_VERSION, version) || version < CURRENT_VERSION) {
+        // No version or too old version means we need to start from scratch
+        LogPrintf("%s: Outdated or no version blockfilter, starting from scratch\n", __func__);
+        m_db.reset();
+        m_db = std::make_unique<BaseIndex::DB>(path / "db", n_cache_size, f_memory, /*f_wipe=*/true);
+        m_db->Write(DB_VERSION, CURRENT_VERSION);
+    }
+
     m_filter_fileseq = std::make_unique<FlatFileSeq>(std::move(path), "fltr", FLTR_FILE_CHUNK_SIZE);
 }
 
 bool BlockFilterIndex::Init()
 {
+    // Check version compatibility first
+    int version = 0;
+    if (m_db->Exists(DB_VERSION)) {
+        if (!m_db->Read(DB_VERSION, version)) {
+            return error("%s: Failed to read %s index version from database", __func__, GetName());
+        }
+        if (version > CURRENT_VERSION) {
+            return error("%s: %s index version %d is too high (expected <= %d)",
+                        __func__, GetName(), version, CURRENT_VERSION);
+        }
+    }
+
     if (!m_db->Read(DB_FILTER_POS, m_next_filter_pos)) {
         // Check that the cause of the read failure is that the key does not exist. Any other errors
         // indicate database corruption or a disk failure, and starting the index would cause
@@ -134,8 +161,13 @@ bool BlockFilterIndex::CommitInternal(CDBBatch& batch)
 {
     const FlatFilePos& pos = m_next_filter_pos;
 
+    // Write the current version if this is a new index
+    if (!m_db->Exists(DB_VERSION)) {
+        batch.Write(DB_VERSION, CURRENT_VERSION);
+    }
+
     // Flush current filter file to disk.
-    CAutoFile file(m_filter_fileseq->Open(pos), SER_DISK, CLIENT_VERSION);
+    AutoFile file{m_filter_fileseq->Open(pos)};
     if (file.IsNull()) {
         return error("%s: Failed to open filter file %d", __func__, pos.nFile);
     }
@@ -149,7 +181,7 @@ bool BlockFilterIndex::CommitInternal(CDBBatch& batch)
 
 bool BlockFilterIndex::ReadFilterFromDisk(const FlatFilePos& pos, const uint256& hash, BlockFilter& filter) const
 {
-    CAutoFile filein(m_filter_fileseq->Open(pos, true), SER_DISK, CLIENT_VERSION);
+    AutoFile filein{m_filter_fileseq->Open(pos, true)};
     if (filein.IsNull()) {
         return false;
     }
@@ -179,7 +211,7 @@ size_t BlockFilterIndex::WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& 
 
     // If writing the filter would overflow the file, flush and move to the next one.
     if (pos.nPos + data_size > MAX_FLTR_FILE_SIZE) {
-        CAutoFile last_file(m_filter_fileseq->Open(pos), SER_DISK, CLIENT_VERSION);
+        AutoFile last_file{m_filter_fileseq->Open(pos)};
         if (last_file.IsNull()) {
             LogPrintf("%s: Failed to open filter file %d\n", __func__, pos.nFile);
             return 0;
@@ -205,7 +237,7 @@ size_t BlockFilterIndex::WriteFilterToDisk(FlatFilePos& pos, const BlockFilter& 
         return 0;
     }
 
-    CAutoFile fileout(m_filter_fileseq->Open(pos), SER_DISK, CLIENT_VERSION);
+    AutoFile fileout{m_filter_fileseq->Open(pos)};
     if (fileout.IsNull()) {
         LogPrintf("%s: Failed to open filter file %d\n", __func__, pos.nFile);
         return 0;

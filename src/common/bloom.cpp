@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 The Bitcoin Core developers
+// Copyright (c) 2012-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -119,6 +119,11 @@ bool CBloomFilter::CheckScript(const CScript &script) const
 // Filter is updated only if it has BLOOM_UPDATE_ALL flag to be able to have
 // simple SPV wallets that doesn't work with DIP2 transactions (multicoin
 // wallets, etc.)
+// NOTE(maintenance): Keep this implementation in sync with
+// ExtractSpecialTxFilterElements in src/evo/specialtx_filter.cpp.
+// Both routines must handle the same set of special-transaction fields.
+// If you modify one, update the other to prevent mismatches between
+// bloom filter relevance and compact filter element extraction.
 bool CBloomFilter::CheckSpecialTransactionMatchesAndUpdate(const CTransaction &tx)
 {
     if (!tx.HasExtraPayloadField()) {
@@ -335,7 +340,7 @@ bool CRollingBloomFilter::contains(Span<const unsigned char> vKey) const
 
 void CRollingBloomFilter::reset()
 {
-    nTweak = GetRand(std::numeric_limits<unsigned int>::max());
+    nTweak = GetRand<unsigned int>();
     nEntriesThisGeneration = 0;
     nGeneration = 1;
     std::fill(data.begin(), data.end(), 0);

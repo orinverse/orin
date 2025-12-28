@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -22,14 +22,12 @@
 #include <optional>
 #include <utility>
 
-class CActiveMasternodeManager;
 class CChainState;
 class CBLSPublicKey;
 class CBlockIndex;
 class ChainstateManager;
 class CMasternodeSync;
 class CTxMemPool;
-class TxValidationState;
 
 namespace llmq {
 class CChainLocksHandler;
@@ -209,14 +207,7 @@ public:
 
     [[nodiscard]] uint256 GetHash() const;
     [[nodiscard]] uint256 GetSignatureHash() const;
-    /** Sign this mixing transaction
-     *  return true if all conditions are met:
-     *     1) we have an active Masternode,
-     *     2) we have a valid Masternode private key,
-     *     3) we signed the message successfully, and
-     *     4) we verified the message successfully
-     */
-    bool Sign(const CActiveMasternodeManager& mn_activeman);
+
     /// Check if we have a valid Masternode address
     [[nodiscard]] bool CheckSignature(const CBLSPublicKey& blsPubKey) const;
 
@@ -284,9 +275,10 @@ public:
 
     [[nodiscard]] uint256 GetSignatureHash() const;
 
-    bool Sign(const CActiveMasternodeManager& mn_activeman);
     [[nodiscard]] bool CheckSignature(const CBLSPublicKey& blsPubKey) const;
 
+    // Used only for unit tests
+    [[nodiscard]] std::optional<int> GetConfirmedHeight() const { return nConfirmedHeight; }
     void SetConfirmedHeight(std::optional<int> nConfirmedHeightIn) { assert(nConfirmedHeightIn == std::nullopt || *nConfirmedHeightIn > 0); nConfirmedHeight = nConfirmedHeightIn; }
     bool IsExpired(const CBlockIndex* pindex, const llmq::CChainLocksHandler& clhandler) const;
     [[nodiscard]] bool IsValidStructure() const;
@@ -317,6 +309,7 @@ public:
     int nSessionDenom{0}; // Users must submit a denom matching this
 
     CCoinJoinBaseSession() = default;
+    virtual ~CCoinJoinBaseSession() = default;
 
     int GetState() const { return nState; }
     std::string GetStateString() const;
@@ -338,7 +331,8 @@ protected:
     void CheckQueue() EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
 
 public:
-    CCoinJoinBaseManager() = default;
+    CCoinJoinBaseManager();
+    virtual ~CCoinJoinBaseManager();
 
     int GetQueueSize() const EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue) { LOCK(cs_vecqueue); return vecCoinJoinQueue.size(); }
     bool GetQueueItemAndTry(CCoinJoinQueue& dsqRet) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
@@ -378,7 +372,11 @@ class CDSTXManager
     std::map<uint256, CCoinJoinBroadcastTx> mapDSTX GUARDED_BY(cs_mapdstx);
 
 public:
-    CDSTXManager() = default;
+    CDSTXManager(const CDSTXManager&) = delete;
+    CDSTXManager& operator=(const CDSTXManager&) = delete;
+    CDSTXManager();
+    ~CDSTXManager();
+
     void AddDSTX(const CCoinJoinBroadcastTx& dstx) EXCLUSIVE_LOCKS_REQUIRED(!cs_mapdstx);
     CCoinJoinBroadcastTx GetDSTX(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs_mapdstx);
 
@@ -403,6 +401,6 @@ private:
 };
 
 bool ATMPIfSaneFee(ChainstateManager& chainman, const CTransactionRef& tx, bool test_accept = false)
-    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 #endif // BITCOIN_COINJOIN_COINJOIN_H

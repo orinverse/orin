@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2019 The Bitcoin Core developers
+// Copyright (c) 2016-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -85,7 +85,7 @@ private:
 
 public:
     /** Get the numerical statistics for a given deployment for the signalling period that includes the block after pindexPrev. */
-    BIP9Stats Statistics(const CBlockIndex* pindexPrev, const Consensus::Params& params, Consensus::DeploymentPos pos);
+    BIP9Stats Statistics(const CBlockIndex* pindexPrev, const Consensus::Params& params, Consensus::DeploymentPos pos) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
 
     static uint32_t Mask(const Consensus::Params& params, Consensus::DeploymentPos pos);
 
@@ -107,13 +107,16 @@ class AbstractEHFManager
 public:
     using Signals = std::unordered_map<uint8_t, int>;
 
+public:
+    AbstractEHFManager() = default;
+    virtual ~AbstractEHFManager() = default;
+
     /**
      * getInstance() is used in versionbit because it is non-trivial
      * to get access to NodeContext from all usages of VersionBits* methods
      * For simplification of interface this methods static/global variable is used
      * to get access to EHF data
      */
-public:
     [[nodiscard]] static gsl::not_null<AbstractEHFManager*> getInstance() {
         return globalInstance;
     };
@@ -126,7 +129,6 @@ public:
      * This member function is not const because it calls non-const GetFromCache()
      */
     virtual Signals GetSignalsStage(const CBlockIndex* const pindexPrev) = 0;
-
 
 protected:
     static AbstractEHFManager* globalInstance;

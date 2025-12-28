@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2024 The Dash Core developers
+// Copyright (c) 2018-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -23,6 +23,11 @@ enum class QvvecSyncMode {
     Always = 0,
     OnlyIfTypeMember = 1,
 };
+
+/** Maximum number of dedicated script-checking threads allowed */
+static const int MAX_BLSCHECK_THREADS = 33;
+/** -parbls default (number of bls-checking threads, 0 = auto) */
+static const int DEFAULT_BLSCHECK_THREADS = 0;
 
 static constexpr bool DEFAULT_ENABLE_QUORUM_DATA_RECOVERY{true};
 

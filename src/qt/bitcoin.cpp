@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,11 +8,12 @@
 #endif
 
 #include <qt/bitcoin.h>
-
+#include <QDebug>
 #include <chainparams.h>
 #include <fs.h>
 #include <init.h>
 #include <interfaces/handler.h>
+#include <interfaces/init.h>
 #include <interfaces/node.h>
 #include <net.h>
 #include <node/context.h>
@@ -48,7 +49,6 @@
 #include <memory>
 
 #include <QApplication>
-#include <QDebug>
 #include <QLatin1String>
 #include <QLibraryInfo>
 #include <QLocale>
@@ -57,6 +57,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QTranslator>
+#include <QWindow>
 
 #if defined(QT_STATIC)
 #include <QtPlugin>
@@ -68,6 +69,8 @@ Q_IMPORT_PLUGIN(QWindowsVistaStylePlugin);
 #elif defined(QT_QPA_PLATFORM_COCOA)
 Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin);
 Q_IMPORT_PLUGIN(QMacStylePlugin);
+#elif defined(QT_QPA_PLATFORM_ANDROID)
+Q_IMPORT_PLUGIN(QAndroidPlatformIntegrationPlugin)
 #endif
 #endif
 
@@ -76,6 +79,8 @@ Q_DECLARE_METATYPE(bool*)
 Q_DECLARE_METATYPE(CAmount)
 Q_DECLARE_METATYPE(SynchronizationState)
 Q_DECLARE_METATYPE(uint256)
+
+using node::NodeContext;
 
 static void RegisterMetaTypes()
 {
@@ -93,6 +98,12 @@ static void RegisterMetaTypes()
     qRegisterMetaType<std::function<void()>>("std::function<void()>");
     qRegisterMetaType<QMessageBox::Icon>("QMessageBox::Icon");
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
+
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+    qRegisterMetaTypeStreamOperators<BitcoinUnit>("BitcoinUnit");
+#else
+    qRegisterMetaType<BitcoinUnit>("BitcoinUnit");
+#endif
 }
 
 static QString GetLangTerritory()
@@ -131,33 +142,43 @@ static void initTranslations(QTranslator &qtTranslatorBase, QTranslator &qtTrans
     // - First load the translator for the base language, without territory
     // - Then load the more specific locale translator
 
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+    const QString translation_path{QLibraryInfo::location(QLibraryInfo::TranslationsPath)};
+#else
+    const QString translation_path{QLibraryInfo::path(QLibraryInfo::TranslationsPath)};
+#endif
     // Load e.g. qt_de.qm
-    if (qtTranslatorBase.load("qt_" + lang, QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
+    if (qtTranslatorBase.load("qt_" + lang, translation_path)) {
         QApplication::installTranslator(&qtTranslatorBase);
+    }
 
     // Load e.g. qt_de_DE.qm
-    if (qtTranslator.load("qt_" + lang_territory, QLibraryInfo::location(QLibraryInfo::TranslationsPath)))
+    if (qtTranslator.load("qt_" + lang_territory, translation_path)) {
         QApplication::installTranslator(&qtTranslator);
+    }
 
-    // Load e.g. bitcoin_de.qm (shortcut "de" needs to be defined in dash.qrc)
-    if (translatorBase.load(lang, ":/translations/"))
+    // Load e.g. bitcoin_de.qm (shortcut "de" needs to be defined in orin.qrc)
+    if (translatorBase.load(lang, ":/translations/")) {
         QApplication::installTranslator(&translatorBase);
+    }
 
-    // Load e.g. bitcoin_de_DE.qm (shortcut "de_DE" needs to be defined in dash.qrc)
-    if (translator.load(lang_territory, ":/translations/"))
+    // Load e.g. bitcoin_de_DE.qm (shortcut "de_DE" needs to be defined in orin.qrc)
+    if (translator.load(lang_territory, ":/translations/")) {
         QApplication::installTranslator(&translator);
+    }
 }
 
 static bool InitSettings()
 {
+    gArgs.EnsureDataDir();
     if (!gArgs.GetSettingsPath()) {
         return true; // Do nothing if settings file disabled.
     }
 
     std::vector<std::string> errors;
     if (!gArgs.ReadSettingsFile(&errors)) {
-        std::string error = QT_TRANSLATE_NOOP("dash-core", "Settings file could not be read");
-        std::string error_translated = QCoreApplication::translate("dash-core", error.c_str()).toStdString();
+        std::string error = QT_TRANSLATE_NOOP("orin-core", "Settings file could not be read");
+        std::string error_translated = QCoreApplication::translate("orin-core", error.c_str()).toStdString();
         InitError(Untranslated(strprintf("%s:\n%s\n", error, MakeUnorderedList(errors))));
 
         QMessageBox messagebox(QMessageBox::Critical, PACKAGE_NAME, QString::fromStdString(strprintf("%s.", error_translated)), QMessageBox::Reset | QMessageBox::Abort);
@@ -179,8 +200,8 @@ static bool InitSettings()
 
     errors.clear();
     if (!gArgs.WriteSettingsFile(&errors)) {
-        std::string error = QT_TRANSLATE_NOOP("dash-core", "Settings file could not be written");
-        std::string error_translated = QCoreApplication::translate("dash-core", error.c_str()).toStdString();
+        std::string error = QT_TRANSLATE_NOOP("orin-core", "Settings file could not be written");
+        std::string error_translated = QCoreApplication::translate("orin-core", error.c_str()).toStdString();
         InitError(Untranslated(strprintf("%s:\n%s\n", error, MakeUnorderedList(errors))));
 
         QMessageBox messagebox(QMessageBox::Critical, PACKAGE_NAME, QString::fromStdString(strprintf("%s.", error_translated)), QMessageBox::Ok);
@@ -209,7 +230,7 @@ void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, cons
 }
 
 static int qt_argc = 1;
-static const char* qt_argv = "dash-qt";
+static const char* qt_argv = "orin-qt";
 
 BitcoinApplication::BitcoinApplication():
     QApplication(qt_argc, const_cast<char **>(&qt_argv)),
@@ -253,24 +274,26 @@ void BitcoinApplication::createOptionsModel(bool resetSettings)
 void BitcoinApplication::createWindow(const NetworkStyle *networkStyle)
 {
     window = new BitcoinGUI(node(), networkStyle, nullptr);
+    connect(window, &BitcoinGUI::quitRequested, this, &BitcoinApplication::requestShutdown);
+
     pollShutdownTimer = new QTimer(window);
-    connect(pollShutdownTimer, &QTimer::timeout, window, &BitcoinGUI::detectShutdown);
+    connect(pollShutdownTimer, &QTimer::timeout, [this]{
+        if (!QApplication::activeModalWidget()) {
+            window->detectShutdown();
+        }
+    });
 }
 
 void BitcoinApplication::createSplashScreen(const NetworkStyle *networkStyle)
 {
     m_splash = new SplashScreen(networkStyle);
-    // We don't hold a direct pointer to the splash screen after creation, but the splash
-    // screen will take care of deleting itself when finish() happens.
     m_splash->show();
-    connect(this, &BitcoinApplication::splashFinished, m_splash, &SplashScreen::finish);
-    connect(this, &BitcoinApplication::requestedShutdown, m_splash, &QWidget::close);
 }
 
-void BitcoinApplication::setNode(interfaces::Node& node)
+void BitcoinApplication::createNode(interfaces::Init& init)
 {
     assert(!m_node);
-    m_node = &node;
+    m_node = init.makeNode();
     if (optionsModel) optionsModel->setNode(*m_node);
     if (m_splash) m_splash->setNode(*m_node);
 }
@@ -287,7 +310,9 @@ void BitcoinApplication::startThread()
 
     /*  communication to and from thread */
     connect(&m_executor.value(), &InitExecutor::initializeResult, this, &BitcoinApplication::initializeResult);
-    connect(&m_executor.value(), &InitExecutor::shutdownResult, this, &BitcoinApplication::shutdownResult);
+    connect(&m_executor.value(), &InitExecutor::shutdownResult, this, [] {
+        QCoreApplication::exit(0);
+    });
     connect(&m_executor.value(), &InitExecutor::runawayException, this, &BitcoinApplication::handleRunawayException);
     connect(this, &BitcoinApplication::requestedInitialize, &m_executor.value(), &InitExecutor::initialize);
     connect(this, &BitcoinApplication::requestedShutdown, &m_executor.value(), &InitExecutor::shutdown);
@@ -318,19 +343,31 @@ void BitcoinApplication::requestInitialize()
 
 void BitcoinApplication::requestShutdown()
 {
+    for (const auto w : QGuiApplication::topLevelWindows()) {
+        w->hide();
+    }
+
+    delete m_splash;
+    m_splash = nullptr;
+
     // Show a simple window indicating shutdown status
     // Do this first as some of the steps may take some time below,
     // for example the RPC console may still be executing a command.
     shutdownWindow.reset(ShutdownWindow::showShutdownWindow(window));
 
     qDebug() << __func__ << ": Requesting shutdown";
-    window->hide();
+
     // Must disconnect node signals otherwise current thread can deadlock since
     // no event loop is running.
     window->unsubscribeFromCoreSignals();
     // Request node shutdown, which can interrupt long operations, like
     // rescanning a wallet.
     node().startShutdown();
+    // Prior to unsetting the client model, stop listening backend signals
+    if (clientModel) {
+        clientModel->stop();
+    }
+
     // Unsetting the client model can cause the current thread to wait for node
     // to complete an operation, like wait for a RPC execution to complete.
     window->setClientModel(nullptr);
@@ -357,10 +394,13 @@ void BitcoinApplication::requestShutdown()
 void BitcoinApplication::initializeResult(bool success, interfaces::BlockAndHeaderTipInfo tip_info)
 {
     qDebug() << __func__ << ": Initialization result: " << success;
+
     // Set exit result.
     returnValue = success ? EXIT_SUCCESS : EXIT_FAILURE;
-    if(success)
-    {
+    if(success) {
+        delete m_splash;
+        m_splash = nullptr;
+
         // Log this only after AppInitMain finishes, as then logging setup is guaranteed complete
         qInfo() << "Platform customization:" << gArgs.GetArg("-uiplatform", BitcoinGUI::DEFAULT_UIPLATFORM).c_str();
         clientModel = new ClientModel(node(), optionsModel);
@@ -383,7 +423,6 @@ void BitcoinApplication::initializeResult(bool success, interfaces::BlockAndHead
         } else {
             window->showMinimized();
         }
-        Q_EMIT splashFinished();
         Q_EMIT windowShown(window);
 
         // Let the users setup their preferred appearance if there are no settings for it defined yet.
@@ -391,7 +430,7 @@ void BitcoinApplication::initializeResult(bool success, interfaces::BlockAndHead
 
 #ifdef ENABLE_WALLET
         // Now that initialization/startup is done, process any command-line
-        // dash: URIs or payment requests:
+        // orin: URIs or payment requests:
         if (paymentServer) {
             connect(paymentServer, &PaymentServer::receivedPaymentRequest, window, &BitcoinGUI::handlePaymentRequest);
             connect(window, &BitcoinGUI::receivedURI, paymentServer, &PaymentServer::handleURIOrFile);
@@ -403,14 +442,8 @@ void BitcoinApplication::initializeResult(bool success, interfaces::BlockAndHead
 #endif
         pollShutdownTimer->start(SHUTDOWN_POLLING_DELAY);
     } else {
-        Q_EMIT splashFinished(); // Make sure splash screen doesn't stick around during shutdown
-        quit(); // Exit first main loop invocation
+        requestShutdown();
     }
-}
-
-void BitcoinApplication::shutdownResult()
-{
-    quit(); // Exit second main loop invocation after shutdown finished
 }
 
 void BitcoinApplication::handleRunawayException(const QString &message)
@@ -464,7 +497,7 @@ static void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-splash", strprintf(QObject::tr("Show splash screen on startup (default: %u)").toStdString(), DEFAULT_SPLASHSCREEN), ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-uiplatform", strprintf("Select platform to customize UI for (one of windows, macosx, other; default: %s)", BitcoinGUI::DEFAULT_UIPLATFORM), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::GUI);
     argsman.AddArg("-debug-ui", "Updates the UI's stylesheets in realtime with changes made to the css files in -custom-css-dir and forces some widgets to show up which are usually only visible under certain circumstances. (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::GUI);
-    argsman.AddArg("-windowtitle=<name>", _("Sets a window title which is appended to \"Dash Core - \"").translated, ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+    argsman.AddArg("-windowtitle=<name>", _("Sets a window title which is appended to \"Orin Core - \"").translated, ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 }
 
 int GuiMain(int argc, char* argv[])
@@ -476,11 +509,13 @@ int GuiMain(int argc, char* argv[])
     util::WinCmdLineArgs winArgs;
     std::tie(argc, argv) = winArgs.get();
 #endif
-    SetupEnvironment();
-    util::ThreadSetInternalName("main");
 
     NodeContext node_context;
-    std::unique_ptr<interfaces::Node> node = interfaces::MakeNode(&node_context);
+    int unused_exit_status;
+    std::unique_ptr<interfaces::Init> init = interfaces::MakeNodeInit(node_context, argc, argv, unused_exit_status);
+
+    SetupEnvironment();
+    util::ThreadSetInternalName("main");
 
     // Subscribe to global signals from core
     boost::signals2::scoped_connection handler_message_box = ::uiInterface.ThreadSafeMessageBox_connect(noui_ThreadSafeMessageBox);
@@ -490,19 +525,20 @@ int GuiMain(int argc, char* argv[])
     // Do not refer to data directory yet, this can be overridden by Intro::pickDataDirectory
 
     /// 1. Basic Qt initialization (not dependent on parameters or configuration)
-    Q_INIT_RESOURCE(dash);
-    Q_INIT_RESOURCE(dash_locale);
+    Q_INIT_RESOURCE(orin);
+    Q_INIT_RESOURCE(orin_locale);
 
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     // Generate high-dpi pixmaps
     QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+#endif
 
     BitcoinApplication app;
     GUIUtil::LoadFont(QStringLiteral(":/fonts/monospace"));
 
     /// 2. Parse command-line options. We do this after qt in order to show an error if there are problems parsing these
     // Command-line options take precedence:
-    node_context.args = &gArgs;
     SetupServerArgs(gArgs);
     SetupUIArgs(gArgs);
     std::string error;
@@ -530,7 +566,7 @@ int GuiMain(int argc, char* argv[])
     if (gArgs.IsArgSet("-printcrashinfo")) {
         auto crashInfo = GetCrashInfoStrFromSerializedStr(gArgs.GetArg("-printcrashinfo", ""));
         std::cout << crashInfo << std::endl;
-        QMessageBox::critical(0, PACKAGE_NAME, QString::fromStdString(crashInfo));
+        QMessageBox::critical(nullptr, PACKAGE_NAME, QString::fromStdString(crashInfo));
         return EXIT_SUCCESS;
     }
 
@@ -552,29 +588,30 @@ int GuiMain(int argc, char* argv[])
     // Gracefully exit if the user cancels
     if (!Intro::showIfNeeded(did_show_intro, prune_MiB)) return EXIT_SUCCESS;
 
-    /// 6. Determine availability of data directory and parse dash.conf
-    /// - Do not call gArgs.GetDataDirNet() before this step finishes
+    /// 6a. Determine availability of data directory
     if (!CheckDataDirOption()) {
         InitError(strprintf(Untranslated("Specified data directory \"%s\" does not exist.\n"), gArgs.GetArg("-datadir", "")));
         QMessageBox::critical(nullptr, PACKAGE_NAME,
             QObject::tr("Error: Specified data directory \"%1\" does not exist.").arg(QString::fromStdString(gArgs.GetArg("-datadir", ""))));
         return EXIT_FAILURE;
     }
-    if (!gArgs.ReadConfigFiles(error, true)) {
-        InitError(strprintf(Untranslated("Error reading configuration file: %s\n"), error));
-        QMessageBox::critical(nullptr, PACKAGE_NAME,
-            QObject::tr("Error: Cannot parse configuration file: %1.").arg(QString::fromStdString(error)));
-        return EXIT_FAILURE;
-    }
-
-    /// 7. Determine network (and switch to network specific options)
-    // - Do not call Params() before this step
-    // - Do this after parsing the configuration file, as the network can be switched there
-    // - QSettings() will use the new application name after this, resulting in network-specific settings
-    // - Needs to be done before createOptionsModel
-
-    // Check for -chain, -testnet or -regtest parameter (Params() calls are only valid after this clause)
     try {
+        /// 6b. Parse orin.conf
+        /// - Do not call gArgs.GetDataDirNet() before this step finishes
+        if (!gArgs.ReadConfigFiles(error, true)) {
+            InitError(strprintf(Untranslated("Error reading configuration file: %s\n"), error));
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
+                QObject::tr("Error: Cannot parse configuration file: %1.").arg(QString::fromStdString(error)));
+            return EXIT_FAILURE;
+        }
+
+        /// 7. Determine network (and switch to network specific options)
+        // - Do not call Params() before this step
+        // - Do this after parsing the configuration file, as the network can be switched there
+        // - QSettings() will use the new application name after this, resulting in network-specific settings
+        // - Needs to be done before createOptionsModel
+
+        // Check for -chain, -testnet or -regtest parameter (Params() calls are only valid after this clause)
         SelectParams(gArgs.GetChainName());
     } catch(std::exception &e) {
         InitError(Untranslated(strprintf("%s\n", e.what())));
@@ -608,7 +645,7 @@ int GuiMain(int argc, char* argv[])
         exit(EXIT_SUCCESS);
 
     // Start up the payment server early, too, so impatient users that click on
-    // dash: links repeatedly have their payment requests routed to this process:
+    // orin: links repeatedly have their payment requests routed to this process:
     if (WalletModel::isWalletEnabled()) {
         app.createPaymentServer();
     }
@@ -628,7 +665,7 @@ int GuiMain(int argc, char* argv[])
     GUIUtil::LogQtInfo();
     // Load custom application fonts and setup font management
     if (!GUIUtil::loadFonts()) {
-        QMessageBox::critical(0, PACKAGE_NAME,
+        QMessageBox::critical(nullptr, PACKAGE_NAME,
                               QObject::tr("Error: Failed to load application fonts."));
         return EXIT_FAILURE;
     }
@@ -641,7 +678,7 @@ int GuiMain(int argc, char* argv[])
         try {
             family = GUIUtil::fontFamilyFromString(strFamily);
         } catch (const std::exception& e) {
-            QMessageBox::critical(0, PACKAGE_NAME,
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
                                   QObject::tr("Error: Specified font-family invalid. Valid values: %1.").arg("SystemDefault, Montserrat"));
             return EXIT_FAILURE;
         }
@@ -650,8 +687,8 @@ int GuiMain(int argc, char* argv[])
     // Validate/set normal font weight
     if (gArgs.IsArgSet("-font-weight-normal")) {
         QFont::Weight weight;
-        if (!GUIUtil::weightFromArg(gArgs.GetArg("-font-weight-normal", GUIUtil::weightToArg(GUIUtil::getFontWeightNormal())), weight)) {
-            QMessageBox::critical(0, PACKAGE_NAME,
+        if (!GUIUtil::weightFromArg(gArgs.GetIntArg("-font-weight-normal", GUIUtil::weightToArg(GUIUtil::getFontWeightNormal())), weight)) {
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
                                   QObject::tr("Error: Specified font-weight-normal invalid. Valid range %1 to %2.").arg(0).arg(8));
             return EXIT_FAILURE;
         }
@@ -660,8 +697,8 @@ int GuiMain(int argc, char* argv[])
     // Validate/set bold font weight
     if (gArgs.IsArgSet("-font-weight-bold")) {
         QFont::Weight weight;
-        if (!GUIUtil::weightFromArg(gArgs.GetArg("-font-weight-bold", GUIUtil::weightToArg(GUIUtil::getFontWeightBold())), weight)) {
-            QMessageBox::critical(0, PACKAGE_NAME,
+        if (!GUIUtil::weightFromArg(gArgs.GetIntArg("-font-weight-bold", GUIUtil::weightToArg(GUIUtil::getFontWeightBold())), weight)) {
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
                                   QObject::tr("Error: Specified font-weight-bold invalid. Valid range %1 to %2.").arg(0).arg(8));
             return EXIT_FAILURE;
         }
@@ -670,9 +707,9 @@ int GuiMain(int argc, char* argv[])
     // Validate/set font scale
     if (gArgs.IsArgSet("-font-scale")) {
         const int nScaleMin = -100, nScaleMax = 100;
-        int nScale = gArgs.GetArg("-font-scale", GUIUtil::getFontScale());
+        int nScale = gArgs.GetIntArg("-font-scale", GUIUtil::getFontScale());
         if (nScale < nScaleMin || nScale > nScaleMax) {
-            QMessageBox::critical(0, PACKAGE_NAME,
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
                                   QObject::tr("Error: Specified font-scale invalid. Valid range %1 to %2.").arg(nScaleMin).arg(nScaleMax));
             return EXIT_FAILURE;
         }
@@ -686,7 +723,7 @@ int GuiMain(int argc, char* argv[])
         QString strFile;
 
         if (!fs::is_directory(customDir)) {
-            QMessageBox::critical(0, PACKAGE_NAME,
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
                                   QObject::tr("Error: Invalid -custom-css-dir path.") + "\n\n" + strCustomDir);
             return EXIT_FAILURE;
         }
@@ -706,7 +743,7 @@ int GuiMain(int argc, char* argv[])
             for (const auto& strMissingFile : vecRequiredFiles) {
                 strMissingFiles += strMissingFile + "\n";
             }
-            QMessageBox::critical(0, PACKAGE_NAME,
+            QMessageBox::critical(nullptr, PACKAGE_NAME,
                                   QObject::tr("Error: %1 CSS file(s) missing in -custom-css-dir path.").arg(vecRequiredFiles.size()) + "\n\n" + strMissingFiles);
             return EXIT_FAILURE;
         }
@@ -715,7 +752,7 @@ int GuiMain(int argc, char* argv[])
     }
     // Validate -debug-ui
     if (gArgs.GetBoolArg("-debug-ui", false)) {
-        QMessageBox::warning(0, PACKAGE_NAME,
+        QMessageBox::warning(nullptr, PACKAGE_NAME,
                                 "Warning: UI debug mode (-debug-ui) enabled" + QString(gArgs.IsArgSet("-custom-css-dir") ? "." : " without a custom css directory set with -custom-css-dir."));
     }
 
@@ -727,7 +764,7 @@ int GuiMain(int argc, char* argv[])
     if (gArgs.GetBoolArg("-splash", DEFAULT_SPLASHSCREEN) && !gArgs.GetBoolArg("-min", false))
         app.createSplashScreen(networkStyle.data());
 
-    app.setNode(*node);
+    app.createNode(*init);
 
     int rv = EXIT_SUCCESS;
     try
@@ -741,8 +778,6 @@ int GuiMain(int argc, char* argv[])
 #if defined(Q_OS_WIN)
             WinShutdownMonitor::registerShutdownBlockReason(QObject::tr("%1 didn't yet exit safely…").arg(PACKAGE_NAME), (HWND)app.getMainWinId());
 #endif
-            app.exec();
-            app.requestShutdown();
             app.exec();
             rv = app.getReturnValue();
         } else {

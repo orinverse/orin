@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2025 The Dash Core developers
+// Copyright (c) 2024-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -36,6 +36,9 @@ private:
     const llmq::CChainLocksHandler& clhandler;
 
 public:
+    CChainstateHelper() = delete;
+    CChainstateHelper(const CChainstateHelper&) = delete;
+    CChainstateHelper& operator=(const CChainstateHelper&) = delete;
     explicit CChainstateHelper(CCreditPoolManager& cpoolman, CDeterministicMNManager& dmnman, CMNHFManager& mnhfman,
                                CGovernanceManager& govman, llmq::CInstantSendManager& isman,
                                llmq::CQuorumBlockProcessor& qblockman, llmq::CQuorumSnapshotManager& qsnapman,
@@ -43,9 +46,6 @@ public:
                                const CMasternodeSync& mn_sync, const CSporkManager& sporkman,
                                const llmq::CChainLocksHandler& clhandler, const llmq::CQuorumManager& qman);
     ~CChainstateHelper();
-
-    CChainstateHelper() = delete;
-    CChainstateHelper(const CChainstateHelper&) = delete;
 
     /** Passthrough functions to CChainLocksHandler */
     bool HasConflictingChainLock(int nHeight, const uint256& blockHash) const;

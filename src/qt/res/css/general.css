@@ -1,5 +1,5 @@
 /**
-Copyright (c) 2020 The Dash Core developers
+Copyright (c) 2020 The Orin Core developers
 Distributed under the MIT/X11 software license, see the accompanying
 file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -900,12 +900,6 @@ QToolBar > QToolButton:disabled {
     color: red;
 }
 
-QToolBar QLabel#lblToolbarLogo {
-    padding: 12px;
-    image: url(':/images/dash_logo_toolbar');
-    height: 2.5em;
-}
-
 /******************************************************
 QToolTip
 ******************************************************/
@@ -991,11 +985,11 @@ AboutDialog
 
 QDialog#AboutDialog QLabel#label,
 QDialog#AboutDialog QLabel#copyrightLabel,
-QDialog#AboutDialog QLabel#label_2 { /* About Dash Contents */
+QDialog#AboutDialog QLabel#label_2 { /* About Orin Contents */
     margin-left: 10px;
 }
 
-QDialog#AboutDialog QLabel#label_2 { /* Margin for About Dash text */
+QDialog#AboutDialog QLabel#label_2 { /* Margin for About Orin text */
     margin-right: 10px;
 }
 
@@ -1257,6 +1251,13 @@ QDialog#OpenURIDialog {
 }
 
 QDialog#OpenURIDialog QLabel#label { /* URI Label */
+}
+
+QDialog#OpenURIDialog .QToolButton { /* General Settings for Pay To Icons */
+    background-color: #00000000;
+    margin-left: 5px;
+    margin-right: 5px;
+    border: 0;
 }
 
 /******************************************************
@@ -1720,7 +1721,7 @@ QDialog#SendCoinsDialog QPushButton#sendButton {
 SendCoinsEntry
 ******************************************************/
 
-QStackedWidget#SendCoinsEntry .QFrame#SendCoins > .QLabel { /* Send Coin Entry Labels */
+QWidget#SendCoinsEntry .QFrame#SendCoins > .QLabel { /* Send Coin Entry Labels */
     background-color: #00000000;
     min-width: 50px;
     min-height: 25px;
@@ -1728,30 +1729,29 @@ QStackedWidget#SendCoinsEntry .QFrame#SendCoins > .QLabel { /* Send Coin Entry L
     padding-right: 5px;
 }
 
-QStackedWidget#SendCoinsEntry .QFrame#SendCoins .QLabel#amountLabel {
+QWidget#SendCoinsEntry .QFrame#SendCoins .QLabel#amountLabel {
 }
 
-QStackedWidget#SendCoinsEntry .QValidatedLineEdit#payTo { /* Pay To Input Field */
+QWidget#SendCoinsEntry .QValidatedLineEdit#payTo { /* Pay To Input Field */
 }
 
-QStackedWidget#SendCoinsEntry .QToolButton { /* General Settings for Pay To Icons */
+QWidget#SendCoinsEntry .QToolButton { /* General Settings for Pay To Icons */
     background-color: #00000000;
     margin-left: 5px;
     margin-right: 5px;
     border: 0;
 }
 
-QStackedWidget#SendCoinsEntry .QToolButton#addressBookButton { /* Address Book Button */
+QWidget#SendCoinsEntry .QToolButton#addressBookButton { /* Address Book Button */
     margin-left: 10px;
 }
 
-QStackedWidget#SendCoinsEntry .QToolButton#addressBookButton,
-QStackedWidget#SendCoinsEntry .QToolButton#pasteButton,
-QStackedWidget#SendCoinsEntry .QToolButton#deleteButton,
-QStackedWidget#SendCoinsEntry .QToolButton#deleteButton_is {
+QWidget#SendCoinsEntry .QToolButton#addressBookButton,
+QWidget#SendCoinsEntry .QToolButton#pasteButton,
+QWidget#SendCoinsEntry .QToolButton#deleteButton {
 }
 
-QStackedWidget#SendCoinsEntry .QLineEdit#addAsLabel { /* Pay To Input Field */
+QWidget#SendCoinsEntry .QLineEdit#addAsLabel { /* Pay To Input Field */
 }
 
 /******************************************************

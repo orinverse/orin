@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 The Bitcoin Core developers
+// Copyright (c) 2017-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,10 +8,15 @@
 #include <node/interface_ui.h>
 #include <shutdown.h>
 #include <tinyformat.h>
+#include <util/system.h>
 #include <util/thread.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <warnings.h>
+
+using node::PruneLockInfo;
+using node::ReadBlockFromDisk;
+using node::fPruneMode;
 
 constexpr uint8_t DB_BEST_BLOCK{'B'};
 
@@ -147,9 +152,9 @@ void BaseIndex::ThreadSync()
                 const CBlockIndex* pindex_next = NextSyncBlock(pindex, m_chainstate->m_chain);
                 if (!pindex_next) {
                     SetBestBlockIndex(pindex);
-                    m_synced = true;
                     // No need to handle errors in Commit. See rationale above.
                     Commit();
+                    m_synced = true;
                     break;
                 }
                 if (pindex_next->pprev != pindex && !Rewind(pindex, pindex_next->pprev)) {

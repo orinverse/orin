@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Copyright (c) 2017 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -341,6 +341,7 @@ ECDHSecret CKey::ComputeBIP324ECDHSecret(const EllSwiftPubKey& their_ellswift, c
 }
 
 bool CExtKey::Derive(CExtKey &out, unsigned int _nChild) const {
+    if (nDepth == std::numeric_limits<unsigned char>::max()) return false;
     out.nDepth = nDepth + 1;
     CKeyID id = key.GetPubKey().GetID();
     memcpy(out.vchFingerprint, &id, 4);

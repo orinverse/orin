@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2020 The Bitcoin Core developers
+# Copyright (c) 2014-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 """
     ZMQ example using python3's asyncio
 
-    Dash should be started with the command line arguments:
-        dashd -testnet -daemon \
+    Orin should be started with the command line arguments:
+        orind -testnet -daemon \
                 -zmqpubrawtx=tcp://127.0.0.1:28332 \
                 -zmqpubrawblock=tcp://127.0.0.1:28332 \
                 -zmqpubhashtx=tcp://127.0.0.1:28332 \

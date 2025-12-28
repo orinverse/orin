@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2024 The Dash Core developers
+# Copyright (c) 2021-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test being able to connect to the same devnet"""
@@ -24,7 +24,7 @@ class ConnectDevnetNodes(BitcoinTestFramework):
 
     def run_test(self):
         self.nodes[0].add_p2p_connection(P2PInterface())
-        assert_equal(self.nodes[0].getconnectioncount(), 2)  # 1 out dashd + 1 p2p
+        assert_equal(self.nodes[0].getconnectioncount(), 2)  # 1 out orind + 1 p2p
 
 
 if __name__ == '__main__':

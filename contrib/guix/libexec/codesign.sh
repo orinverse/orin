@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2021 The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 export LC_ALL=C
 set -e -o pipefail
 export TZ=UTC
@@ -76,7 +79,7 @@ mkdir -p "$DISTSRC"
             ;;
         *darwin*)
             # Apply detached codesignatures to dist/ (in-place)
-            signapple apply dist/Dash-Qt.app codesignatures/osx/dist
+            signapple apply dist/Orin-Qt.app codesignatures/osx/dist
 
             # Make a .zip from dist/
             cd dist/

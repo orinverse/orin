@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -22,7 +22,7 @@ void initialize_block()
     SelectParams(CBaseChainParams::REGTEST);
 }
 
-FUZZ_TARGET_INIT(block, initialize_block)
+FUZZ_TARGET(block, .init = initialize_block)
 {
     CDataStream ds(buffer, SER_NETWORK, INIT_PROTO_VERSION);
     CBlock block;

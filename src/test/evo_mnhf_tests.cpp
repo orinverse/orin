@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2024 The Dash Core developers
+// Copyright (c) 2021-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,6 @@
 #include <llmq/context.h>
 #include <primitives/transaction.h>
 #include <uint256.h>
-#include <util/strencodings.h>
 #include <util/string.h>
 #include <validation.h>
 

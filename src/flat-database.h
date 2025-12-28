@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -49,9 +49,9 @@ private:
         uint256 hash = Hash(ssObj);
         ssObj << hash;
 
-        // open output file, and associate with CAutoFile
+        // open output file, and associate with AutoFile
         FILE *file = fsbridge::fopen(pathDB, "wb");
-        CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
+        AutoFile fileout{file};
         if (fileout.IsNull()) {
             return error("%s: Failed to open file %s", __func__, fs::PathToString(pathDB));
         }
@@ -76,9 +76,9 @@ private:
         //LOCK(objToLoad.cs);
 
         const auto start{SteadyClock::now()};
-        // open input file, and associate with CAutoFile
+        // open input file, and associate with AutoFile
         FILE *file = fsbridge::fopen(pathDB, "rb");
-        CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
+        AutoFile filein{file};
         if (filein.IsNull()) {
             // It is not actually error, maybe it's a first initialization of core.
             return ReadResult::FileError;
@@ -175,7 +175,7 @@ private:
 
 public:
     CFlatDB(std::string&& strFilenameIn, std::string&& strMagicMessageIn) :
-        pathDB{gArgs.GetDataDirNet() / strFilenameIn},
+        pathDB{gArgs.GetDataDirNet() / fs::u8path(strFilenameIn)},
         strFilename{strFilenameIn},
         strMagicMessage{strMagicMessageIn}
     {

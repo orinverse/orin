@@ -4,12 +4,12 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 22.x    | :white_check_mark: |
-| < 22    | :x:                |
+| 23.x    | :white_check_mark: |
+| < 23    | :x:                |
 
 ## Reporting a Vulnerability
 
-To report security issues send an email to security@dash.org (not for support).
+To report security issues send an email to security@orin.org (not for support).
 
 The following keys may be used to communicate sensitive information to developers:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020 The Bitcoin Core developers
+# Copyright (c) 2020-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the getblockfrompeer RPC."""
@@ -51,8 +51,8 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
 
         self.log.info("Arguments must be valid")
         assert_raises_rpc_error(-8, "hash must be of length 64 (not 4, for '1234')", self.nodes[0].getblockfrompeer, "1234", peer_0_peer_1_id)
-        assert_raises_rpc_error(-3, "Expected type string, got number", self.nodes[0].getblockfrompeer, 1234, peer_0_peer_1_id)
-        assert_raises_rpc_error(-3, "Expected type number, got string", self.nodes[0].getblockfrompeer, short_tip, "0")
+        assert_raises_rpc_error(-3, "JSON value of type number is not of expected type string", self.nodes[0].getblockfrompeer, 1234, peer_0_peer_1_id)
+        assert_raises_rpc_error(-3, "JSON value of type string is not of expected type number", self.nodes[0].getblockfrompeer, short_tip, "0")
 
         self.log.info("We must already have the header")
         assert_raises_rpc_error(-1, "Block header missing", self.nodes[0].getblockfrompeer, "00" * 32, 0)
@@ -64,12 +64,10 @@ class GetBlockFromPeerTest(BitcoinTestFramework):
         self.log.info("Successful fetch")
         result = self.nodes[0].getblockfrompeer(short_tip, peer_0_peer_1_id)
         self.wait_until(lambda: self.check_for_block(short_tip), timeout=1)
-        assert(not "warnings" in result)
+        assert_equal(result, {})
 
         self.log.info("Don't fetch blocks we already have")
-        result = self.nodes[0].getblockfrompeer(short_tip, peer_0_peer_1_id)
-        assert("warnings" in result)
-        assert_equal(result["warnings"], "Block already downloaded")
+        assert_raises_rpc_error(-1, "Block already downloaded", self.nodes[0].getblockfrompeer, short_tip, peer_0_peer_1_id)
 
 if __name__ == '__main__':
     GetBlockFromPeerTest().main()

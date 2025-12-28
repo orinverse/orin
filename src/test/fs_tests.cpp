@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2018 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
@@ -18,9 +18,12 @@ BOOST_FIXTURE_TEST_SUITE(fs_tests, BasicTestingSetup)
 BOOST_AUTO_TEST_CASE(fsbridge_pathtostring)
 {
     std::string u8_str = "fs_tests_∋_🏃";
+    std::u8string str8{u8"fs_tests_∋_🏃"};
     BOOST_CHECK_EQUAL(fs::PathToString(fs::PathFromString(u8_str)), u8_str);
-    BOOST_CHECK_EQUAL(fs::u8path(u8_str).u8string(), u8_str);
-    BOOST_CHECK_EQUAL(fs::PathFromString(u8_str).u8string(), u8_str);
+    BOOST_CHECK_EQUAL(fs::u8path(u8_str).utf8string(), u8_str);
+    BOOST_CHECK_EQUAL(fs::path(str8).utf8string(), u8_str);
+    BOOST_CHECK(fs::path(str8).u8string() == str8);
+    BOOST_CHECK_EQUAL(fs::PathFromString(u8_str).utf8string(), u8_str);
     BOOST_CHECK_EQUAL(fs::PathToString(fs::u8path(u8_str)), u8_str);
 #ifndef WIN32
     // On non-windows systems, verify that arbitrary byte strings containing
@@ -46,40 +49,40 @@ BOOST_AUTO_TEST_CASE(fsbridge_fstream)
 {
     fs::path tmpfolder = m_args.GetDataDirBase();
     // tmpfile1 should be the same as tmpfile2
-    fs::path tmpfile1 = tmpfolder / "fs_tests_∋_🏃";
-    fs::path tmpfile2 = tmpfolder / "fs_tests_∋_🏃";
+    fs::path tmpfile1 = tmpfolder / fs::u8path("fs_tests_∋_🏃");
+    fs::path tmpfile2 = tmpfolder / fs::path(u8"fs_tests_∋_🏃");
     {
-        std::ofstream file{tmpfile1};
+        std::ofstream file = fsbridge::ofstream(tmpfile1);
         file << "bitcoin";
     }
     {
-        std::ifstream file{tmpfile2};
+        std::ifstream file = fsbridge::ifstream(tmpfile2);
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "bitcoin");
     }
     {
-        std::ifstream file{tmpfile1, std::ios_base::in | std::ios_base::ate};
+        std::ifstream file = fsbridge::ifstream(tmpfile1, std::ios_base::in | std::ios_base::ate);
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "");
     }
     {
-        std::ofstream file{tmpfile2, std::ios_base::out | std::ios_base::app};
+        std::ofstream file = fsbridge::ofstream(tmpfile2, std::ios_base::out | std::ios_base::app);
         file << "tests";
     }
     {
-        std::ifstream file{tmpfile1};
+        std::ifstream file = fsbridge::ifstream(tmpfile1);
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "bitcointests");
     }
     {
-        std::ofstream file{tmpfile2, std::ios_base::out | std::ios_base::trunc};
+        std::ofstream file = fsbridge::ofstream(tmpfile2, std::ios_base::out | std::ios_base::trunc);
         file << "bitcoin";
     }
     {
-        std::ifstream file{tmpfile1};
+        std::ifstream file = fsbridge::ifstream(tmpfile1);
         std::string input_buffer;
         file >> input_buffer;
         BOOST_CHECK_EQUAL(input_buffer, "bitcoin");
@@ -101,7 +104,7 @@ BOOST_AUTO_TEST_CASE(fsbridge_fstream)
     }
     {
         // Join an absolute path and a relative path.
-        fs::path p = fsbridge::AbsPathJoin(tmpfolder, "fs_tests_∋_🏃");
+        fs::path p = fsbridge::AbsPathJoin(tmpfolder, fs::u8path("fs_tests_∋_🏃"));
         BOOST_CHECK(p.is_absolute());
         BOOST_CHECK_EQUAL(tmpfile1, p);
     }
@@ -129,12 +132,12 @@ BOOST_AUTO_TEST_CASE(rename)
     const std::string path2_contents{"2222"};
 
     {
-        std::ofstream file{path1};
+        std::ofstream file = fsbridge::ofstream(path1);
         file << path1_contents;
     }
 
     {
-        std::ofstream file{path2};
+        std::ofstream file = fsbridge::ofstream(path2);
         file << path2_contents;
     }
 
@@ -144,7 +147,7 @@ BOOST_AUTO_TEST_CASE(rename)
     BOOST_CHECK(!fs::exists(path1));
 
     {
-        std::ifstream file{path2};
+        std::ifstream file = fsbridge::ifstream(path2);
         std::string contents;
         file >> contents;
         BOOST_CHECK_EQUAL(contents, path1_contents);
@@ -177,4 +180,3 @@ BOOST_AUTO_TEST_CASE(create_directories)
 #endif // __MINGW64__
 
 BOOST_AUTO_TEST_SUITE_END()
-

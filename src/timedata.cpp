@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 The Bitcoin Core developers
+// Copyright (c) 2014-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -16,7 +16,7 @@
 #include <util/translation.h>
 #include <warnings.h>
 
-static Mutex g_timeoffset_mutex;
+static GlobalMutex g_timeoffset_mutex;
 static int64_t nTimeOffset GUARDED_BY(g_timeoffset_mutex) = 0;
 
 /**
@@ -77,7 +77,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
         int64_t nMedian = g_time_offsets.median();
         std::vector<int64_t> vSorted = g_time_offsets.sorted();
         // Only let other nodes change our time by so much
-        int64_t max_adjustment = std::max<int64_t>(0, gArgs.GetArg("-maxtimeadjustment", DEFAULT_MAX_TIME_ADJUSTMENT));
+        int64_t max_adjustment = std::max<int64_t>(0, gArgs.GetIntArg("-maxtimeadjustment", DEFAULT_MAX_TIME_ADJUSTMENT));
         if (nMedian >= -max_adjustment && nMedian <= max_adjustment) {
             nTimeOffset = nMedian;
         } else {

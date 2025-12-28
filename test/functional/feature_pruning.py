@@ -38,6 +38,7 @@ DEPLOYMENT_ARGS = [
     "-testactivationheight=dip0001@2000",
     "-testactivationheight=dip0008@2000",
     "-testactivationheight=v20@2000",
+    "-testactivationheight=mn_rr@2000",
 ]
 
 def mine_large_blocks(node, n):
@@ -136,7 +137,7 @@ class PruneTest(BitcoinTestFramework):
         self.sync_blocks(self.nodes[0:5])
 
     def test_invalid_command_line_options(self):
-        self.stop_node(0)
+        self.stop_node(0, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
         self.nodes[0].assert_start_raises_init_error(
             expected_msg='Error: Prune cannot be configured with a negative value.',
             extra_args=['-prune=-1', '-txindex=0', '-disablegovernance'],
@@ -312,7 +313,7 @@ class PruneTest(BitcoinTestFramework):
 
         def prune(index):
             ret = node.pruneblockchain(height=height(index))
-            assert_equal(ret, node.getblockchaininfo()['pruneheight'])
+            assert_equal(ret + 1, node.getblockchaininfo()['pruneheight'])
 
         def has_block(index):
             return os.path.isfile(os.path.join(self.nodes[node_number].datadir, self.chain, "blocks", f"blk{index:05}.dat"))
@@ -504,7 +505,7 @@ class PruneTest(BitcoinTestFramework):
         self.log.info("Test invalid pruning command line options")
         self.test_invalid_command_line_options()
 
-        # NOTE: this is a Dash-specific part, it should be the very last one before "Done"
+        # NOTE: this is a Orin-specific part, it should be the very last one before "Done"
         self.log.info("Stopping pruned nodes manually")
         for i in range(2, 6):
             self.log.info("Stopping pruned node%d" % i)

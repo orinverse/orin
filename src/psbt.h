@@ -1,11 +1,10 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_PSBT_H
 #define BITCOIN_PSBT_H
 
-#include <attributes.h>
 #include <node/transaction.h>
 #include <policy/feerate.h>
 #include <primitives/transaction.h>
@@ -151,7 +150,7 @@ void SerializeHDKeypath(Stream& s, KeyOriginInfo hd_keypath)
 template<typename Stream>
 void SerializeHDKeypaths(Stream& s, const std::map<CPubKey, KeyOriginInfo>& hd_keypaths, CompactSizeWriter type)
 {
-    for (auto keypath_pair : hd_keypaths) {
+    for (const auto& keypath_pair : hd_keypaths) {
         if (!keypath_pair.first.IsValid()) {
             throw std::ios_base::failure("Invalid CPubKey being serialized");
         }
@@ -192,7 +191,7 @@ struct PSBTInput
 
         if (final_script_sig.empty()) {
             // Write any partial signatures
-            for (auto sig_pair : partial_sigs) {
+            for (const auto& sig_pair : partial_sigs) {
                 SerializeToVector(s, CompactSizeWriter(PSBT_IN_PARTIAL_SIG), Span{sig_pair.second.first});
                 s << sig_pair.second.second;
             }
@@ -279,7 +278,7 @@ struct PSBTInput
             }
 
             // Type is compact size uint at beginning of key
-            SpanReader skey(s.GetType(), s.GetVersion(), key, 0);
+            SpanReader skey(s.GetType(), s.GetVersion(), key);
             uint64_t type = ReadCompactSize(skey);
 
             // Do stuff based on type
@@ -533,7 +532,7 @@ struct PSBTOutput
             }
 
             // Type is compact size uint at beginning of key
-            SpanReader skey(s.GetType(), s.GetVersion(), key, 0);
+            SpanReader skey(s.GetType(), s.GetVersion(), key);
             uint64_t type = ReadCompactSize(skey);
 
             // Do stuff based on type
@@ -711,7 +710,7 @@ struct PartiallySignedTransaction
             }
 
             // Type is compact size uint at beginning of key
-            SpanReader skey(s.GetType(), s.GetVersion(), key, 0);
+            SpanReader skey(s.GetType(), s.GetVersion(), key);
             uint64_t type = ReadCompactSize(skey);
 
             // Do stuff based on type

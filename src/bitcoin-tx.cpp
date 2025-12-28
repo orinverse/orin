@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -26,10 +26,10 @@
 #include <util/system.h>
 #include <util/translation.h>
 
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stdio.h>
 
 #include <stacktraces.h>
 
@@ -105,11 +105,14 @@ static int AppInitRawTx(int argc, char* argv[])
 
     if (argc < 2 || HelpRequested(gArgs) || gArgs.IsArgSet("-version")) {
         // First part of help message is specific to this utility
-        std::string strUsage = PACKAGE_NAME " dash-tx utility version " + FormatFullVersion() + "\n";
-        if (!gArgs.IsArgSet("-version")) {
+        std::string strUsage = PACKAGE_NAME " orin-tx utility version " + FormatFullVersion() + "\n";
+
+        if (gArgs.IsArgSet("-version")) {
+            strUsage += FormatParagraph(LicenseInfo());
+        } else {
             strUsage += "\n"
-                "Usage:  dash-tx [options] <hex-tx> [commands]  Update hex-encoded dash transaction\n"
-                "or:     dash-tx [options] -create [commands]   Create hex-encoded dash transaction\n"
+                "Usage:  orin-tx [options] <hex-tx> [commands]  Update hex-encoded orin transaction\n"
+                "or:     orin-tx [options] -create [commands]   Create hex-encoded orin transaction\n"
                 "\n";
             strUsage += gArgs.GetHelpMessage();
         }
@@ -569,7 +572,7 @@ static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
                 throw std::runtime_error("txid must be hexadecimal string (not '" + prevOut["txid"].get_str() + "')");
             }
 
-            const int nOut = prevOut["vout"].get_int();
+            const int nOut = prevOut["vout"].getInt<int>();
             if (nOut < 0)
                 throw std::runtime_error("vout cannot be negative");
 
@@ -587,7 +590,7 @@ static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
                 }
                 Coin newcoin;
                 newcoin.out.scriptPubKey = scriptPubKey;
-                newcoin.out.nValue = 0; // we don't know the actual output value
+                newcoin.out.nValue = MAX_MONEY;
                 if (prevOut.exists("amount")) {
                     newcoin.out.nValue = AmountFromValue(prevOut["amount"]);
                 }
@@ -624,7 +627,7 @@ static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
         SignatureData sigdata = DataFromTransaction(mergedTx, i, coin.out);
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
         if (!fHashSingle || (i < mergedTx.vout.size()))
-            ProduceSignature(keystore, MutableTransactionSignatureCreator(&mergedTx, i, amount, nHashType), prevPubKey, sigdata);
+            ProduceSignature(keystore, MutableTransactionSignatureCreator(mergedTx, i, amount, nHashType), prevPubKey, sigdata);
 
         UpdateInput(txin, sigdata);
     }
@@ -691,7 +694,7 @@ static void MutateTx(CMutableTransaction& tx, const std::string& command,
 static void OutputTxJSON(const CTransaction& tx)
 {
     UniValue entry(UniValue::VOBJ);
-    TxToUniv(tx, uint256(), /* include_addresses */ false, entry);
+    TxToUniv(tx, /*block_hash=*/uint256(), entry);
 
     std::string jsonOutput = entry.write(4);
     tfm::format(std::cout, "%s\n", jsonOutput);
@@ -759,7 +762,7 @@ static int CommandLineRawTx(int argc, char* argv[])
             if (argc < 2)
                 throw std::runtime_error("too few parameters");
 
-            // param: hex-encoded dash transaction
+            // param: hex-encoded orin transaction
             std::string strHexTx(argv[1]);
             if (strHexTx == "-")                 // "-" implies standard input
                 strHexTx = readStdin();

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2024 The Dash Core developers
+// Copyright (c) 2020-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,7 +6,7 @@
 
 #include <coinjoin/client.h>
 #include <coinjoin/coinjoin.h>
-#include <coinjoin/context.h>
+#include <coinjoin/walletman.h>
 #include <coinjoin/options.h>
 #include <coinjoin/util.h>
 #include <consensus/amount.h>
@@ -14,10 +14,13 @@
 #include <util/translation.h>
 #include <policy/settings.h>
 #include <validation.h>
+#include <wallet/context.h>
+#include <wallet/spend.h>
 #include <wallet/wallet.h>
 
 #include <boost/test/unit_test.hpp>
 
+namespace wallet {
 BOOST_FIXTURE_TEST_SUITE(coinjoin_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(coinjoin_options_tests)
@@ -66,16 +69,16 @@ BOOST_AUTO_TEST_CASE(coinjoin_collateral_tests)
 BOOST_AUTO_TEST_CASE(coinjoin_pending_dsa_request_tests)
 {
     CPendingDsaRequest dsa_request;
-    BOOST_CHECK(dsa_request.GetAddr() == CService());
+    BOOST_CHECK(dsa_request.GetProTxHash() == uint256());
     BOOST_CHECK(dsa_request.GetDSA() == CCoinJoinAccept());
     BOOST_CHECK_EQUAL(dsa_request.IsExpired(), true);
     CPendingDsaRequest dsa_request_2;
     BOOST_CHECK(dsa_request == dsa_request_2);
     CCoinJoinAccept cja;
     cja.nDenom = 4;
-    CService cserv(CNetAddr(), 1111);
-    CPendingDsaRequest custom_request(cserv, cja);
-    BOOST_CHECK(custom_request.GetAddr() == cserv);
+    uint256 proTxHash{uint256::ONE};
+    CPendingDsaRequest custom_request(proTxHash, cja);
+    BOOST_CHECK(custom_request.GetProTxHash() == proTxHash);
     BOOST_CHECK(custom_request.GetDSA() == cja);
     BOOST_CHECK_EQUAL(custom_request.IsExpired(), false);
     SetMockTime(GetTime() + 15);
@@ -128,15 +131,18 @@ BOOST_AUTO_TEST_CASE(coinjoin_accept_tests)
 class CTransactionBuilderTestSetup : public TestChain100Setup
 {
 public:
-    CTransactionBuilderTestSetup()
+    CTransactionBuilderTestSetup() :
+        wallet{std::make_unique<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", m_args, CreateMockWalletDatabase())}
     {
+        context.args = &m_args;
+        context.chain = m_node.chain.get();
+        context.coinjoin_loader = m_node.coinjoin_loader.get();
         CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
-        wallet = std::make_unique<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", CreateMockWalletDatabase());
         wallet->SetupLegacyScriptPubKeyMan();
         wallet->LoadWallet();
-        AddWallet(wallet);
+        AddWallet(context, wallet);
         {
-            LOCK2(wallet->cs_wallet, cs_main);
+            LOCK2(wallet->cs_wallet, ::cs_main);
             wallet->GetLegacyScriptPubKeyMan()->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey());
             wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
         }
@@ -144,20 +150,21 @@ public:
         reserver.reserve();
         CWallet::ScanResult result = wallet->ScanForWalletTransactions(/*start_block=*/wallet->chain().getBlockHash(0),
                                                                        /*start_height=*/0, /*max_height=*/{}, reserver,
-                                                                       /*fUpdate=*/true);
+                                                                       /*fUpdate=*/true, /*save_progress=*/false);
         BOOST_CHECK_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
     }
 
     ~CTransactionBuilderTestSetup()
     {
-        RemoveWallet(wallet, std::nullopt);
+        RemoveWallet(context, wallet, /*load_on_start=*/std::nullopt);
     }
 
-    std::shared_ptr<CWallet> wallet;
+    WalletContext context;
+    const std::shared_ptr<CWallet> wallet;
 
     CWalletTx& AddTxToChain(uint256 nTxHash)
     {
-        std::map<uint256, CWalletTx>::iterator it;
+        decltype(wallet->mapWallet)::iterator it;
         CMutableTransaction blocktx;
         {
             LOCK(wallet->cs_wallet);
@@ -166,44 +173,47 @@ public:
             blocktx = CMutableTransaction(*it->second.tx);
         }
         CreateAndProcessBlock({blocktx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
-        LOCK2(wallet->cs_wallet, cs_main);
+        LOCK2(wallet->cs_wallet, ::cs_main);
         wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
-        CWalletTx::Confirmation confirm(CWalletTx::Status::CONFIRMED, m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash(), 1);
-        it->second.m_confirm = confirm;
+        it->second.m_state = TxStateConfirmed{m_node.chainman->ActiveChain().Tip()->GetBlockHash(), m_node.chainman->ActiveChain().Height(), /*index=*/1};
         return it->second;
     }
     CompactTallyItem GetTallyItem(const std::vector<CAmount>& vecAmounts)
     {
         CompactTallyItem tallyItem;
         ReserveDestination reserveDest(wallet.get());
-        CAmount nFeeRet;
-        int nChangePosRet = -1;
-        bilingual_str strError;
+        int nChangePosRet{RANDOM_CHANGE_POSITION};
         CCoinControl coinControl;
         coinControl.m_feerate = CFeeRate(1000);
         {
             LOCK(wallet->cs_wallet);
-            BOOST_CHECK(reserveDest.GetReservedDestination(tallyItem.txdest, false));
+            auto dest_opt = reserveDest.GetReservedDestination(false);
+            BOOST_CHECK(dest_opt);
+            tallyItem.txdest = *dest_opt;
         }
         for (CAmount nAmount : vecAmounts) {
             CTransactionRef tx;
-            FeeCalculation fee_calc_out;
-            BOOST_CHECK(wallet->CreateTransaction({{GetScriptForDestination(tallyItem.txdest), nAmount, false}}, tx, nFeeRet, nChangePosRet, strError, coinControl, fee_calc_out));
             {
-                LOCK2(wallet->cs_wallet, cs_main);
+                auto res = CreateTransaction(*wallet, {{GetScriptForDestination(tallyItem.txdest), nAmount, false}}, nChangePosRet, coinControl);
+                BOOST_CHECK(res);
+                tx = res->tx;
+                nChangePosRet = res->change_pos;
+            }
+            {
+                LOCK2(wallet->cs_wallet, ::cs_main);
                 wallet->CommitTransaction(tx, {}, {});
             }
             AddTxToChain(tx->GetHash());
-            for (size_t n = 0; n < tx->vout.size(); ++n) {
-                if (nChangePosRet != -1 && int(n) == nChangePosRet) {
+            for (uint32_t n = 0; n < tx->vout.size(); ++n) {
+                if (nChangePosRet != RANDOM_CHANGE_POSITION && int(n) == nChangePosRet) {
                     // Skip the change output to only return the requested coins
                     continue;
                 }
-                tallyItem.vecInputCoins.emplace_back(tx, n);
+                tallyItem.outpoints.emplace_back(COutPoint{tx->GetHash(), n});
                 tallyItem.nAmount += tx->vout[n].nValue;
             }
         }
-        assert(tallyItem.vecInputCoins.size() == vecAmounts.size());
+        assert(tallyItem.outpoints.size() == vecAmounts.size());
         reserveDest.KeepDestination();
         return tallyItem;
     }
@@ -211,16 +221,14 @@ public:
 
 BOOST_FIXTURE_TEST_CASE(coinjoin_manager_start_stop_tests, CTransactionBuilderTestSetup)
 {
-    CCoinJoinClientManager* cj_man = m_node.cj_ctx->walletman->Get("");
-    BOOST_REQUIRE(cj_man != nullptr);
-    BOOST_CHECK_EQUAL(cj_man->IsMixing(), false);
-    BOOST_CHECK_EQUAL(cj_man->StartMixing(), true);
-    BOOST_CHECK_EQUAL(cj_man->IsMixing(), true);
-    BOOST_CHECK_EQUAL(cj_man->StartMixing(), false);
-    cj_man->StopMixing();
-    BOOST_CHECK_EQUAL(cj_man->IsMixing(), false);
+    auto& cj_man = *Assert(m_node.cj_walletman->getClient(""));
+    BOOST_CHECK_EQUAL(cj_man.IsMixing(), false);
+    BOOST_CHECK_EQUAL(cj_man.StartMixing(), true);
+    BOOST_CHECK_EQUAL(cj_man.IsMixing(), true);
+    BOOST_CHECK_EQUAL(cj_man.StartMixing(), false);
+    cj_man.StopMixing();
+    BOOST_CHECK_EQUAL(cj_man.IsMixing(), false);
 }
-
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)
 {
@@ -311,3 +319,4 @@ BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+} // namespace wallet

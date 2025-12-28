@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -48,14 +48,14 @@ public:
         return *this;
     }
 
-    int GetVersion() const { return m_version; }
+    [[maybe_unused]] int GetVersion() const { return m_version; }
 private:
     const int m_version;
     const unsigned char* m_data;
     size_t m_remaining;
 };
 
-inline int set_error(dashconsensus_error* ret, dashconsensus_error serror)
+inline int set_error(orinconsensus_error* ret, orinconsensus_error serror)
 {
     if (ret)
         *ret = serror;
@@ -67,36 +67,36 @@ inline int set_error(dashconsensus_error* ret, dashconsensus_error serror)
 /** Check that all specified flags are part of the libconsensus interface. */
 static bool verify_flags(unsigned int flags)
 {
-    return (flags & ~(dashconsensus_SCRIPT_FLAGS_VERIFY_ALL)) == 0;
+    return (flags & ~(orinconsensus_SCRIPT_FLAGS_VERIFY_ALL)) == 0;
 }
 
-int dashconsensus_verify_script(const unsigned char *scriptPubKey, unsigned int scriptPubKeyLen,
+int orinconsensus_verify_script(const unsigned char *scriptPubKey, unsigned int scriptPubKeyLen,
                                     const unsigned char *txTo        , unsigned int txToLen,
-                                    unsigned int nIn, unsigned int flags, dashconsensus_error* err)
+                                    unsigned int nIn, unsigned int flags, orinconsensus_error* err)
 {
     if (!verify_flags(flags)) {
-        return set_error(err, dashconsensus_ERR_INVALID_FLAGS);
+        return set_error(err, orinconsensus_ERR_INVALID_FLAGS);
     }
     try {
         TxInputStream stream(PROTOCOL_VERSION, txTo, txToLen);
         CTransaction tx(deserialize, stream);
         if (nIn >= tx.vin.size())
-            return set_error(err, dashconsensus_ERR_TX_INDEX);
+            return set_error(err, orinconsensus_ERR_TX_INDEX);
         if (GetSerializeSize(tx, PROTOCOL_VERSION) != txToLen)
-            return set_error(err, dashconsensus_ERR_TX_SIZE_MISMATCH);
+            return set_error(err, orinconsensus_ERR_TX_SIZE_MISMATCH);
 
         // Regardless of the verification result, the tx did not error.
-        set_error(err, dashconsensus_ERR_OK);
+        set_error(err, orinconsensus_ERR_OK);
 
         PrecomputedTransactionData txdata(tx);
 		CAmount am(0);
         return VerifyScript(tx.vin[nIn].scriptSig, CScript(scriptPubKey, scriptPubKey + scriptPubKeyLen), flags, TransactionSignatureChecker(&tx, nIn, am, txdata, MissingDataBehavior::FAIL), nullptr);
     } catch (const std::exception&) {
-        return set_error(err, dashconsensus_ERR_TX_DESERIALIZE); // Error deserializing
+        return set_error(err, orinconsensus_ERR_TX_DESERIALIZE); // Error deserializing
     }
 }
 
-unsigned int dashconsensus_version()
+unsigned int orinconsensus_version()
 {
     // Just use the API version for now
     return BITCOINCONSENSUS_API_VER;

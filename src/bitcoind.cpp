@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -28,8 +28,10 @@
 #include <stacktraces.h>
 #include <util/url.h>
 
+#include <cstdio>
 #include <functional>
-#include <stdio.h>
+
+using node::NodeContext;
 
 const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
 UrlDecodeFn* const URL_DECODE = urlDecode;
@@ -117,7 +119,7 @@ static bool AppInit(NodeContext& node, int argc, char* argv[])
 
     util::ThreadSetInternalName("init");
 
-    // If Qt is used, parameters/dash.conf are parsed in qt/bitcoin.cpp's main()
+    // If Qt is used, parameters/orin.conf are parsed in qt/bitcoin.cpp's main()
     ArgsManager& args = *Assert(node.args);
     SetupServerArgs(args);
     std::string error;
@@ -134,9 +136,10 @@ static bool AppInit(NodeContext& node, int argc, char* argv[])
     if (HelpRequested(args) || args.IsArgSet("-version")) {
         std::string strUsage = PACKAGE_NAME " version " + FormatFullVersion() + "\n";
 
-        if (!args.IsArgSet("-version")) {
-            strUsage += FormatParagraph(LicenseInfo()) + "\n"
-                "\nUsage:  dashd [options]                     Start " PACKAGE_NAME "\n"
+        if (args.IsArgSet("-version")) {
+            strUsage += FormatParagraph(LicenseInfo());
+        } else {
+            strUsage += "\nUsage:  orind [options]                     Start " PACKAGE_NAME "\n"
                 "\n";
             strUsage += args.GetHelpMessage();
         }
@@ -172,7 +175,7 @@ static bool AppInit(NodeContext& node, int argc, char* argv[])
         // Error out when loose non-argument tokens are encountered on command line
         for (int i = 1; i < argc; i++) {
             if (!IsSwitchChar(argv[i][0])) {
-                return InitError(Untranslated(strprintf("Command line contains unexpected token '%s', see dashd -h for a list of options.\n", argv[i])));
+                return InitError(Untranslated(strprintf("Command line contains unexpected token '%s', see orind -h for a list of options.\n", argv[i])));
             }
         }
 
@@ -181,7 +184,7 @@ static bool AppInit(NodeContext& node, int argc, char* argv[])
             return false;
         }
 
-        // -server defaults to true for dashd but not for the GUI so do this here
+        // -server defaults to true for orind but not for the GUI so do this here
         args.SoftSetBoolArg("-server", true);
         // Set this early so that parameter interactions go to console
         InitLogging(args);
@@ -274,7 +277,7 @@ MAIN_FUNCTION
 
     SetupEnvironment();
 
-    // Connect dashd signal handlers
+    // Connect orind signal handlers
     noui_connect();
 
     return (AppInit(node, argc, argv) ? EXIT_SUCCESS : EXIT_FAILURE);

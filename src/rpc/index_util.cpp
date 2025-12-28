@@ -1,5 +1,5 @@
 // Copyright (c) 2016 BitPay Inc.
-// Copyright (c) 2024 The Dash Core developers
+// Copyright (c) 2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,8 +14,8 @@
 
 static void EnsureAddressIndexAvailable()
 {
-    if (!fAddressIndex) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, "Address index is disabled. You should run Dash Core with -addressindex (requires reindex)");
+    if (!node::fAddressIndex) {
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Address index is disabled. You should run Orin Core with -addressindex (requires reindex)");
     }
 }
 
@@ -73,8 +73,8 @@ bool GetSpentIndex(CBlockTreeDB& block_tree_db, const CTxMemPool& mempool, const
 {
     AssertLockHeld(::cs_main);
 
-    if (!fSpentIndex) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, "Spent index is disabled. You should run Dash Core with -spentindex (requires reindex)");
+    if (!node::fSpentIndex) {
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Spent index is disabled. You should run Orin Core with -spentindex (requires reindex)");
     }
 
     if (mempool.getSpentIndex(key, value))
@@ -88,8 +88,8 @@ bool GetTimestampIndex(CBlockTreeDB& block_tree_db, const uint32_t high, const u
 {
     AssertLockHeld(::cs_main);
 
-    if (!fTimestampIndex) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, "Timestamp index is disabled. You should run Dash Core with -timestampindex (requires reindex)");
+    if (!node::fTimestampIndex) {
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Timestamp index is disabled. You should run Orin Core with -timestampindex (requires reindex)");
     }
 
     return block_tree_db.ReadTimestampIndex(high, low, hashes);

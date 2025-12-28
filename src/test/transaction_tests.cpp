@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,6 +18,7 @@
 #include <script/script_error.h>
 #include <script/signingprovider.h>
 #include <streams.h>
+#include <test/util/json.h>
 #include <test/util/transaction_utils.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -30,9 +31,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <univalue.h>
-
-// In script_tests.cpp
-UniValue read_json(const std::string& jsondata);
 
 static std::map<std::string, unsigned int> mapFlagNames = {
     {std::string("P2SH"), (unsigned int) SCRIPT_VERIFY_P2SH},
@@ -181,7 +179,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
                     break;
                 }
 
-                mapprevOutScriptPubKeys[COutPoint(uint256S(vinput[0].get_str()), vinput[1].get_int())] = ParseScript(vinput[2].get_str());
+                mapprevOutScriptPubKeys[COutPoint{uint256S(vinput[0].get_str()), uint32_t(vinput[1].getInt<int>())}] = ParseScript(vinput[2].get_str());
             }
             if (!fValid)
             {
@@ -205,7 +203,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
                 BOOST_ERROR("Bad test flags: " << strTest);
             }
 
-            if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, ~verify_flags, txdata, strTest, /* expect_valid */ true)) {
+            if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, ~verify_flags, txdata, strTest, /*expect_valid=*/true)) {
                 BOOST_ERROR("Tx unexpectedly failed: " << strTest);
             }
 
@@ -213,19 +211,19 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             for (size_t i = 0; i < mapFlagNames.size(); ++i) {
                 // Removing individual flags
                 unsigned int flags = TrimFlags(~(verify_flags | (1U << i)));
-                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /* expect_valid */ true)) {
+                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /*expect_valid=*/true)) {
                     BOOST_ERROR("Tx unexpectedly failed with flag " << ToString(i) << " unset: " << strTest);
                 }
                 // Removing random combinations of flags
                 flags = TrimFlags(~(verify_flags | (unsigned int)InsecureRandBits(mapFlagNames.size())));
-                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /* expect_valid */ true)) {
+                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /*expect_valid=*/true)) {
                     BOOST_ERROR("Tx unexpectedly failed with random flags " << ToString(flags) << ": " << strTest);
                 }
             }
 
             // Check that flags are maximal: transaction should fail if any unset flags are set.
             for (auto flags_excluding_one: ExcludeIndividualFlags(verify_flags)) {
-                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, ~flags_excluding_one, txdata, strTest, /* expect_valid */ false)) {
+                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, ~flags_excluding_one, txdata, strTest, /*expect_valid=*/false)) {
                     BOOST_ERROR("Too many flags unset: " << strTest);
                 }
             }
@@ -265,7 +263,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
                     break;
                 }
 
-                mapprevOutScriptPubKeys[COutPoint(uint256S(vinput[0].get_str()), vinput[1].get_int())] = ParseScript(vinput[2].get_str());
+                mapprevOutScriptPubKeys[COutPoint{uint256S(vinput[0].get_str()), uint32_t(vinput[1].getInt<int>())}] = ParseScript(vinput[2].get_str());
             }
             if (!fValid)
             {
@@ -287,7 +285,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
             unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
 
             // Not using FillFlags() in the main test, in order to detect invalid verifyFlags combination
-            if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, verify_flags, txdata, strTest, /* expect_valid */ false)) {
+            if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, verify_flags, txdata, strTest, /*expect_valid=*/false)) {
                 BOOST_ERROR("Tx unexpectedly passed: " << strTest);
             }
 
@@ -295,19 +293,19 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
             for (size_t i = 0; i < mapFlagNames.size(); i++) {
                 unsigned int flags = FillFlags(verify_flags | (1U << i));
                 // Adding individual flags
-                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /* expect_valid */ false)) {
+                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /*expect_valid=*/false)) {
                     BOOST_ERROR("Tx unexpectedly passed with flag " << ToString(i) << " set: " << strTest);
                 }
                 // Adding random combinations of flags
                 flags = FillFlags(verify_flags | (unsigned int)InsecureRandBits(mapFlagNames.size()));
-                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /* expect_valid */ false)) {
+                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags, txdata, strTest, /*expect_valid=*/false)) {
                     BOOST_ERROR("Tx unexpectedly passed with random flags " << ToString(flags) << ": " << strTest);
                 }
             }
 
             // Check that flags are minimal: transaction should succeed if any set flags are unset.
             for (auto flags_excluding_one: ExcludeIndividualFlags(verify_flags)) {
-                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags_excluding_one, txdata, strTest, /* expect_valid */ true)) {
+                if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, flags_excluding_one, txdata, strTest, /*expect_valid=*/true)) {
                     BOOST_ERROR("Too many flags set: " << strTest);
                 }
             }

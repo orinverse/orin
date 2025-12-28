@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,7 +15,7 @@ void initialize_descriptor_parse()
     SelectParams(CBaseChainParams::MAIN);
 }
 
-FUZZ_TARGET_INIT(descriptor_parse, initialize_descriptor_parse)
+FUZZ_TARGET(descriptor_parse, .init = initialize_descriptor_parse)
 {
     const std::string descriptor(buffer.begin(), buffer.end());
     FlatSigningProvider signing_provider;

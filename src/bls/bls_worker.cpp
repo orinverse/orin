@@ -1,10 +1,9 @@
-// Copyright (c) 2018-2024 The Dash Core developers
+// Copyright (c) 2018-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <bls/bls_worker.h>
 #include <hash.h>
-#include <serialize.h>
 
 #include <util/ranges.h>
 #include <util/system.h>
@@ -60,7 +59,7 @@ CBLSWorker::~CBLSWorker()
 void CBLSWorker::Start()
 {
     int workerCount = std::thread::hardware_concurrency() / 2;
-    workerCount = std::max(std::min(1, workerCount), 4);
+    workerCount = std::clamp(workerCount, 1, 4);
     workerPool.resize(workerCount);
     RenameThreadPool(workerPool, "bls-work");
 }

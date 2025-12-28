@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
@@ -36,9 +36,9 @@ BOOST_AUTO_TEST_CASE(run_command)
         const UniValue result = RunCommandParseJSON("echo \"{\"success\": true}\"");
 #endif
         BOOST_CHECK(result.isObject());
-        const UniValue& success = find_value(result, "success");
+        const UniValue& success = result.find_value("success");
         BOOST_CHECK(!success.isNull());
-        BOOST_CHECK_EQUAL(success.getBool(), true);
+        BOOST_CHECK_EQUAL(success.get_bool(), true);
     }
     {
         // An invalid command is handled by Boost
@@ -90,9 +90,9 @@ BOOST_AUTO_TEST_CASE(run_command)
     {
         const UniValue result = RunCommandParseJSON("cat", "{\"success\": true}");
         BOOST_CHECK(result.isObject());
-        const UniValue& success = find_value(result, "success");
+        const UniValue& success = result.find_value("success");
         BOOST_CHECK(!success.isNull());
-        BOOST_CHECK_EQUAL(success.getBool(), true);
+        BOOST_CHECK_EQUAL(success.get_bool(), true);
     }
 #endif
 }

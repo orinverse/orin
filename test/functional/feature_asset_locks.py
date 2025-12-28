@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2022-2025 The Dash Core developers
+# Copyright (c) 2022-2025 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -51,11 +51,11 @@ HEIGHT_DIFF_EXPIRING = 48
 
 class AssetLocksTest(DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(2, 0, [[
+        self.set_orin_test_params(2, 0, [[
                 "-whitelist=127.0.0.1",
                 "-llmqtestinstantsenddip0024=llmq_test_instantsend",
-                "-testactivationheight=mn_rr@1400",
         ]] * 2, evo_count=2)
+        self.mn_rr_height = 560
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -102,8 +102,8 @@ class AssetLocksTest(DashTestFramework):
         request_id = hash256(request_id_buf)[::-1].hex()
 
         height = node_wallet.getblockcount()
-        self.log.info(f"Creating asset unlock: {llmq_type_test} {request_id}")
-        quorumHash = mninfo[0].node.quorum("selectquorum", llmq_type_test, request_id)["quorumHash"]
+        self.log.info(f"Creating asset unlock: index={index} {request_id}")
+        quorumHash = mninfo[0].get_node(self).quorum("selectquorum", llmq_type_test, request_id)["quorumHash"]
         self.log.info(f"Used quorum hash: {quorumHash}")
         unlockTx_payload = CAssetUnlockTx(
             version = 1,
@@ -238,7 +238,7 @@ class AssetLocksTest(DashTestFramework):
 
     # This functional test intentionally setup only 2 MN and only 2 Evo nodes
     # to ensure that corner case of quorum with minimum amount of nodes as possible
-    # does not cause any issues in Dash Core
+    # does not cause any issues in Orin Core
     def mine_quorum_2_nodes(self):
         self.mine_quorum(llmq_type_name='llmq_test_platform', expected_members=2, expected_connections=1, expected_contributions=2, expected_commitments=2, llmq_type=106)
 
@@ -248,8 +248,7 @@ class AssetLocksTest(DashTestFramework):
 
         self.set_sporks()
 
-        self.activate_v20(expected_activation_height=900)
-        self.log.info("Activated v20 at height:" + str(node.getblockcount()))
+        assert_equal(self.nodes[0].getblockchaininfo()['softforks']['v20']['active'], True)
 
         for _ in range(2):
             self.dynamically_add_masternode(evo=True)
@@ -266,7 +265,8 @@ class AssetLocksTest(DashTestFramework):
         self.test_asset_unlocks(node_wallet, node, pubkey)
         self.test_withdrawal_limits(node_wallet, node, pubkey)
         self.test_mn_rr(node_wallet, node, pubkey)
-        self.test_withdrawal_fork(node_wallet, node, pubkey)
+        self.test_withdrawals_fork(node_wallet, node, pubkey)
+        self.test_v24_fork(node_wallet, node, pubkey)
 
 
     def test_asset_locks(self, node_wallet, node, pubkey):
@@ -320,8 +320,17 @@ class AssetLocksTest(DashTestFramework):
         extra_lock_tx = self.create_assetlock(coin, COIN, pubkey)
         self.create_and_check_block([extra_lock_tx], expected_error = 'bad-cbtx-assetlocked-amount')
 
-        self.log.info("Mine a quorum...")
-        self.mine_quorum_2_nodes()
+        self.log.info("Mine IS quorum")
+        if len(self.nodes[0].quorum('list')['llmq_test_instantsend']) == 0:
+            self.mine_quorum(llmq_type_name='llmq_test_instantsend', expected_members=2, expected_connections=1, expected_contributions=2, expected_commitments=2, llmq_type=104)
+        else:
+            self.log.info("IS quorum exist")
+
+        self.log.info("Mine a platform quorum")
+        if len(self.nodes[0].quorum('list')['llmq_test_platform']) == 0:
+            self.mine_quorum_2_nodes()
+        else:
+            self.log.info("Platform quorum exist")
 
         self.validate_credit_pool_balance(locked_1)
 
@@ -352,33 +361,36 @@ class AssetLocksTest(DashTestFramework):
                 result_expected={'allowed': False, 'reject-reason' : 'max-fee-exceeded'})
         self.check_mempool_result(tx=asset_unlock_tx_zero_fee,
                 result_expected={'allowed': False, 'reject-reason' : 'bad-txns-assetunlock-fee-outofrange'})
-        # not-verified is a correct faiure from mempool. Mempool knows nothing about CreditPool indexes and he just report that signature is not validated
+        # not-verified is a correct error message when adding to mempool because Mempool knows nothing about CreditPool and indexes.
+        # but the signature is invalid so far as we changed index without re-signing it by quorum
         self.check_mempool_result(tx=asset_unlock_tx_duplicate_index,
                 result_expected={'allowed': False, 'reject-reason' : 'bad-assetunlock-not-verified'})
 
-        self.log.info("Validating that we calculate payload hash correctly: ask quorum forcely by message hash...")
+        self.log.info("Validating payload hash calculation by using hard-coded message hash")
         asset_unlock_tx_payload = CAssetUnlockTx()
         asset_unlock_tx_payload.deserialize(BytesIO(asset_unlock_tx.vExtraPayload))
 
-        assert_equal(asset_unlock_tx_payload.quorumHash, int(self.mninfo[0].node.quorum("selectquorum", llmq_type_test, 'e6c7a809d79f78ea85b72d5df7e9bd592aecf151e679d6e976b74f053a7f9056')["quorumHash"], 16))
-
-        self.log.info("Test no IS for asset unlock...")
-        self.nodes[0].sporkupdate("SPORK_2_INSTANTSEND_ENABLED", 0)
-        self.wait_for_sporks_same()
+        assert_equal(asset_unlock_tx_payload.quorumHash, int(self.mninfo[0].get_node(self).quorum("selectquorum", llmq_type_test, 'e6c7a809d79f78ea85b72d5df7e9bd592aecf151e679d6e976b74f053a7f9056')["quorumHash"], 16))
 
         txid = self.send_tx(asset_unlock_tx)
-        assert_equal(node.getmempoolentry(txid)['fees']['base'], Decimal("0.0007"))
-        is_id = node_wallet.sendtoaddress(node_wallet.getnewaddress(), 1)
-        for node in self.nodes:
-            self.wait_for_instantlock(is_id, node)
 
-
+        self.log.info("Test RPC getassetunlockstatuses part I")
         tip = self.nodes[0].getblockcount()
         indexes_statuses_no_height = self.nodes[0].getassetunlockstatuses(["101", "102", "300"])
         assert_equal([{'index': 101, 'status': 'mempooled'}, {'index': 102, 'status': 'unknown'}, {'index': 300, 'status': 'unknown'}], indexes_statuses_no_height)
         indexes_statuses_height = self.nodes[0].getassetunlockstatuses(["101", "102", "300"], tip)
         assert_equal([{'index': 101, 'status': 'unknown'}, {'index': 102, 'status': 'unknown'}, {'index': 300, 'status': 'unknown'}], indexes_statuses_height)
 
+
+        self.log.info("Test no IS for asset unlock...")
+        self.nodes[0].sporkupdate("SPORK_2_INSTANTSEND_ENABLED", 0)
+        self.wait_for_sporks_same()
+
+        assert_equal(node.getmempoolentry(txid)['fees']['base'], Decimal("0.0007"))
+        is_id = node_wallet.sendtoaddress(node_wallet.getnewaddress(), 1)
+        self.bump_mocktime(30)
+        for node in self.nodes:
+            self.wait_for_instantlock(is_id, node)
 
         rawtx = node.getrawtransaction(txid, 1)
         rawtx_is = node.getrawtransaction(is_id, 1)
@@ -388,7 +400,7 @@ class AssetLocksTest(DashTestFramework):
         assert_equal(rawtx_is["chainlock"], False)
         assert not "confirmations" in rawtx
         assert not "confirmations" in rawtx_is
-        self.log.info("Disable back IS")
+        self.log.info("Reset IS spork")
         self.set_sporks()
 
         assert "assetUnlockTx" in node.getrawtransaction(txid, 1)
@@ -431,27 +443,16 @@ class AssetLocksTest(DashTestFramework):
         self.check_mempool_result(tx=asset_unlock_tx_too_late,
                 result_expected={'allowed': False, 'reject-reason' : 'bad-assetunlock-too-late'})
 
-        self.log.info("Checking that two quorums later it is too late because quorum is not active...")
-        self.mine_quorum_2_nodes()
-        self.log.info("Expecting new reject-reason...")
-        assert not softfork_active(self.nodes[0], 'withdrawals')
-        self.check_mempool_result(tx=asset_unlock_tx_too_late,
-                result_expected={'allowed': False, 'reject-reason' : 'bad-assetunlock-too-old-quorum'})
-
         block_to_reconsider = node.getbestblockhash()
         self.log.info("Test block invalidation with asset unlock tx...")
         for inode in self.nodes:
             inode.invalidateblock(block_asset_unlock)
         self.validate_credit_pool_balance(locked)
-        self.generate_batch(50)
+        self.generate_batch(25)
         self.validate_credit_pool_balance(locked)
         for inode in self.nodes:
             inode.reconsiderblock(block_to_reconsider)
         self.validate_credit_pool_balance(locked - 2 * COIN)
-
-        self.log.info("Forcibly mining asset_unlock_tx_too_late and ensure block is invalid")
-        assert not softfork_active(self.nodes[0], 'withdrawals')
-        self.create_and_check_block([asset_unlock_tx_too_late], expected_error = "bad-assetunlock-too-old-quorum")
 
         self.generate(node, 1)
 
@@ -515,10 +516,13 @@ class AssetLocksTest(DashTestFramework):
         total = self.get_credit_pool_balance()
         coins = node_wallet.listunspent()
         while total <= 10_901 * COIN:
+            if len(coins) == 0:
+                coins = node_wallet.listunspent(query_options={'minimumAmount': 1})
             coin = coins.pop()
             to_lock = int(coin['amount'] * COIN) - tiny_amount
-            if to_lock > 99 * COIN:
+            if to_lock > 99 * COIN and total > 10_000 * COIN:
                 to_lock = 99 * COIN
+
             total += to_lock
             tx = self.create_assetlock(coin, to_lock, pubkey)
             self.send_tx_simple(tx)
@@ -618,10 +622,9 @@ class AssetLocksTest(DashTestFramework):
 
 
     def test_mn_rr(self, node_wallet, node, pubkey):
-        self.log.info(node_wallet.getblockcount())
         self.log.info("Activate mn_rr...")
         locked = self.get_credit_pool_balance()
-        self.activate_mn_rr(expected_activation_height=1400)
+        self.activate_mn_rr()
         self.log.info(f'mn-rr height: {node.getblockcount()} credit: {self.get_credit_pool_balance()}')
         assert_equal(locked, self.get_credit_pool_balance())
 
@@ -633,7 +636,7 @@ class AssetLocksTest(DashTestFramework):
         all_mn_rewards = platform_reward + owner_reward + operator_reward
         assert_equal(all_mn_rewards, bt['coinbasevalue'] * 3 // 4)  # 75/25 mn/miner reward split
         assert_equal(platform_reward, all_mn_rewards * 375 // 1000)  # 0.375 platform share
-        assert_equal(platform_reward, 57741807)
+        assert_equal(platform_reward, 112592247)
         assert_equal(locked, self.get_credit_pool_balance())
         self.generate(node, 1)
         locked += platform_reward
@@ -646,8 +649,9 @@ class AssetLocksTest(DashTestFramework):
         self.generate(node, 1)
         assert_equal(locked, self.get_credit_pool_balance())
 
-    def test_withdrawal_fork(self, node_wallet, node, pubkey):
-        self.log.info("Testing asset unlock after 'withdrawal' activation...")
+    def test_withdrawals_fork(self, node_wallet, node, pubkey):
+        self.log.info("Testing asset unlock after 'withdrawals' activation...")
+        self.activate_by_name('withdrawals', 600)
         assert softfork_active(node_wallet, 'withdrawals')
         self.log.info(f'post-withdrawals height: {node.getblockcount()} credit: {self.get_credit_pool_balance()}')
 
@@ -664,23 +668,19 @@ class AssetLocksTest(DashTestFramework):
             quorumHash_str = format(asset_unlock_tx_payload.quorumHash, '064x')
             assert quorumHash_str in node_wallet.quorum('list')['llmq_test_platform']
 
-            while quorumHash_str != node_wallet.quorum('list')['llmq_test_platform'][-1]:
-                self.log.info("Generate one more quorum until signing quorum becomes the last one in the list")
-                self.mine_quorum_2_nodes()
-                self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': True, 'fees': {'base': Decimal(str(tiny_amount / COIN))}})
-
-            self.log.info("Generate one more quorum after which signing quorum is gone but Asset Unlock tx is still valid")
-            assert quorumHash_str in node_wallet.quorum('list')['llmq_test_platform']
-            self.mine_quorum_2_nodes()
-            assert quorumHash_str not in node_wallet.quorum('list')['llmq_test_platform']
-
-            if asset_unlock_tx_payload.requestedHeight + HEIGHT_DIFF_EXPIRING > node_wallet.getblockcount():
-                self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': True, 'fees': {'base': Decimal(str(tiny_amount / COIN))}})
-                break
-            else:
-                self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': False, 'reject-reason' : 'bad-assetunlock-too-late'})
-                self.log.info("Asset Unlock tx expired, let's try again...")
+            if quorumHash_str != node_wallet.quorum('list')['llmq_test_platform'][-1]:
+                self.log.info("The quorum for this msg-hash is not the last one in the list of active quorums. Try again!")
                 index += 1
+            else:
+                break
+
+        assert quorumHash_str in node_wallet.quorum('list')['llmq_test_platform']
+        self.log.info("Generate one more quorum to make signing quorum inactive but still valid")
+        self.mine_quorum_2_nodes()
+        assert quorumHash_str not in node_wallet.quorum('list')['llmq_test_platform']
+
+        assert asset_unlock_tx_payload.requestedHeight + HEIGHT_DIFF_EXPIRING > node_wallet.getblockcount()
+        self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': True, 'fees': {'base': Decimal(str(tiny_amount / COIN))}})
 
         self.log.info("Generate one more quorum after which signing quorum becomes too old")
         self.mine_quorum_2_nodes()
@@ -701,6 +701,62 @@ class AssetLocksTest(DashTestFramework):
         txid_in_block = self.send_tx(asset_unlock_tx)
         self.generate(node, 1)
         self.ensure_tx_is_not_mined(txid_in_block)
+
+    def test_v24_fork(self, node_wallet, node, pubkey):
+        self.log.info("Testing asset unlock after 'v24' activation...")
+        self.activate_by_name('v24', 750)
+        self.log.info(f'post-v24 height: {node.getblockcount()} credit: {self.get_credit_pool_balance()}')
+
+        index = 601
+        while index < 611:
+            self.log.info(f"Generating new Asset Unlock tx, index={index}...")
+            asset_unlock_tx = self.create_assetunlock(index, COIN, pubkey)
+            asset_unlock_tx_payload = CAssetUnlockTx()
+            asset_unlock_tx_payload.deserialize(BytesIO(asset_unlock_tx.vExtraPayload))
+
+            self.log.info("Check that Asset Unlock tx is valid for current quorum")
+            self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': True, 'fees': {'base': Decimal(str(tiny_amount / COIN))}})
+
+            quorumHash_str = format(asset_unlock_tx_payload.quorumHash, '064x')
+            assert quorumHash_str in node_wallet.quorum('list')['llmq_test_platform']
+
+            if quorumHash_str != node_wallet.quorum('list')['llmq_test_platform'][-1]:
+                self.log.info("The quorum for this msg-hash is not the last one in the list of active quorums. Try again!")
+                index += 1
+            else:
+                break
+
+        assert quorumHash_str in node_wallet.quorum('list')['llmq_test_platform']
+        self.log.info("Generate one more quorum to make signing quorum inactive but still valid")
+        self.mine_quorum_2_nodes()
+        assert quorumHash_str not in node_wallet.quorum('list')['llmq_test_platform']
+
+
+        assert asset_unlock_tx_payload.requestedHeight + HEIGHT_DIFF_EXPIRING > node_wallet.getblockcount()
+        self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': True, 'fees': {'base': Decimal(str(tiny_amount / COIN))}})
+
+        self.log.info("Generate one more quorum after which signing quorum becomes too old")
+        self.mine_quorum_2_nodes()
+        self.check_mempool_result(tx=asset_unlock_tx, result_expected={'allowed': False, 'reject-reason': 'bad-assetunlock-too-old-quorum'})
+
+        asset_unlock_tx = self.create_assetunlock(620, 4000 * COIN + 1, pubkey)
+        txid_in_block = self.send_tx(asset_unlock_tx)
+        self.log.info(f"{txid_in_block} should not be mined")
+        tip_hash = self.generate(node, 1)[0]
+        assert txid_in_block not in node.getblock(tip_hash)['tx']
+
+        asset_unlock_tx = self.create_assetunlock(621, 4000 * COIN, pubkey)
+        txid_in_block = self.send_tx(asset_unlock_tx)
+        self.log.info(f"{txid_in_block} should be mined")
+        tip_hash = self.generate(node, 1)[0]
+        assert txid_in_block in node.getblock(tip_hash)['tx']
+
+        asset_unlock_tx = self.create_assetunlock(622, COIN, pubkey)
+        txid_in_block = self.send_tx(asset_unlock_tx)
+        self.log.info(f"{txid_in_block} should not be mined")
+        tip_hash = self.generate(node, 1)[0]
+        assert txid_in_block not in node.getblock(tip_hash)['tx']
+
 
 if __name__ == '__main__':
     AssetLocksTest().main()

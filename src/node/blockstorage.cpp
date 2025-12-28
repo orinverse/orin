@@ -8,14 +8,10 @@
 #include <chainparams.h>
 #include <clientversion.h>
 #include <consensus/validation.h>
-#include <dsnotificationinterface.h>
-#include <evo/deterministicmns.h>
 #include <flatfile.h>
 #include <fs.h>
 #include <hash.h>
-#include <masternode/node.h>
 #include <pow.h>
-#include <reverse_iterator.h>
 #include <shutdown.h>
 #include <streams.h>
 #include <undo.h>
@@ -24,8 +20,10 @@
 #include <walletinitinterface.h>
 
 #include <map>
+#include <ranges>
 #include <unordered_map>
 
+namespace node {
 std::atomic_bool fImporting(false);
 std::atomic_bool fReindex(false);
 bool fPruneMode = false;
@@ -244,7 +242,7 @@ void BlockManager::FindFilesToPrune(std::set<int>& setFilesToPrune, uint64_t nPr
         }
     }
 
-    LogPrint(BCLog::PRUNE, "Prune: target=%dMiB actual=%dMiB diff=%dMiB max_prune_height=%d removed %d blk/rev pairs\n",
+    LogPrint(BCLog::PRUNE, "target=%dMiB actual=%dMiB diff=%dMiB max_prune_height=%d removed %d blk/rev pairs\n",
            nPruneTarget/1024/1024, nCurrentUsage/1024/1024,
            ((int64_t)nPruneTarget - (int64_t)nCurrentUsage)/1024/1024,
            nLastBlockWeCanPrune, count);
@@ -410,7 +408,7 @@ const CBlockIndex* BlockManager::GetLastCheckpoint(const CCheckpointData& data)
 {
     const MapCheckpoints& checkpoints = data.mapCheckpoints;
 
-    for (const MapCheckpoints::value_type& i : reverse_iterate(checkpoints)) {
+    for (const MapCheckpoints::value_type& i : checkpoints | std::views::reverse) {
         const uint256& hash = i.second;
         const CBlockIndex* pindex = LookupBlockIndex(hash);
         if (pindex) {
@@ -479,11 +477,6 @@ void CleanupBlockRevFiles()
     }
 }
 
-std::string CBlockFileInfo::ToString() const
-{
-    return strprintf("CBlockFileInfo(blocks=%u, size=%u, heights=%u...%u, time=%s...%s)", nBlocks, nSize, nHeightFirst, nHeightLast, FormatISO8601Date(nTimeFirst), FormatISO8601Date(nTimeLast));
-}
-
 CBlockFileInfo* BlockManager::GetBlockFileInfo(size_t n)
 {
     LOCK(cs_LastBlockFile);
@@ -512,7 +505,7 @@ static bool UndoWriteToDisk(const CBlockUndo& blockundo, FlatFilePos& pos, const
     fileout << blockundo;
 
     // calculate & write checksum
-    CHashWriter hasher(SER_GETHASH, PROTOCOL_VERSION);
+    HashWriter hasher{};
     hasher << hashBlock;
     hasher << blockundo;
     fileout << hasher.GetHash();
@@ -829,8 +822,7 @@ struct CImportingNow {
     }
 };
 
-void ThreadImport(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CDSNotificationInterface& dsnfi,
-                  std::vector<fs::path> vImportFiles, CActiveMasternodeManager* const mn_activeman, const ArgsManager& args)
+void ThreadImport(ChainstateManager& chainman, std::vector<fs::path> vImportFiles, const ArgsManager& args)
 {
     ScheduleBatchPriority();
 
@@ -903,30 +895,6 @@ void ThreadImport(ChainstateManager& chainman, CDeterministicMNManager& dmnman, 
         }
     } // End scope of CImportingNow
 
-    // force UpdatedBlockTip to initialize nCachedBlockHeight for DS, MN payments and budgets
-    // but don't call it directly to prevent triggering of other listeners like zmq etc.
-    // GetMainSignals().UpdatedBlockTip(::ChainActive().Tip());
-    dsnfi.InitializeCurrentBlockTip();
-
-    {
-        // Get all UTXOs for each MN collateral in one go so that we can fill coin cache early
-        // and reduce further locking overhead for cs_main in other parts of code including GUI
-        LogPrintf("Filling coin cache with masternode UTXOs...\n");
-        LOCK(cs_main);
-        const auto start{SteadyClock::now()};
-        auto mnList = dmnman.GetListAtChainTip();
-        mnList.ForEachMN(false, [&](auto& dmn) {
-            Coin coin;
-            GetUTXOCoin(chainman.ActiveChainstate(), dmn.collateralOutpoint, coin);
-        });
-        LogPrintf("Filling coin cache with masternode UTXOs: done in %dms\n", Ticks<std::chrono::milliseconds>(SteadyClock::now() - start));
-    }
-
-    if (mn_activeman != nullptr) {
-        mn_activeman->Init(chainman.ActiveTip());
-    }
-
-    g_wallet_init_interface.AutoLockMasternodeCollaterals();
-
     chainman.ActiveChainstate().LoadMempool(args);
 }
+} // namespace node

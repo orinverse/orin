@@ -1,11 +1,10 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <masternode/payments.h>
 
 #include <chain.h>
-#include <chainparams.h>
 #include <consensus/amount.h>
 #include <deploymentstatus.h>
 #include <evo/deterministicmns.h>
@@ -41,7 +40,9 @@ CAmount PlatformShare(const CAmount reward)
     bool fV20Active = DeploymentActiveAfter(pindexPrev, m_consensus_params, Consensus::DEPLOYMENT_V20);
     CAmount masternodeReward = GetMasternodePayment(nBlockHeight, blockSubsidy + feeReward, fV20Active);
 
-    if (DeploymentActiveAfter(pindexPrev, m_consensus_params, Consensus::DEPLOYMENT_MN_RR)) {
+    // Credit Pool doesn't exist before V20. If any part of reward will re-allocated to credit pool before v20
+    // activation these fund will be just permanently lost. Applicable for devnets, regtest, testnet
+    if (fV20Active && DeploymentActiveAfter(pindexPrev, m_consensus_params, Consensus::DEPLOYMENT_MN_RR)) {
         CAmount masternodeSubsidyReward = GetMasternodePayment(nBlockHeight, blockSubsidy, fV20Active);
         const CAmount platformReward = PlatformShare(masternodeSubsidyReward);
         masternodeReward -= platformReward;
@@ -126,12 +127,12 @@ CAmount PlatformShare(const CAmount reward)
         if (!found) {
             std::string str_payout;
             if (CTxDestination dest; ExtractDestination(txout.scriptPubKey, dest)) {
-                str_payout = EncodeDestination(dest);
+                str_payout = "address=" + EncodeDestination(dest);
             } else {
-                str_payout = HexStr(txout.scriptPubKey);
+                str_payout = "scriptPubKey=" + HexStr(txout.scriptPubKey);
             }
-            LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Failed to find expected payee %s in block at height %s\n",
-                      __func__, str_payout, nBlockHeight);
+            LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Failed to find expected payee %s amount=%lld height=%d\n",
+                      __func__, str_payout, txout.nValue, nBlockHeight);
             return false;
         }
     }
@@ -185,7 +186,7 @@ CAmount PlatformShare(const CAmount reward)
 *   Determine if coinbase outgoing created money is the correct value
 *
 *   Why is this needed?
-*   - In Dash some blocks are superblocks, which output much higher amounts of coins
+*   - In Orin some blocks are superblocks, which output much higher amounts of coins
 *   - Other blocks are 10% lower in outgoing value, so in total, no extra coins are created
 *   - When non-superblocks are detected, the normal schedule should be maintained
 */

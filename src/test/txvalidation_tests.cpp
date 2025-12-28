@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 The Bitcoin Core developers
+// Copyright (c) 2017-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -17,7 +17,7 @@
 
 struct TestChain100NoDIP0001Setup : public TestChain100Setup {
     TestChain100NoDIP0001Setup()
-        : TestChain100Setup{{"-testactivationheight=dip0001@2000"}} {}
+        : TestChain100Setup{CBaseChainParams::REGTEST, {"-testactivationheight=dip0001@2000"}} {}
 };
 
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,10 +18,12 @@ class CBlockPolicyEstimator;
 class CConnman;
 class CCreditPoolManager;
 class CDeterministicMNManager;
+class CDSTXManager;
 class CChainstateHelper;
 class ChainstateManager;
 class CEvoDB;
 class CGovernanceManager;
+class CJWalletManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
 class CNetFulfilledRequestManager;
@@ -31,7 +33,7 @@ class CTxMemPool;
 class CMNHFManager;
 class NetGroupManager;
 class PeerManager;
-struct CJContext;
+struct ActiveContext;
 struct LLMQContext;
 
 namespace interfaces {
@@ -44,6 +46,7 @@ class Loader;
 } // namspace CoinJoin
 } // namespace interfaces
 
+namespace node {
 //! NodeContext struct containing references to chain state and connection
 //! state.
 //!
@@ -75,19 +78,22 @@ struct NodeContext {
     std::unique_ptr<interfaces::CoinJoin::Loader> coinjoin_loader{nullptr};
     std::unique_ptr<CScheduler> scheduler;
     std::function<void()> rpc_interruption_point = [] {};
-    //! Dash
+    //! Orin managers
     std::unique_ptr<CActiveMasternodeManager> mn_activeman;
     std::unique_ptr<CCreditPoolManager> cpoolman;
+    std::unique_ptr<CJWalletManager> cj_walletman;
+    std::unique_ptr<CDSTXManager> dstxman;
     std::unique_ptr<CEvoDB> evodb;
     std::unique_ptr<CChainstateHelper> chain_helper;
     std::unique_ptr<CDeterministicMNManager> dmnman;
     std::unique_ptr<CGovernanceManager> govman;
-    std::unique_ptr<CJContext> cj_ctx;
     std::unique_ptr<CMasternodeMetaMan> mn_metaman;
     std::unique_ptr<CMasternodeSync> mn_sync;
     std::unique_ptr<CMNHFManager> mnhf_manager;
     std::unique_ptr<CNetFulfilledRequestManager> netfulfilledman;
     std::unique_ptr<CSporkManager> sporkman;
+    //! Orin contexts
+    std::unique_ptr<ActiveContext> active_ctx;
     std::unique_ptr<LLMQContext> llmq_ctx;
 
     //! Declare default constructor and destructor that are not inline, so code
@@ -96,5 +102,6 @@ struct NodeContext {
     NodeContext();
     ~NodeContext();
 };
+} // namespace node
 
 #endif // BITCOIN_NODE_CONTEXT_H

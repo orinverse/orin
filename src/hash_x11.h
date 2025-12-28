@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -21,7 +21,7 @@
 #include <uint256.h>
 
 
-/* ----------- Dash Hash ------------------------------------------------ */
+/* ----------- Orin Hash ------------------------------------------------ */
 template <typename T1>
 inline uint256 HashX11(const T1 pbegin, const T1 pend)
 
@@ -37,7 +37,7 @@ inline uint256 HashX11(const T1 pbegin, const T1 pend)
     sph_shavite512_context ctx_shavite;
     sph_simd512_context ctx_simd;
     sph_echo512_context ctx_echo;
-    static unsigned char pblank[1];
+    static const unsigned char pblank[1]{};
 
     uint512 hash[11];
 

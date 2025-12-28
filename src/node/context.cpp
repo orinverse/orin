@@ -6,7 +6,8 @@
 
 #include <addrman.h>
 #include <banman.h>
-#include <coinjoin/context.h>
+#include <coinjoin/coinjoin.h>
+#include <coinjoin/walletman.h>
 #include <evo/chainhelper.h>
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
@@ -16,6 +17,7 @@
 #include <interfaces/chain.h>
 #include <interfaces/coinjoin.h>
 #include <llmq/context.h>
+#include <masternode/active/context.h>
 #include <masternode/meta.h>
 #include <masternode/node.h>
 #include <masternode/sync.h>
@@ -29,5 +31,7 @@
 #include <txmempool.h>
 #include <validation.h>
 
-NodeContext::NodeContext() {}
-NodeContext::~NodeContext() {}
+namespace node {
+NodeContext::NodeContext() = default;
+NodeContext::~NodeContext() = default;
+} // namespace node

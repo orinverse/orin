@@ -1,5 +1,5 @@
 // Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -41,12 +41,12 @@ static const int TOOLTIP_WRAP_THRESHOLD = 80;
 /* Number of frames in spinner animation */
 #define SPINNER_FRAMES 90
 
-#define QAPP_ORG_NAME "Dash"
-#define QAPP_ORG_DOMAIN "dash.org"
-#define QAPP_APP_NAME_DEFAULT "Dash-Qt"
-#define QAPP_APP_NAME_TESTNET "Dash-Qt-testnet"
-#define QAPP_APP_NAME_DEVNET "Dash-Qt-%s"
-#define QAPP_APP_NAME_REGTEST "Dash-Qt-regtest"
+#define QAPP_ORG_NAME "Orin"
+#define QAPP_ORG_DOMAIN "orin.org"
+#define QAPP_APP_NAME_DEFAULT "Orin-Qt"
+#define QAPP_APP_NAME_TESTNET "Orin-Qt-testnet"
+#define QAPP_APP_NAME_DEVNET "Orin-Qt-%s"
+#define QAPP_APP_NAME_REGTEST "Orin-Qt-regtest"
 
 /* One gigabyte (GB) in bytes */
 static constexpr uint64_t GB_BYTES{1000000000};

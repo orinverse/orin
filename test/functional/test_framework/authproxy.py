@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with this software; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-"""HTTP proxy for opening RPC connection to dashd.
+"""HTTP proxy for opening RPC connection to orind.
 
 AuthServiceProxy has the following improvements over python-jsonrpc's
 ServiceProxy class:
@@ -59,7 +59,7 @@ class JSONRPCException(Exception):
         self.http_status = http_status
 
 
-def EncodeDecimal(o):
+def serialization_fallback(o):
     if isinstance(o, decimal.Decimal):
         return str(o)
     raise TypeError(repr(o) + " is not JSON serializable")
@@ -74,7 +74,8 @@ class AuthServiceProxy():
         self.ensure_ascii = ensure_ascii  # can be toggled on the fly by tests
         self.__url = urllib.parse.urlparse(service_url)
         user = None if self.__url.username is None else self.__url.username.encode('utf8')
-        passwd = None if self.__url.password is None else self.__url.password.encode('utf8')
+        # v0.12.1.x and lower used URL unsafe Base64 for their passwords, quote it
+        passwd = None if self.__url.password is None else urllib.parse.unquote(self.__url.password).encode('utf8')
         authpair = user + b':' + passwd
         self.__auth_header = b'Basic ' + base64.b64encode(authpair)
         # clamp the socket timeout, since larger values can cause an
@@ -125,19 +126,21 @@ class AuthServiceProxy():
         log.debug("-{}-> {} {}".format(
             AuthServiceProxy.__id_count,
             self._service_name,
-            json.dumps(args or argsn, default=EncodeDecimal, ensure_ascii=self.ensure_ascii),
+            json.dumps(args or argsn, default=serialization_fallback, ensure_ascii=self.ensure_ascii),
         ))
         if args and argsn:
             params = dict(args=args, **argsn)
         else:
             params = args or argsn
+            # v0.12.2.x and lower cannot make sense of objects, only arrays. If passing no arguments, use array.
+            params = [] if len(params) == 0 and isinstance(params, dict) else params
         return {'version': '1.1',
                 'method': self._service_name,
                 'params': params,
                 'id': AuthServiceProxy.__id_count}
 
     def __call__(self, *args, **argsn):
-        postdata = json.dumps(self.get_request(*args, **argsn), default=EncodeDecimal, ensure_ascii=self.ensure_ascii)
+        postdata = json.dumps(self.get_request(*args, **argsn), default=serialization_fallback, ensure_ascii=self.ensure_ascii)
         response, status = self._request('POST', self.__url.path, postdata.encode('utf-8'))
         if response['error'] is not None:
             raise JSONRPCException(response['error'], status)
@@ -151,7 +154,7 @@ class AuthServiceProxy():
             return response['result']
 
     def batch(self, rpc_call_list):
-        postdata = json.dumps(list(rpc_call_list), default=EncodeDecimal, ensure_ascii=self.ensure_ascii)
+        postdata = json.dumps(list(rpc_call_list), default=serialization_fallback, ensure_ascii=self.ensure_ascii)
         log.debug("--> " + postdata)
         response, status = self._request('POST', self.__url.path, postdata.encode('utf-8'))
         if status != HTTPStatus.OK:
@@ -184,7 +187,7 @@ class AuthServiceProxy():
         response = json.loads(responsedata, parse_float=decimal.Decimal)
         elapsed = time.time() - req_start_time
         if "error" in response and response["error"] is None:
-            log.debug("<-%s- [%.6f] %s" % (response["id"], elapsed, json.dumps(response["result"], default=EncodeDecimal, ensure_ascii=self.ensure_ascii)))
+            log.debug("<-%s- [%.6f] %s" % (response["id"], elapsed, json.dumps(response["result"], default=serialization_fallback, ensure_ascii=self.ensure_ascii)))
         else:
             log.debug("<-- [%.6f] %s" % (elapsed, responsedata))
         return response, http_response.status

@@ -18,14 +18,13 @@ from subprocess import check_output
 
 EXCLUDED_DIRS = ["depends/patches/",
                  "contrib/guix/patches/",
+                 "src/crypto/x11/",
                  "src/leveldb/",
                  "src/crc32c/",
                  "src/secp256k1/",
                  "src/minisketch/",
-                 "src/univalue/",
-                 "src/dashbls/",
+                 "src/orinbls/",
                  "src/immer/",
-                 "src/util/expected.h",
                  "doc/release-notes/",
                  "src/qt/locale"]
 
@@ -101,6 +100,8 @@ def main():
             commit_range = merge_base + "..HEAD"
     else:
         commit_range = os.getenv("COMMIT_RANGE")
+        if commit_range == "SKIP_EMPTY_NOT_A_PR":
+            sys.exit(0)
 
     whitespace_selection = []
     tab_selection = []

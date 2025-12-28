@@ -1,6 +1,6 @@
-# Support for Output Descriptors in Dash Core
+# Support for Output Descriptors in Orin Core
 
-Since Dash Core v0.17, there is support for Output Descriptors. This is a
+Since Orin Core v0.17, there is support for Output Descriptors. This is a
 simple language which can be used to describe collections of output scripts.
 Supporting RPCs are:
 - `scantxoutset` takes as input descriptors to scan for, and also reports
@@ -73,7 +73,8 @@ Descriptors consist of several types of expressions. The top level expression is
     - Followed by zero or more `/NUM` unhardened and `/NUM'` hardened BIP32 derivation steps.
     - Optionally followed by a single `/*` or `/*'` final step to denote all (direct) unhardened or hardened children.
     - The usage of hardened derivation steps requires providing the private key.
-- Anywhere a `'` suffix is permitted to denote hardened derivation, the suffix `h` can be used instead.
+
+(Anywhere a `'` suffix is permitted to denote hardened derivation, the suffix `h` can be used instead.)
 
 `ADDR` expressions are any type of supported address:
 - P2PKH addresses (base58, of the form `X...`). Note that P2PKH addresses in descriptors cannot be used for P2PK outputs (use the `pk` function instead).
@@ -223,7 +224,7 @@ while the other two are public keys.
 ### Compatibility with old wallets
 
 In order to easily represent the sets of scripts currently supported by
-existing Dash Core wallets, a convenience function `combo` is
+existing Orin Core wallets, a convenience function `combo` is
 provided, which takes as input a public key, and describes a set of P2PK and
 P2PKH scripts for that key.
 
@@ -239,7 +240,7 @@ be detected in descriptors up to 501 characters, and up to 3 errors in longer
 ones. For larger numbers of errors, or other types of errors, there is a
 roughly 1 in a trillion chance of not detecting the errors.
 
-All RPCs in Dash Core will include the checksum in their output. Only
+All RPCs in Orin Core will include the checksum in their output. Only
 certain RPCs require checksums on input, including `deriveaddress` and
 `importmulti`. The checksum for a descriptor without one can be computed
 using the `getdescriptorinfo` RPC.

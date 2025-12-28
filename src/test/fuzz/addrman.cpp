@@ -28,7 +28,7 @@ const BasicTestingSetup* g_setup;
 
 int32_t GetCheckRatio()
 {
-    return std::clamp<int32_t>(g_setup->m_node.args->GetArg("-checkaddrman", 0), 0, 1000000);
+    return std::clamp<int32_t>(g_setup->m_node.args->GetIntArg("-checkaddrman", 0), 0, 1000000);
 }
 } // namespace
 
@@ -45,7 +45,7 @@ void initialize_addrman()
     return NetGroupManager(asmap);
 }
 
-FUZZ_TARGET_INIT(data_stream_addr_man, initialize_addrman)
+FUZZ_TARGET(data_stream_addr_man, .init = initialize_addrman)
 {
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};
     CDataStream data_stream = ConsumeDataStream(fuzzed_data_provider);
@@ -232,7 +232,7 @@ public:
     }
 };
 
-FUZZ_TARGET_INIT(addrman, initialize_addrman)
+FUZZ_TARGET(addrman, .init = initialize_addrman)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     SetMockTime(ConsumeTime(fuzzed_data_provider));
@@ -250,7 +250,7 @@ FUZZ_TARGET_INIT(addrman, initialize_addrman)
         }
     }
     AddrManDeterministic& addr_man = *addr_man_ptr;
-    while (fuzzed_data_provider.ConsumeBool()) {
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
         CallOneOf(
             fuzzed_data_provider,
             [&] {
@@ -264,47 +264,28 @@ FUZZ_TARGET_INIT(addrman, initialize_addrman)
             },
             [&] {
                 (void)addr_man.GetAddr(
-                    /* max_addresses */ fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, 4096),
-                    /* max_pct */ fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, 4096),
-                    /* network */ std::nullopt);
+                    /*max_addresses=*/fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, 4096),
+                    /*max_pct=*/fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, 4096),
+                    /*network=*/std::nullopt);
             },
             [&] {
                 std::vector<CAddress> addresses;
-                while (fuzzed_data_provider.ConsumeBool()) {
-                    const std::optional<CAddress> opt_address = ConsumeDeserializable<CAddress>(fuzzed_data_provider);
-                    if (!opt_address) {
-                        break;
-                    }
-                    addresses.push_back(*opt_address);
+                LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
+                    addresses.push_back(ConsumeAddress(fuzzed_data_provider));
                 }
-                const std::optional<CNetAddr> opt_net_addr = ConsumeDeserializable<CNetAddr>(fuzzed_data_provider);
-                if (opt_net_addr) {
-                    addr_man.Add(addresses, *opt_net_addr, std::chrono::seconds{ConsumeTime(fuzzed_data_provider, 0, 100000000)});
-                }
+                addr_man.Add(addresses, ConsumeNetAddr(fuzzed_data_provider), std::chrono::seconds{ConsumeTime(fuzzed_data_provider, 0, 100000000)});
             },
             [&] {
-                const std::optional<CService> opt_service = ConsumeDeserializable<CService>(fuzzed_data_provider);
-                if (opt_service) {
-                    addr_man.Good(*opt_service, NodeSeconds{std::chrono::seconds{ConsumeTime(fuzzed_data_provider)}});
-                }
+                addr_man.Good(ConsumeService(fuzzed_data_provider), NodeSeconds{std::chrono::seconds{ConsumeTime(fuzzed_data_provider)}});
             },
             [&] {
-                const std::optional<CService> opt_service = ConsumeDeserializable<CService>(fuzzed_data_provider);
-                if (opt_service) {
-                    addr_man.Attempt(*opt_service, fuzzed_data_provider.ConsumeBool(), NodeSeconds{std::chrono::seconds{ConsumeTime(fuzzed_data_provider)}});
-                }
+                addr_man.Attempt(ConsumeService(fuzzed_data_provider), fuzzed_data_provider.ConsumeBool(), NodeSeconds{std::chrono::seconds{ConsumeTime(fuzzed_data_provider)}});
             },
             [&] {
-                const std::optional<CService> opt_service = ConsumeDeserializable<CService>(fuzzed_data_provider);
-                if (opt_service) {
-                    addr_man.Connected(*opt_service, NodeSeconds{std::chrono::seconds{ConsumeTime(fuzzed_data_provider)}});
-                }
+                addr_man.Connected(ConsumeService(fuzzed_data_provider), NodeSeconds{std::chrono::seconds{ConsumeTime(fuzzed_data_provider)}});
             },
             [&] {
-                const std::optional<CService> opt_service = ConsumeDeserializable<CService>(fuzzed_data_provider);
-                if (opt_service) {
-                    addr_man.SetServices(*opt_service, ConsumeWeakEnum(fuzzed_data_provider, ALL_SERVICE_FLAGS));
-                }
+                addr_man.SetServices(ConsumeService(fuzzed_data_provider), ConsumeWeakEnum(fuzzed_data_provider, ALL_SERVICE_FLAGS));
             });
     }
     (void)addr_man.Size();
@@ -313,7 +294,7 @@ FUZZ_TARGET_INIT(addrman, initialize_addrman)
 }
 
 // Check that serialize followed by unserialize produces the same addrman.
-FUZZ_TARGET_INIT(addrman_serdeser, initialize_addrman)
+FUZZ_TARGET(addrman_serdeser, .init = initialize_addrman)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     SetMockTime(ConsumeTime(fuzzed_data_provider));

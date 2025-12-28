@@ -1,13 +1,16 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <rpc/client.h>
+#include <tinyformat.h>
 #include <util/system.h>
 
 #include <set>
+#include <string>
+#include <string_view>
 
 class CRPCConvertParam
 {
@@ -50,17 +53,21 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "sethdseed", 0, "newkeypool" },
     { "getreceivedbyaddress", 1, "minconf" },
     { "getreceivedbyaddress", 2, "addlocked" },
+    { "getreceivedbyaddress", 3, "include_immature_coinbase" },
     { "getreceivedbylabel", 1, "minconf" },
     { "getreceivedbylabel", 2, "addlocked" },
+    { "getreceivedbylabel", 3, "include_immature_coinbase" },
     { "listaddressbalances", 0, "minamount" },
     { "listreceivedbyaddress", 0, "minconf" },
     { "listreceivedbyaddress", 1, "addlocked" },
     { "listreceivedbyaddress", 2, "include_empty" },
     { "listreceivedbyaddress", 3, "include_watchonly" },
+    { "listreceivedbyaddress", 5, "include_immature_coinbase" },
     { "listreceivedbylabel", 0, "minconf" },
     { "listreceivedbylabel", 1, "addlocked" },
     { "listreceivedbylabel", 2, "include_empty" },
     { "listreceivedbylabel", 3, "include_watchonly" },
+    { "listreceivedbylabel", 4, "include_immature_coinbase" },
     { "getassetunlockstatuses", 0, "indexes" },
     { "getassetunlockstatuses", 1, "height" },
     { "getbalance", 1, "minconf" },
@@ -95,6 +102,12 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "sendmany", 8, "conf_target" },
     { "sendmany", 10, "fee_rate" },
     { "sendmany", 11, "verbose" },
+    { "sendmappoint", 1, "latitude" },
+    { "sendmappoint", 2, "longitude" },
+    { "sendmappoint", 3, "amount" },
+    { "sendmappoint", 5, "verbose" },
+    { "sendpointtransfer", 2, "amount" },
+    { "sendpointtransfer", 4, "verbose" },
     { "deriveaddresses", 1, "range" },
     { "scantxoutset", 1, "scanobjects" },
     { "addmultisigaddress", 0, "nrequired" },
@@ -160,6 +173,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "send", 1, "conf_target" },
     { "send", 3, "fee_rate"},
     { "send", 4, "options" },
+    { "simulaterawtransaction", 0, "rawtxs" },
+    { "simulaterawtransaction", 1, "options" },
     { "importprivkey", 2, "rescan" },
     { "importelectrumwallet", 1, "index" },
     { "importaddress", 2, "rescan" },
@@ -173,6 +188,10 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "verifychain", 1, "nblocks" },
     { "getblockstats", 0, "hash_or_height" },
     { "getblockstats", 1, "stats" },
+    { "listmappoints", 0, "from_height" },
+    { "listmappoints", 1, "to_height" },
+    { "getaddresspoints", 1, "from_height" },
+    { "getaddresspoints", 2, "to_height" },
     { "pruneblockchain", 0, "height" },
     { "keypoolrefill", 0, "newsize" },
     { "getrawmempool", 0, "verbose" },
@@ -190,6 +209,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "setwalletflag", 1, "value" },
     { "getmempoolancestors", 1, "verbose" },
     { "getmempooldescendants", 1, "verbose" },
+    { "gettxspendingprevout", 0, "outputs" },
     { "logging", 0, "include" },
     { "logging", 1, "exclude" },
     { "sporkupdate", 1, "value" },
@@ -256,15 +276,15 @@ public:
     CRPCConvertTable();
 
     /** Return arg_value as UniValue, and first parse it if it is a non-string parameter */
-    UniValue ArgToUniValue(const std::string& arg_value, const std::string& method, int param_idx)
+    UniValue ArgToUniValue(std::string_view arg_value, const std::string& method, int param_idx)
     {
-        return members.count(std::make_pair(method, param_idx)) > 0 ? ParseNonRFCJSONValue(arg_value) : arg_value;
+        return members.count({method, param_idx}) > 0 ? ParseNonRFCJSONValue(arg_value) : arg_value;
     }
 
     /** Return arg_value as UniValue, and first parse it if it is a non-string parameter */
-    UniValue ArgToUniValue(const std::string& arg_value, const std::string& method, const std::string& param_name)
+    UniValue ArgToUniValue(std::string_view arg_value, const std::string& method, const std::string& param_name)
     {
-        return membersByName.count(std::make_pair(method, param_name)) > 0 ? ParseNonRFCJSONValue(arg_value) : arg_value;
+        return membersByName.count({method, param_name}) > 0 ? ParseNonRFCJSONValue(arg_value) : arg_value;
     }
 };
 
@@ -281,13 +301,11 @@ static CRPCConvertTable rpcCvtTable;
 /** Non-RFC4627 JSON parser, accepts internal values (such as numbers, true, false, null)
  * as well as objects and arrays.
  */
-UniValue ParseNonRFCJSONValue(const std::string& strVal)
+UniValue ParseNonRFCJSONValue(std::string_view raw)
 {
-    UniValue jVal;
-    if (!jVal.read(std::string("[")+strVal+std::string("]")) ||
-        !jVal.isArray() || jVal.size()!=1)
-        throw std::runtime_error(std::string("Error parsing JSON: ") + strVal);
-    return jVal[0];
+    UniValue parsed;
+    if (!parsed.read(raw)) throw std::runtime_error(tfm::format("Error parsing JSON: %s", raw));
+    return parsed;
 }
 
 UniValue RPCConvertValues(const std::string &strMethod, const std::vector<std::string> &strParams)
@@ -295,8 +313,8 @@ UniValue RPCConvertValues(const std::string &strMethod, const std::vector<std::s
     UniValue params(UniValue::VARR);
 
     for (unsigned int idx = 0; idx < strParams.size(); idx++) {
-        const std::string& strVal = strParams[idx];
-        params.push_back(rpcCvtTable.ArgToUniValue(strVal, strMethod, idx));
+        std::string_view value{strParams[idx]};
+        params.push_back(rpcCvtTable.ArgToUniValue(value, strMethod, idx));
     }
 
     return params;
@@ -307,15 +325,15 @@ UniValue RPCConvertNamedValues(const std::string &strMethod, const std::vector<s
     UniValue params(UniValue::VOBJ);
     UniValue positional_args{UniValue::VARR};
 
-    for (const std::string &s: strParams) {
+    for (std::string_view s: strParams) {
         size_t pos = s.find('=');
         if (pos == std::string::npos) {
             positional_args.push_back(rpcCvtTable.ArgToUniValue(s, strMethod, positional_args.size()));
             continue;
         }
 
-        std::string name = s.substr(0, pos);
-        std::string value = s.substr(pos+1);
+        std::string name{s.substr(0, pos)};
+        std::string_view value{s.substr(pos+1)};
 
         // Intentionally overwrite earlier named values with later ones as a
         // convenience for scripts and command line users that want to merge

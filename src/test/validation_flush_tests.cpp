@@ -1,16 +1,15 @@
-// Copyright (c) 2019-2020 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
 #include <evo/evodb.h>
 #include <sync.h>
 #include <test/util/setup_common.h>
-#include <txmempool.h>
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
-BOOST_FIXTURE_TEST_SUITE(validation_flush_tests, ChainTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(validation_flush_tests, TestingSetup)
 
 //! Test utilities for detecting when we need to flush the coins cache based
 //! on estimated memory usage.
@@ -19,11 +18,7 @@ BOOST_FIXTURE_TEST_SUITE(validation_flush_tests, ChainTestingSetup)
 //!
 BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
 {
-    CTxMemPool mempool;
-    BlockManager blockman{};
-    CChainState chainstate(&mempool, blockman, *Assert(m_node.chainman), *m_node.evodb, m_node.chain_helper);
-    chainstate.InitCoinsDB(/*cache_size_bytes*/ 1 << 10, /*in_memory*/ true, /*should_wipe*/ false);
-    WITH_LOCK(::cs_main, chainstate.InitCoinsCache(1 << 10));
+    CChainState& chainstate{m_node.chainman->ActiveChainstate()};
 
     constexpr bool is_64_bit = sizeof(void*) == 8;
 
@@ -37,7 +32,7 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
         COutPoint outp{txid, 0};
         newcoin.nHeight = 1;
         newcoin.out.nValue = InsecureRand32();
-        newcoin.out.scriptPubKey.assign((uint32_t)56, 1);
+        newcoin.out.scriptPubKey.assign(uint32_t{56}, 1);
         coins_view.AddCoin(outp, std::move(newcoin), false);
 
         return outp;
@@ -72,7 +67,7 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
         }
 
         BOOST_CHECK_EQUAL(
-            chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes*/ 0),
+            chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes=*/0),
             CoinsCacheSizeState::CRITICAL);
 
         BOOST_TEST_MESSAGE("Exiting cache flush tests early due to unsupported arch");
@@ -90,7 +85,7 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
 
     // no coin added, so we have plenty of space left.
     BOOST_CHECK_EQUAL(
-        chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes*/ 0),
+        chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes=*/0),
         CoinsCacheSizeState::OK);
 
     for (int i{0}; i < COINS_UNTIL_CRITICAL; ++i) {
@@ -109,14 +104,14 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
     for (int i{0}; i < 4; ++i) {
         add_coin(view);
         print_view_mem_usage(view);
-        if (chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes*/ 0) ==
+        if (chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes=*/0) ==
             CoinsCacheSizeState::CRITICAL) {
             break;
         }
     }
 
     BOOST_CHECK_EQUAL(
-        chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes*/ 0),
+        chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes=*/0),
         CoinsCacheSizeState::CRITICAL);
 
     // Passing non-zero max mempool usage (512 KiB) should allow us more headroom.
@@ -144,7 +139,7 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
         BOOST_CHECK(usage_percentage >= 0.9);
         BOOST_CHECK(usage_percentage < 1);
         BOOST_CHECK_EQUAL(
-            chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes*/ 1 << 10), // 1024
+            chainstate.GetCoinsCacheSizeState(MAX_COINS_CACHE_BYTES, /*max_mempool_size_bytes=*/1 << 10), // 1024
             CoinsCacheSizeState::LARGE);
     }
 

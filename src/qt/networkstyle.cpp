@@ -1,5 +1,5 @@
-// Copyright (c) 2014-2019 The Bitcoin Core developers
-// Copyright (c) 2014-2023 The Dash Core developers
+// Copyright (c) 2014-2020 The Bitcoin Core developers
+// Copyright (c) 2014-2023 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -24,9 +24,9 @@ static const struct {
     const std::string titleAddText;
 } network_styles[] = {
     {"main", QAPP_APP_NAME_DEFAULT, 0, 0, ""},
-    {"test", QAPP_APP_NAME_TESTNET, 190, 20},
+    {"test", QAPP_APP_NAME_TESTNET, 190, 20, ""},
     {"devnet", QAPP_APP_NAME_DEVNET, 190, 20, "[devnet: %s]"},
-    {"regtest", QAPP_APP_NAME_REGTEST, 160, 30}
+    {"regtest", QAPP_APP_NAME_REGTEST, 160, 30, ""}
 };
 
 void NetworkStyle::rotateColor(QColor& col, const int iconColorHueShift, const int iconColorSaturationReduction)
@@ -65,12 +65,12 @@ void NetworkStyle::rotateColors(QImage& img, const int iconColorHueShift, const 
 NetworkStyle::NetworkStyle(const QString &_appName, const int iconColorHueShift, const int iconColorSaturationReduction, const char *_titleAddText):
     appName(_appName),
     titleAddText(qApp->translate("SplashScreen", _titleAddText)),
-    badgeColor(QColor(0, 141, 228)) // default badge color is the original Dash's blue, regardless of the current theme
+    badgeColor(QColor(0, 141, 228)) // default badge color is the original Orin's blue, regardless of the current theme
 {
     // Allow for separate UI settings for testnets
     QApplication::setApplicationName(appName);
     // load pixmap
-    QPixmap appIconPixmap(":/icons/dash");
+    QPixmap appIconPixmap(":/icons/orin");
 
     if(iconColorHueShift != 0 && iconColorSaturationReduction != 0)
     {

@@ -196,7 +196,7 @@ html_static_path = ['_static']
 #
 # html_last_updated_fmt = None
 
-# If true, SmartyPants will be used to convert quotes and dashes to
+# If true, SmartyPants will be used to convert quotes and orines to
 # typographically correct entities.
 #
 # html_use_smartypants = True

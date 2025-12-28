@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,11 +13,11 @@
 
 #include <algorithm>
 #include <assert.h>
+#include <cstdio>
 #include <ios>
 #include <limits>
 #include <optional>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <string>
 #include <utility>
@@ -148,28 +148,9 @@ public:
      * @param[in]  type Serialization Type
      * @param[in]  version Serialization Version (including any flags)
      * @param[in]  data Referenced byte vector to overwrite/append
-     * @param[in]  pos Starting position. Vector index where reads should start.
      */
-    SpanReader(int type, int version, Span<const unsigned char> data, size_t pos)
-        : m_type(type), m_version(version), m_data(data)
-    {
-        if (pos > m_data.size()) {
-            throw std::ios_base::failure("SpanReader(...): end of data (pos > m_data.size())");
-        }
-        data = data.subspan(pos);
-    }
-
-    /**
-     * (other params same as above)
-     * @param[in]  args  A list of items to deserialize starting at pos.
-     */
-    template <typename... Args>
-    SpanReader(int type, int version, Span<const unsigned char> data, size_t pos,
-                  Args&&... args)
-        : SpanReader(type, version, data, pos)
-    {
-        ::UnserializeMany(*this, std::forward<Args>(args)...);
-    }
+    SpanReader(int type, int version, Span<const unsigned char> data)
+        : m_type(type), m_version(version), m_data(data) {}
 
     template<typename T>
     SpanReader& operator>>(T&& obj)
@@ -381,13 +362,6 @@ public:
           nType{nTypeIn},
           nVersion{nVersionIn} {}
 
-    template <typename... Args>
-    CDataStream(int nTypeIn, int nVersionIn, Args&&... args)
-        : nType{nTypeIn},
-          nVersion{nVersionIn}
-    {
-        ::SerializeMany(*this, std::forward<Args>(args)...);
-    }
 
     void SetType(int n)          { nType = n; }
     int GetType() const          { return nType; }
@@ -510,35 +484,28 @@ public:
 };
 
 
-
 /** Non-refcounted RAII wrapper for FILE*
  *
  * Will automatically close the file when it goes out of scope if not null.
  * If you're returning the file pointer, return file.release().
  * If you need to close the file early, use file.fclose() instead of fclose(file).
  */
-class CAutoFile
+class AutoFile
 {
-private:
-    const int nType;
-    const int nVersion;
-
+protected:
     FILE* file;
 
 public:
-    CAutoFile(FILE* filenew, int nTypeIn, int nVersionIn) : nType(nTypeIn), nVersion(nVersionIn)
-    {
-        file = filenew;
-    }
+    explicit AutoFile(FILE* filenew) : file{filenew} {}
 
-    ~CAutoFile()
+    ~AutoFile()
     {
         fclose();
     }
 
     // Disallow copies
-    CAutoFile(const CAutoFile&) = delete;
-    CAutoFile& operator=(const CAutoFile&) = delete;
+    AutoFile(const AutoFile&) = delete;
+    AutoFile& operator=(const AutoFile&) = delete;
 
     void fclose()
     {
@@ -549,14 +516,14 @@ public:
     }
 
     /** Get wrapped FILE* with transfer of ownership.
-     * @note This will invalidate the CAutoFile object, and makes it the responsibility of the caller
+     * @note This will invalidate the AutoFile object, and makes it the responsibility of the caller
      * of this function to clean up the returned FILE*.
      */
     FILE* release()             { FILE* ret = file; file = nullptr; return ret; }
 
     /** Get wrapped FILE* without transfer of ownership.
      * @note Ownership of the FILE* will remain with this class. Use this only if the scope of the
-     * CAutoFile outlives use of the passed pointer.
+     * AutoFile outlives use of the passed pointer.
      */
     FILE* Get() const           { return file; }
 
@@ -567,39 +534,61 @@ public:
     //
     // Stream subset
     //
-    int GetType() const          { return nType; }
-    int GetVersion() const       { return nVersion; }
-
     void read(Span<std::byte> dst)
     {
-        if (!file)
-            throw std::ios_base::failure("CAutoFile::read: file handle is nullptr");
+        if (!file) throw std::ios_base::failure("AutoFile::read: file handle is nullptr");
         if (fread(dst.data(), 1, dst.size(), file) != dst.size()) {
-            throw std::ios_base::failure(feof(file) ? "CAutoFile::read: end of file" : "CAutoFile::read: fread failed");
+            throw std::ios_base::failure(feof(file) ? "AutoFile::read: end of file" : "AutoFile::read: fread failed");
         }
     }
 
     void ignore(size_t nSize)
     {
-        if (!file)
-            throw std::ios_base::failure("CAutoFile::ignore: file handle is nullptr");
+        if (!file) throw std::ios_base::failure("AutoFile::ignore: file handle is nullptr");
         unsigned char data[4096];
         while (nSize > 0) {
             size_t nNow = std::min<size_t>(nSize, sizeof(data));
             if (fread(data, 1, nNow, file) != nNow)
-                throw std::ios_base::failure(feof(file) ? "CAutoFile::ignore: end of file" : "CAutoFile::read: fread failed");
+                throw std::ios_base::failure(feof(file) ? "AutoFile::ignore: end of file" : "AutoFile::read: fread failed");
             nSize -= nNow;
         }
     }
 
     void write(Span<const std::byte> src)
     {
-        if (!file)
-            throw std::ios_base::failure("CAutoFile::write: file handle is nullptr");
+        if (!file) throw std::ios_base::failure("AutoFile::write: file handle is nullptr");
         if (fwrite(src.data(), 1, src.size(), file) != src.size()) {
-            throw std::ios_base::failure("CAutoFile::write: write failed");
+            throw std::ios_base::failure("AutoFile::write: write failed");
         }
     }
+
+    template <typename T>
+    AutoFile& operator<<(const T& obj)
+    {
+        if (!file) throw std::ios_base::failure("AutoFile::operator<<: file handle is nullptr");
+        ::Serialize(*this, obj);
+        return *this;
+    }
+
+    template <typename T>
+    AutoFile& operator>>(T&& obj)
+    {
+        if (!file) throw std::ios_base::failure("AutoFile::operator>>: file handle is nullptr");
+        ::Unserialize(*this, obj);
+        return *this;
+    }
+};
+
+class CAutoFile : public AutoFile
+{
+private:
+    const int nType;
+    const int nVersion;
+
+public:
+    CAutoFile(FILE* filenew, int nTypeIn, int nVersionIn) : AutoFile{filenew}, nType(nTypeIn), nVersion(nVersionIn) {}
+    int GetType() const          { return nType; }
+    int GetVersion() const       { return nVersion; }
 
     template<typename T>
     CAutoFile& operator<<(const T& obj)

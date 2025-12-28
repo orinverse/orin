@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -26,7 +26,7 @@ UniValue CDKGDebugSessionStatus::ToJson(CDeterministicMNManager& dmnman, CQuorum
 
     std::vector<CDeterministicMNCPtr> dmnMembers;
     if (detailLevel == 2) {
-        const CBlockIndex* pindex = WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(quorumHash));
+        const CBlockIndex* pindex = WITH_LOCK(::cs_main, return chainman.m_blockman.LookupBlockIndex(quorumHash));
         if (pindex != nullptr) {
             dmnMembers = utils::GetAllQuorumMembers(llmqType, dmnman, qsnapman, pindex);
         }
@@ -34,7 +34,7 @@ UniValue CDKGDebugSessionStatus::ToJson(CDeterministicMNManager& dmnman, CQuorum
 
     ret.pushKV("llmqType", ToUnderlying(llmqType));
     ret.pushKV("quorumHash", quorumHash.ToString());
-    ret.pushKV("quorumHeight", (int)quorumHeight);
+    ret.pushKV("quorumHeight", quorumHeight);
     ret.pushKV("phase", ToUnderlying(phase));
 
     ret.pushKV("sentContributions", statusBits.sentContributions);
@@ -61,10 +61,10 @@ UniValue CDKGDebugSessionStatus::ToJson(CDeterministicMNManager& dmnman, CQuorum
             if (detailLevel == 0) {
                 v.count++;
             } else if (detailLevel == 1) {
-                v.arr.push_back((int)idx);
+                v.arr.push_back(idx);
             } else if (detailLevel == 2) {
                 UniValue a(UniValue::VOBJ);
-                a.pushKV("memberIndex", (int)idx);
+                a.pushKV("memberIndex", idx);
                 if (idx < dmnMembers.size()) {
                     a.pushKV("proTxHash", dmnMembers[idx]->proTxHash.ToString());
                 }
@@ -108,6 +108,8 @@ UniValue CDKGDebugSessionStatus::ToJson(CDeterministicMNManager& dmnman, CQuorum
 }
 
 CDKGDebugManager::CDKGDebugManager() = default;
+
+CDKGDebugManager::~CDKGDebugManager() = default;
 
 UniValue CDKGDebugStatus::ToJson(CDeterministicMNManager& dmnman, CQuorumSnapshotManager& qsnapman,
                                  const ChainstateManager& chainman, int detailLevel) const

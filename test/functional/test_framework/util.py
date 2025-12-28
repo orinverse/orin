@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2014-2020 The Bitcoin Core developers
-# Copyright (c) 2014-2024 The Dash Core developers
+# Copyright (c) 2014-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Helpful routines for regression testing."""
@@ -17,6 +17,7 @@ import random
 import shutil
 import re
 import time
+import urllib.parse
 
 from . import coverage
 from .authproxy import AuthServiceProxy, JSONRPCException
@@ -30,6 +31,10 @@ logger = logging.getLogger("TestFramework.utils")
 
 def assert_approx(v, vexp, vspan=0.00001):
     """Assert that `v` is within `vspan` of `vexp`"""
+    if isinstance(v, Decimal) or isinstance(vexp, Decimal):
+        v=Decimal(v)
+        vexp=Decimal(vexp)
+        vspan=Decimal(vspan)
     if v < vexp - vspan:
         raise AssertionError("%s < [%s..%s]" % (str(v), str(vexp - vspan), str(vexp + vspan)))
     if v > vexp + vspan:
@@ -38,13 +43,13 @@ def assert_approx(v, vexp, vspan=0.00001):
 
 def assert_fee_amount(fee, tx_size, feerate_DASH_kvB):
     """Assert the fee is in range."""
-    feerate_DASH_vB = feerate_DASH_kvB / 1000
-    target_fee = satoshi_round(tx_size * feerate_DASH_vB)
+    target_fee = get_fee(tx_size, feerate_DASH_kvB)
     if fee < target_fee:
-        raise AssertionError("Fee of %s DASH too low! (Should be %s DASH)" % (str(fee), str(target_fee)))
+        raise AssertionError("Fee of %s ORIN too low! (Should be %s ORIN)" % (str(fee), str(target_fee)))
     # allow the wallet's estimation to be at most 2 bytes off
-    if fee > (tx_size + 2) * feerate_DASH_vB:
-        raise AssertionError("Fee of %s DASH too high! (Should be %s DASH)" % (str(fee), str(target_fee)))
+    high_fee = get_fee(tx_size + 2, feerate_DASH_kvB)
+    if fee > high_fee:
+        raise AssertionError("Fee of %s ORIN too high! (Should be %s ORIN)" % (str(fee), str(target_fee)))
 
 
 def summarise_dict_differences(thing1, thing2):
@@ -223,12 +228,6 @@ def check_json_precision():
         raise RuntimeError("JSON encode/decode loses precision")
 
 
-def EncodeDecimal(o):
-    if isinstance(o, Decimal):
-        return str(o)
-    raise TypeError(repr(o) + " is not JSON serializable")
-
-
 def count_bytes(hex_string):
     return len(bytearray.fromhex(hex_string))
 
@@ -243,11 +242,23 @@ def random_bitflip(data):
     return bytes(data)
 
 
+def ceildiv(a, b):
+    """Divide 2 ints and round up to next int rather than round down"""
+    return -(-a // b)
+
+
+def get_fee(tx_size, feerate_orin_kvb):
+    """Calculate the fee in ORIN given a feerate is ORIN/kvB. Reflects CFeeRate::GetFee"""
+    feerate_sat_kvb = int(feerate_orin_kvb * Decimal(1e8)) # Fee in sat/kvb as an int to avoid float precision errors
+    target_fee_sat = ceildiv(feerate_sat_kvb * tx_size, 1000) # Round calculated fee up to nearest sat
+    return satoshi_round(target_fee_sat / Decimal(1e8)) # Truncate ORIN result to nearest sat
+
+
 def satoshi_round(amount):
     return Decimal(amount).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
 
 
-def wait_until_helper(predicate, *, attempts=float('inf'), timeout=float('inf'), sleep=0.5, timeout_factor=1.0, lock=None, do_assert=True, allow_exception=False):
+def wait_until_helper(predicate, *, attempts=float('inf'), timeout=float('inf'), sleep=0.05, timeout_factor=1.0, lock=None, do_assert=True, allow_exception=False):
     """Sleep until the predicate resolves to be True.
 
     Warning: Note that this method is not recommended to be used in tests as it is
@@ -364,6 +375,7 @@ def rpc_url(datadir, i, chain, rpchost=None):
             host, port = parts
         else:
             host = rpchost
+    rpc_p = urllib.parse.quote(rpc_p, safe='') # v0.12.1.x and lower used URL unsafe Base64 for their passwords, quote it
     return "http://%s:%s@%s:%d" % (rpc_u, rpc_p, host, int(port))
 
 
@@ -371,17 +383,17 @@ def rpc_url(datadir, i, chain, rpchost=None):
 ################
 
 
-def initialize_datadir(dirname, n, chain):
+def initialize_datadir(dirname, n, chain, disable_autoconnect=True):
     datadir = get_datadir_path(dirname, n)
     if not os.path.isdir(datadir):
         os.makedirs(datadir)
-    write_config(os.path.join(datadir, "dash.conf"), n=n, chain=chain)
+    write_config(os.path.join(datadir, "orin.conf"), n=n, chain=chain, disable_autoconnect=disable_autoconnect)
     os.makedirs(os.path.join(datadir, 'stderr'), exist_ok=True)
     os.makedirs(os.path.join(datadir, 'stdout'), exist_ok=True)
     return datadir
 
 
-def write_config(config_path, *, n, chain, extra_config=""):
+def write_config(config_path, *, n, chain, extra_config="", disable_autoconnect=True):
     (chain_name_conf_arg, chain_name_conf_arg_value, chain_name_conf_section) = get_chain_conf_names(chain)
     with open(config_path, 'w', encoding='utf8') as f:
         if chain_name_conf_arg:
@@ -408,6 +420,8 @@ def write_config(config_path, *, n, chain, extra_config=""):
         f.write("shrinkdebugfile=0\n")
         # To improve SQLite wallet performance so that the tests don't timeout, use -unsafesqlitesync
         f.write("unsafesqlitesync=1\n")
+        if disable_autoconnect:
+            f.write("connect=0\n")
         f.write(extra_config)
 
 
@@ -416,7 +430,7 @@ def get_datadir_path(dirname, n):
 
 
 def append_config(datadir, options):
-    with open(os.path.join(datadir, "dash.conf"), 'a', encoding='utf8') as f:
+    with open(os.path.join(datadir, "orin.conf"), 'a', encoding='utf8') as f:
         for option in options:
             f.write(option + "\n")
 
@@ -424,8 +438,8 @@ def append_config(datadir, options):
 def get_auth_cookie(datadir, chain):
     user = None
     password = None
-    if os.path.isfile(os.path.join(datadir, "dash.conf")):
-        with open(os.path.join(datadir, "dash.conf"), 'r', encoding='utf8') as f:
+    if os.path.isfile(os.path.join(datadir, "orin.conf")):
+        with open(os.path.join(datadir, "orin.conf"), 'r', encoding='utf8') as f:
             for line in f:
                 if line.startswith("rpcuser="):
                     assert user is None  # Ensure that there is only one rpcuser line
@@ -530,6 +544,34 @@ def force_finish_mnsync(node):
     while not node.mnsync("status")['IsSynced']:
         node.mnsync("next")
 
+
+def get_mnemonic(node):
+    """
+    Return mnemonic if known from legacy HD wallets and Descriptor Wallets
+    Raises exception if there is none.
+    """
+    if not node.getwalletinfo()['descriptors']:
+        hd = node.dumphdinfo()
+        return (hd["mnemonic"], hd["mnemonicpassphrase"])
+
+    mnemonic = None
+    mnemonic_passphrase = None
+    descriptors = node.listdescriptors(True)['descriptors']
+    for desc in descriptors:
+        if desc['desc'][:4] == 'pkh(':
+            if mnemonic is None:
+                mnemonic = desc['mnemonic']
+                mnemonic_passphrase = desc['mnemonicpassphrase']
+            else:
+                assert_equal(mnemonic, desc['mnemonic'])
+                assert_equal(mnemonic_passphrase, desc['mnemonicpassphrase'])
+        elif desc['desc'][:6] == 'combo(':
+            assert 'mnemonic' not in desc
+            assert 'mnemonicpassphrase' not in desc
+        else:
+            raise AssertionError(f"Unknown descriptor type: {desc['desc']}")
+    return (mnemonic, mnemonic_passphrase)
+
 # Transaction/Block functions
 #############################
 
@@ -544,39 +586,6 @@ def find_output(node, txid, amount, *, blockhash=None):
         if txdata["vout"][i]["value"] == amount:
             return i
     raise RuntimeError("find_output txid %s : %s not found" % (txid, str(amount)))
-
-
-# Helper to create at least "count" utxos
-# Pass in a fee that is sufficient for relay and mining new transactions.
-def create_confirmed_utxos(test_framework, fee, node, count, **kwargs):
-    to_generate = int(0.5 * count) + 101
-    while to_generate > 0:
-        test_framework.generate(node, min(25, to_generate), **kwargs)
-        to_generate -= 25
-    utxos = node.listunspent()
-    iterations = count - len(utxos)
-    addr1 = node.getnewaddress()
-    addr2 = node.getnewaddress()
-    if iterations <= 0:
-        return utxos
-    for _ in range(iterations):
-        t = utxos.pop()
-        inputs = []
-        inputs.append({"txid": t["txid"], "vout": t["vout"]})
-        outputs = {}
-        send_value = t['amount'] - fee
-        outputs[addr1] = satoshi_round(send_value / 2)
-        outputs[addr2] = satoshi_round(send_value / 2)
-        raw_tx = node.createrawtransaction(inputs, outputs)
-        signed_tx = node.signrawtransactionwithwallet(raw_tx)["hex"]
-        node.sendrawtransaction(signed_tx)
-
-    while (node.getmempoolinfo()['size'] > 0):
-        test_framework.generate(node, 1, **kwargs)
-
-    utxos = node.listunspent()
-    assert len(utxos) >= count
-    return utxos
 
 
 def chain_transaction(node, parent_txids, vouts, value, fee, num_outputs):
@@ -602,45 +611,30 @@ def chain_transaction(node, parent_txids, vouts, value, fee, num_outputs):
 
 
 # Create large OP_RETURN txouts that can be appended to a transaction
-# to make it large (helper for constructing large transactions).
+# to make it large (helper for constructing large transactions). The
+# total serialized size of the txouts is about 66k vbytes.
 def gen_return_txouts():
-    # Some pre-processing to create a bunch of OP_RETURN txouts to insert into transactions we create
-    # So we have big transactions (and therefore can't fit very many into each block)
-    # create one script_pubkey
-    script_pubkey = "6a4d0200"  # OP_RETURN OP_PUSH2 512 bytes
-    for _ in range(512):
-        script_pubkey = script_pubkey + "01"
-    # concatenate 128 txouts of above script_pubkey which we'll insert before the txout for change
-    txouts = []
     from .messages import CTxOut
-    txout = CTxOut()
-    txout.nValue = 0
-    txout.scriptPubKey = bytes.fromhex(script_pubkey)
-    for _ in range(128):
-        txouts.append(txout)
+    from .script import CScript, OP_RETURN
+    txouts = [CTxOut(nValue=0, scriptPubKey=CScript([OP_RETURN, b'\x01'*67437]))]
+    assert_equal(sum([len(txout.serialize()) for txout in txouts]), 67456)
     return txouts
 
 
 # Create a spend of each passed-in utxo, splicing in "txouts" to each raw
 # transaction to make it large.  See gen_return_txouts() above.
-def create_lots_of_big_transactions(node, txouts, utxos, num, fee):
-    addr = node.getnewaddress()
+def create_lots_of_big_transactions(mini_wallet, node, fee, tx_batch_size, txouts, utxos=None):
     txids = []
-    from .messages import tx_from_hex
-    for _ in range(num):
-        t = utxos.pop()
-        inputs = [{"txid": t["txid"], "vout": t["vout"]}]
-        outputs = {}
-        change = t['amount'] - fee
-        outputs[addr] = satoshi_round(change)
-        rawtx = node.createrawtransaction(inputs, outputs)
-        tx = tx_from_hex(rawtx)
-        for txout in txouts:
-            tx.vout.append(txout)
-        newtx = tx.serialize().hex()
-        signresult = node.signrawtransactionwithwallet(newtx, None, "NONE")
-        txid = node.sendrawtransaction(signresult["hex"], 0)
-        txids.append(txid)
+    use_internal_utxos = utxos is None
+    for _ in range(tx_batch_size):
+        tx = mini_wallet.create_self_transfer(
+            utxo_to_spend=None if use_internal_utxos else utxos.pop(),
+            fee=fee,
+        )["tx"]
+        tx.vout.extend(txouts)
+        res = node.testmempoolaccept([tx.serialize().hex()])[0]
+        assert_equal(res['fees']['base'], fee)
+        txids.append(node.sendrawtransaction(tx.serialize().hex()))
     return txids
 
 
@@ -648,13 +642,8 @@ def mine_large_block(test_framework, mini_wallet, node):
     # generate a 66k transaction,
     # and 14 of them is close to the 1MB block limit
     txouts = gen_return_txouts()
-    from .messages import COIN
-    fee = 100 * int(node.getnetworkinfo()["relayfee"] * COIN)
-    for _ in range(14):
-        tx = mini_wallet.create_self_transfer(from_node=node, fee_rate=0, mempool_valid=False)['tx']
-        tx.vout[0].nValue -= fee
-        tx.vout.extend(txouts)
-        mini_wallet.sendrawtransaction(from_node=node, tx_hex=tx.serialize().hex())
+    fee = 100 * node.getnetworkinfo()["relayfee"]
+    create_lots_of_big_transactions(mini_wallet, node, fee, 14, txouts)
     test_framework.generate(node, 1)
 
 

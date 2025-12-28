@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,7 +15,6 @@
 #include <config/bitcoin-config.h>
 #endif
 
-#include <attributes.h>
 #include <compat/assumptions.h>
 #include <compat/compat.h>
 #include <consensus/amount.h>
@@ -34,9 +33,8 @@
 #include <utility>
 #include <vector>
 
-//Dash only features
+//Orin only features
 
-extern bool fMasternodeMode;
 extern int nWalletBackups;
 extern const std::string gCoinJoinName;
 
@@ -82,8 +80,8 @@ void AllocateFileRange(FILE *file, unsigned int offset, unsigned int length);
  */
 [[nodiscard]] bool RenameOver(fs::path src, fs::path dest);
 
-bool LockDirectory(const fs::path& directory, const std::string lockfile_name, bool probe_only=false);
-void UnlockDirectory(const fs::path& directory, const std::string& lockfile_name);
+bool LockDirectory(const fs::path& directory, const fs::path& lockfile_name, bool probe_only=false);
+void UnlockDirectory(const fs::path& directory, const fs::path& lockfile_name);
 bool DirIsWritable(const fs::path& directory);
 bool CheckDiskSpace(const fs::path& dir, uint64_t additional_bytes = 0);
 
@@ -98,14 +96,14 @@ std::streampos GetFileSize(const char* path, std::streamsize max = std::numeric_
 /** Release all directory locks. This is used for unit testing only, at runtime
  * the global destructor will take care of the locks.
  */
-/** Dash: We also use this to release locks earlier when restarting the client */
+/** Orin: We also use this to release locks earlier when restarting the client */
 void ReleaseDirectoryLocks();
 
 bool TryCreateDirectories(const fs::path& p);
 fs::path GetDefaultDataDir();
 // Return true if -datadir option points to a valid directory or is not specified.
 bool CheckDataDirOption();
-fs::path GetConfigFile(const std::string& confPath);
+fs::path GetConfigFile(const fs::path& configuration_file_path);
 #ifdef WIN32
 fs::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 #endif
@@ -176,6 +174,10 @@ struct SectionInfo
     int m_line;
 };
 
+std::string SettingToString(const util::SettingsValue&, const std::string&);
+int64_t SettingToInt(const util::SettingsValue&, int64_t);
+bool SettingToBool(const util::SettingsValue&, bool);
+
 class ArgsManager
 {
 public:
@@ -185,10 +187,10 @@ public:
      */
     enum Flags : uint32_t {
         ALLOW_ANY = 0x01,         //!< disable validation
-        ALLOW_BOOL = 0x02,        //!< unimplemented, draft implementation in #16545
-        ALLOW_INT = 0x04,         //!< unimplemented, draft implementation in #16545
-        ALLOW_STRING = 0x08,      //!< unimplemented, draft implementation in #16545
-        ALLOW_LIST = 0x10,        //!< unimplemented, draft implementation in #16545
+        // ALLOW_BOOL = 0x02,     //!< unimplemented, draft implementation in #16545
+        // ALLOW_INT = 0x04,      //!< unimplemented, draft implementation in #16545
+        // ALLOW_STRING = 0x08,   //!< unimplemented, draft implementation in #16545
+        // ALLOW_LIST = 0x10,     //!< unimplemented, draft implementation in #16545
         DISALLOW_NEGATION = 0x20, //!< disallow -nofoo syntax
         DISALLOW_ELISION = 0x40,  //!< disallow -foo syntax that doesn't assign any value
 
@@ -257,6 +259,11 @@ protected:
     void SelectConfigNetwork(const std::string& network);
 
     [[nodiscard]] bool ParseParameters(int argc, const char* const argv[], std::string& error);
+
+    /**
+     * Return config file path (read-only)
+     */
+    fs::path GetConfigFilePath() const;
     [[nodiscard]] bool ReadConfigFiles(std::string& error, bool ignore_invalid_keys = false);
 
     /**
@@ -265,12 +272,12 @@ protected:
      * on the command line or in a network-specific section in the
      * config file.
      */
-    const std::set<std::string> GetUnsuitableSectionOnlyArgs() const;
+    std::set<std::string> GetUnsuitableSectionOnlyArgs() const;
 
     /**
      * Log warnings for unrecognized section names in the config file.
      */
-    const std::list<SectionInfo> GetUnrecognizedSections() const;
+    std::list<SectionInfo> GetUnrecognizedSections() const;
 
     struct Command {
         /** The command (if one has been registered with AddCommand), or empty */
@@ -289,30 +296,28 @@ protected:
     /**
      * Return the map of all the args passed via the command line
      */
-    const std::map<std::string, std::vector<util::SettingsValue>> GetCommandLineArgs() const;
+    std::map<std::string, std::vector<util::SettingsValue>> GetCommandLineArgs() const;
 
     /**
      * Get blocks directory path
      *
      * @return Blocks path which is network specific
      */
-    const fs::path GetBlocksDirPath() const;
+    fs::path GetBlocksDirPath() const;
 
     /**
      * Get data directory path
      *
      * @return Absolute path on success, otherwise an empty path when a non-directory path would be returned
-     * @post Returned directory path is created unless it is empty
      */
-    const fs::path GetDataDirBase() const { return GetDataDir(false); }
+    fs::path GetDataDirBase() const { return GetDataDir(false); }
 
     /**
      * Get data directory path with appended network identifier
      *
      * @return Absolute path on success, otherwise an empty path when a non-directory path would be returned
-     * @post Returned directory path is created unless it is empty
      */
-    const fs::path GetDataDirNet() const { return GetDataDir(true); }
+    fs::path GetDataDirNet() const { return GetDataDir(true); }
 
     fs::path GetBackupsDirPath();
 
@@ -374,7 +379,7 @@ protected:
      * @param nDefault (e.g. 1)
      * @return command-line argument (0 if invalid number) or default value
      */
-    int64_t GetArg(const std::string& strArg, int64_t nDefault) const;
+    int64_t GetIntArg(const std::string& strArg, int64_t nDefault) const;
 
     /**
      * Return boolean argument or default value
@@ -467,7 +472,7 @@ protected:
      * Get settings file path, or return false if read-write settings were
      * disabled with -nosettings.
      */
-    bool GetSettingsPath(fs::path* filepath = nullptr, bool temp = false) const;
+    bool GetSettingsPath(fs::path* filepath = nullptr, bool temp = false, bool backup = false) const;
 
     /**
      * Read settings file. Push errors to vector, or log them if null.
@@ -475,9 +480,16 @@ protected:
     bool ReadSettingsFile(std::vector<std::string>* errors = nullptr);
 
     /**
-     * Write settings file. Push errors to vector, or log them if null.
+     * Write settings file or backup settings file. Push errors to vector, or
+     * log them if null.
      */
-    bool WriteSettingsFile(std::vector<std::string>* errors = nullptr) const;
+    bool WriteSettingsFile(std::vector<std::string>* errors = nullptr, bool backup = false) const;
+
+    /**
+     * Get current setting from config file or read/write settings file,
+     * ignoring nonpersistent command line or forced settings values.
+     */
+    util::SettingsValue GetPersistentSetting(const std::string& name) const;
 
     /**
      * Access settings with lock held.
@@ -495,15 +507,20 @@ protected:
      */
     void LogArgs() const;
 
+    /**
+     * If datadir does not exist, create it along with wallets/
+     * subdirectory(s).
+     */
+    void EnsureDataDir() const;
+
 private:
     /**
      * Get data directory path
      *
      * @param net_specific Append network identifier to the returned path
      * @return Absolute path on success, otherwise an empty path when a non-directory path would be returned
-     * @post Returned directory path is created unless it is empty
      */
-    const fs::path GetDataDir(bool net_specific) const;
+    fs::path GetDataDir(bool net_specific) const;
 
     // Helper function for LogArgs().
     void logArgsPrefix(
@@ -549,8 +566,6 @@ namespace ctpl {
     class thread_pool;
 }
 void RenameThreadPool(ctpl::thread_pool& tp, const char* baseName);
-
-std::string CopyrightHolders(const std::string& strPrefix, unsigned int nStartYear, unsigned int nEndYear);
 
 /**
  * On platforms that support it, tell the kernel the calling thread is

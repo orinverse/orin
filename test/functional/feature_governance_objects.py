@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2024 The Dash Core developers
+# Copyright (c) 2018-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Tests around dash governance objects."""
+"""Tests around orin governance objects."""
 
 import time
 
@@ -23,7 +23,7 @@ def validate_object(prepared, rpc_prepared):
 
 class DashGovernanceTest (DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(2, 1)
+        self.set_orin_test_params(2, 1)
 
     def prepare_object(self, object_type, parent_hash, creation_time, revision, name, amount):
         payment_address = self.nodes[0].getnewaddress()

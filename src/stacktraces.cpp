@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -146,6 +146,7 @@ static uint64_t GetBaseAddress()
     return 0;
 }
 
+#ifdef ENABLE_STACKTRACES
 // PC addresses returned by StackWalk64 are in the real mapped space, while libbacktrace expects them to be in the
 // default mapped space starting at 0x400000. This method converts the address.
 // TODO this is probably the same reason libbacktrace is not able to gather the stacktrace on Windows (returns pointers like 0x1 or 0xfffffff)
@@ -161,6 +162,7 @@ static uint64_t ConvertAddress(uint64_t addr)
     uint64_t offset = addr - hMod;
     return 0x400000 + offset;
 }
+#endif // ENABLE_STACKTRACES
 
 static __attribute__((noinline)) std::vector<uint64_t> GetStackFrames(size_t skip, size_t max_frames, const CONTEXT* pContext = nullptr)
 {
@@ -405,7 +407,7 @@ static std::string GetCrashInfoStrNoDebugInfo(crash_info ci)
     CDataStream ds(SER_DISK, 0);
 
     crash_info_header hdr;
-    hdr.magic = "DashCrashInfo";
+    hdr.magic = "OrinCrashInfo";
     hdr.version = 1;
     hdr.exeFileName = g_exeFileBaseName;
     ds << hdr;
@@ -426,7 +428,7 @@ std::string GetCrashInfoStrFromSerializedStr(const std::string& ciStr)
 {
     static uint64_t basePtr = GetBaseAddress();
 
-    auto opt_buf = DecodeBase32(ciStr.c_str());
+    auto opt_buf = DecodeBase32(ciStr);
     if (!opt_buf.has_value() || opt_buf->empty()) {
         return "Error while deserializing crash info";
     }
@@ -440,7 +442,7 @@ std::string GetCrashInfoStrFromSerializedStr(const std::string& ciStr)
         return "Error while deserializing crash info header";
     }
 
-    if (hdr.magic != "DashCrashInfo") {
+    if (hdr.magic != "OrinCrashInfo") {
         return "Invalid magic string";
     }
     if (hdr.version != 1) {

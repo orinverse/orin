@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -38,6 +38,10 @@
 #include <QSet>
 #include <QTimer>
 
+using wallet::CCoinControl;
+using wallet::CRecipient;
+using wallet::DEFAULT_DISABLE_WALLET;
+using wallet::mapValue_t;
 
 WalletModel::WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel& client_model, QObject *parent) :
     QObject(parent),
@@ -185,7 +189,7 @@ void WalletModel::updateWatchOnlyFlag(bool fHaveWatchonly)
     Q_EMIT notifyWatchonlyChanged(fHaveWatchonly);
 }
 
-bool WalletModel::validateAddress(const QString &address)
+bool WalletModel::validateAddress(const QString& address) const
 {
     return IsValidDestinationString(address.toStdString());
 }
@@ -215,7 +219,7 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     {
         if (rcp.fSubtractFeeFromAmount)
             fSubtractFeeFromAmount = true;
-        {   // User-entered dash address / amount:
+        {   // User-entered orin address / amount:
             if(!validateAddress(rcp.address))
             {
                 return InvalidAddress;
@@ -247,11 +251,11 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     }
 
     CAmount nFeeRequired = 0;
-    bilingual_str error;
     int nChangePosRet = -1;
 
     auto& newTx = transaction.getWtx();
-    newTx = m_wallet->createTransaction(vecSend, coinControl, !wallet().privateKeysDisabled() /* sign */, nChangePosRet, nFeeRequired, error);
+    const auto& res = m_wallet->createTransaction(vecSend, coinControl, !wallet().privateKeysDisabled() /* sign */, nChangePosRet, nFeeRequired);
+    newTx = res ? *res : nullptr;
     transaction.setTransactionFee(nFeeRequired);
     if (fSubtractFeeFromAmount && newTx)
         transaction.reassignAmounts(nChangePosRet);
@@ -262,7 +266,7 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
         {
             return SendCoinsReturn(AmountWithFeeExceedsBalance);
         }
-        Q_EMIT message(tr("Send Coins"), QString::fromStdString(error.translated),
+        Q_EMIT message(tr("Send Coins"), QString::fromStdString(util::ErrorString(res).translated),
                      CClientUIInterface::MSG_ERROR);
         return TransactionCreationFailed;
     }
@@ -277,7 +281,7 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     return SendCoinsReturn(OK);
 }
 
-WalletModel::SendCoinsReturn WalletModel::sendCoins(WalletModelTransaction &transaction, bool fIsCoinJoin)
+void WalletModel::sendCoins(WalletModelTransaction& transaction, bool fIsCoinJoin)
 {
     QByteArray transaction_array; /* store serialized transaction */
 
@@ -285,7 +289,7 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(WalletModelTransaction &tran
         std::vector<std::pair<std::string, std::string>> vOrderForm;
         for (const SendCoinsRecipient &rcp : transaction.getRecipients())
         {
-            if (!rcp.message.isEmpty()) // Message from normal dash:URI (dash:XyZ...?message=example)
+            if (!rcp.message.isEmpty()) // Message from normal orin:URI (orin:XyZ...?message=example)
                 vOrderForm.emplace_back("Message", rcp.message.toStdString());
         }
 
@@ -328,26 +332,24 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(WalletModelTransaction &tran
     }
 
     checkBalanceChanged(m_wallet->getBalances()); // update balance immediately, otherwise there could be a short noticeable delay until pollBalanceChanged hits
-
-    return SendCoinsReturn(OK);
 }
 
-OptionsModel *WalletModel::getOptionsModel()
+OptionsModel* WalletModel::getOptionsModel() const
 {
     return optionsModel;
 }
 
-AddressTableModel *WalletModel::getAddressTableModel()
+AddressTableModel* WalletModel::getAddressTableModel() const
 {
     return addressTableModel;
 }
 
-TransactionTableModel *WalletModel::getTransactionTableModel()
+TransactionTableModel* WalletModel::getTransactionTableModel() const
 {
     return transactionTableModel;
 }
 
-RecentRequestsTableModel *WalletModel::getRecentRequestsTableModel()
+RecentRequestsTableModel* WalletModel::getRecentRequestsTableModel() const
 {
     return recentRequestsTableModel;
 }
@@ -356,6 +358,11 @@ WalletModel::EncryptionStatus WalletModel::getEncryptionStatus() const
 {
     if(!m_wallet->isCrypted())
     {
+        // A previous bug allowed for watchonly wallets to be encrypted (encryption keys set, but nothing is actually encrypted).
+        // To avoid misrepresenting the encryption status of such wallets, we only return NoKeys for watchonly wallets that are unencrypted.
+        if (m_wallet->privateKeysDisabled()) {
+            return NoKeys;
+        }
         return Unencrypted;
     }
     else if(m_wallet->isLocked(true))
@@ -436,7 +443,7 @@ static void NotifyAddressBookChanged(WalletModel *walletmodel,
     QString strPurpose = QString::fromStdString(purpose);
 
     qDebug() << "NotifyAddressBookChanged: " + strAddress + " " + strLabel + " isMine=" + QString::number(isMine) + " purpose=" + strPurpose + " status=" + QString::number(status);
-    bool invoked = QMetaObject::invokeMethod(walletmodel, "updateAddressBook", Qt::QueuedConnection,
+    bool invoked = QMetaObject::invokeMethod(walletmodel, "updateAddressBook",
                               Q_ARG(QString, strAddress),
                               Q_ARG(QString, strLabel),
                               Q_ARG(bool, isMine),
@@ -519,6 +526,14 @@ void WalletModel::unsubscribeFromCoreSignals()
 // WalletModel::UnlockContext implementation
 WalletModel::UnlockContext WalletModel::requestUnlock(bool fForMixingOnly)
 {
+    // Bugs in earlier versions may have resulted in wallets with private keys disabled to become "encrypted"
+    // (encryption keys are present, but not actually doing anything).
+    // To avoid issues with such wallets, check if the wallet has private keys disabled, and if so, return a context
+    // that indicates the wallet is not encrypted.
+    if (m_wallet->privateKeysDisabled()) {
+        return UnlockContext(this, /*valid=*/true, /*was_locked=*/false, /*was_mixing=*/false);
+    }
+
     EncryptionStatus encStatusOld = getEncryptionStatus();
 
     // Wallet was completely locked
@@ -563,14 +578,6 @@ WalletModel::UnlockContext::~UnlockContext()
     }
 }
 
-void WalletModel::UnlockContext::CopyFrom(UnlockContext&& rhs)
-{
-    // Transfer context; old object no longer relocks wallet
-    *this = rhs;
-    rhs.was_locked = false;
-    rhs.was_mixing = false;
-}
-
 bool WalletModel::isWalletEnabled()
 {
    return !gArgs.GetBoolArg("-disablewallet", DEFAULT_DISABLE_WALLET);
@@ -587,7 +594,7 @@ QString WalletModel::getDisplayName() const
     return name.isEmpty() ? "["+tr("default wallet")+"]" : name;
 }
 
-bool WalletModel::isMultiwallet()
+bool WalletModel::isMultiwallet() const
 {
     return m_node.walletLoader().getWallets().size() > 1;
 }

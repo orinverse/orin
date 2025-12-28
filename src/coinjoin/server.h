@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,7 +6,9 @@
 #define BITCOIN_COINJOIN_SERVER_H
 
 #include <coinjoin/coinjoin.h>
+#include <msg_result.h>
 
+#include <net_types.h>
 #include <protocol.h>
 
 class CActiveMasternodeManager;
@@ -34,10 +36,10 @@ private:
     CDSTXManager& m_dstxman;
     CMasternodeMetaMan& m_mn_metaman;
     CTxMemPool& mempool;
-    const CActiveMasternodeManager* const m_mn_activeman;
+    PeerManager& m_peerman;
+    const CActiveMasternodeManager& m_mn_activeman;
     const CMasternodeSync& m_mn_sync;
     const llmq::CInstantSendManager& m_isman;
-    std::unique_ptr<PeerManager>& m_peerman;
 
     // Mixing uses collateral transactions to trust parties entering the pool
     // to behave honestly. If they don't it takes their money.
@@ -85,32 +87,23 @@ private:
     void RelayCompletedTransaction(PoolMessage nMessageID) EXCLUSIVE_LOCKS_REQUIRED(!cs_coinjoin);
 
     void ProcessDSACCEPT(CNode& peer, CDataStream& vRecv) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
-    PeerMsgRet ProcessDSQUEUE(const CNode& peer, CDataStream& vRecv) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
+    [[nodiscard]] MessageProcessingResult ProcessDSQUEUE(NodeId from, CDataStream& vRecv) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
     void ProcessDSVIN(CNode& peer, CDataStream& vRecv) EXCLUSIVE_LOCKS_REQUIRED(!cs_coinjoin);
     void ProcessDSSIGNFINALTX(CDataStream& vRecv) EXCLUSIVE_LOCKS_REQUIRED(!cs_coinjoin);
 
     void SetNull() override EXCLUSIVE_LOCKS_REQUIRED(cs_coinjoin);
 
 public:
+    CCoinJoinServer() = delete;
+    CCoinJoinServer(const CCoinJoinServer&) = delete;
+    CCoinJoinServer& operator=(const CCoinJoinServer&) = delete;
     explicit CCoinJoinServer(ChainstateManager& chainman, CConnman& _connman, CDeterministicMNManager& dmnman,
                              CDSTXManager& dstxman, CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool,
-                             const CActiveMasternodeManager* const mn_activeman, const CMasternodeSync& mn_sync,
-                             const llmq::CInstantSendManager& isman, std::unique_ptr<PeerManager>& peerman) :
-        m_chainman(chainman),
-        connman(_connman),
-        m_dmnman(dmnman),
-        m_dstxman(dstxman),
-        m_mn_metaman(mn_metaman),
-        mempool(mempool),
-        m_mn_activeman(mn_activeman),
-        m_mn_sync(mn_sync),
-        m_isman{isman},
-        m_peerman(peerman),
-        vecSessionCollaterals(),
-        fUnitTest(false)
-    {}
+                             PeerManager& peerman, const CActiveMasternodeManager& mn_activeman,
+                             const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman);
+    ~CCoinJoinServer();
 
-    PeerMsgRet ProcessMessage(CNode& pfrom, std::string_view msg_type, CDataStream& vRecv);
+    [[nodiscard]] MessageProcessingResult ProcessMessage(CNode& pfrom, std::string_view msg_type, CDataStream& vRecv);
 
     bool HasTimedOut() const;
     void CheckTimeout();

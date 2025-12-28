@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -49,12 +49,11 @@ template <typename Data>
 bool SerializeFileDB(const std::string& prefix, const fs::path& path, const Data& data, int version)
 {
     // Generate random temporary filename
-    uint16_t randv = 0;
-    GetRandBytes({(unsigned char*)&randv, sizeof(randv)});
+    const uint16_t randv{GetRand<uint16_t>()};
     std::string tmpfn = strprintf("%s.%04x", prefix, randv);
 
     // open temp output file, and associate with CAutoFile
-    fs::path pathTmp = gArgs.GetDataDirNet() / tmpfn;
+    fs::path pathTmp = gArgs.GetDataDirNet() / fs::u8path(tmpfn);
     FILE *file = fsbridge::fopen(pathTmp, "wb");
     CAutoFile fileout(file, SER_DISK, version);
     if (fileout.IsNull()) {
@@ -185,7 +184,7 @@ void ReadFromStream(AddrMan& addr, CDataStream& ssPeers)
 
 std::optional<bilingual_str> LoadAddrman(const NetGroupManager& netgroupman, const ArgsManager& args, std::unique_ptr<AddrMan>& addrman)
 {
-    auto check_addrman = std::clamp<int32_t>(args.GetArg("-checkaddrman", DEFAULT_ADDRMAN_CONSISTENCY_CHECKS), 0, 1000000);
+    auto check_addrman = std::clamp<int32_t>(args.GetIntArg("-checkaddrman", DEFAULT_ADDRMAN_CONSISTENCY_CHECKS), 0, 1000000);
     addrman = std::make_unique<AddrMan>(netgroupman, /*deterministic=*/false, /*consistency_check_ratio=*/check_addrman);
 
     const auto start{SteadyClock::now()};

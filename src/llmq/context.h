@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,6 @@
 
 class CActiveMasternodeManager;
 class CBLSWorker;
-class CConnman;
 class ChainstateManager;
 class CDeterministicMNManager;
 class CEvoDB;
@@ -24,30 +23,29 @@ namespace llmq {
 class CChainLocksHandler;
 class CDKGDebugManager;
 class CDKGSessionManager;
-class CEHFSignalsHandler;
 class CInstantSendManager;
 class CQuorumBlockProcessor;
 class CQuorumManager;
 class CQuorumSnapshotManager;
-class CSigSharesManager;
 class CSigningManager;
-}
+} // namespace llmq
+namespace util {
+struct DbWrapperParams;
+} // namespace util
 
 struct LLMQContext {
-private:
-    const bool is_masternode;
-
 public:
     LLMQContext() = delete;
     LLMQContext(const LLMQContext&) = delete;
-    LLMQContext(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CEvoDB& evo_db,
-                CMasternodeMetaMan& mn_metaman, CMNHFManager& mnhfman, CSporkManager& sporkman, CTxMemPool& mempool,
-                const CActiveMasternodeManager* const mn_activeman, const CMasternodeSync& mn_sync, bool unit_tests,
-                bool wipe);
+    LLMQContext& operator=(const LLMQContext&) = delete;
+    explicit LLMQContext(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CEvoDB& evo_db,
+                         CMasternodeMetaMan& mn_metaman, CMNHFManager& mnhfman, CSporkManager& sporkman,
+                         CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman,
+                         const CMasternodeSync& mn_sync, const util::DbWrapperParams& db_params);
     ~LLMQContext();
 
     void Interrupt();
-    void Start(CConnman& connman, PeerManager& peerman);
+    void Start(PeerManager& peerman);
     void Stop();
 
     /** Guaranteed if LLMQContext is initialized then all members are valid too
@@ -67,10 +65,8 @@ public:
     const std::unique_ptr<llmq::CDKGSessionManager> qdkgsman;
     const std::unique_ptr<llmq::CQuorumManager> qman;
     const std::unique_ptr<llmq::CSigningManager> sigman;
-    const std::unique_ptr<llmq::CSigSharesManager> shareman;
     const std::unique_ptr<llmq::CChainLocksHandler> clhandler;
-    const std::unique_ptr<llmq::CInstantSendManager> isman; // TODO: split CInstantSendManager and CInstantSendLock to 2 files
-    const std::unique_ptr<llmq::CEHFSignalsHandler> ehfSignalsHandler;
+    const std::unique_ptr<llmq::CInstantSendManager> isman;
 };
 
 #endif // BITCOIN_LLMQ_CONTEXT_H

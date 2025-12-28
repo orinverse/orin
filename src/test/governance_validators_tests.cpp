@@ -1,4 +1,6 @@
-// Copyright (c) 2014-2023 The Dash Core developers
+// Copyright (c) 2014-2023 The Orin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <governance/validators.h>
 #include <util/strencodings.h>
@@ -6,6 +8,7 @@
 #include <test/data/proposals_invalid.json.h>
 #include <test/data/proposals_valid.json.h>
 
+#include <test/util/json.h>
 #include <test/util/setup_common.h>
 
 #include <string>
@@ -13,8 +16,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <univalue.h>
-
-extern UniValue read_json(const std::string& jsondata);
 
 BOOST_FIXTURE_TEST_SUITE(governance_validators_tests, BasicTestingSetup)
 

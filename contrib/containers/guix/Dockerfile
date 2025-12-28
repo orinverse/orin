@@ -2,14 +2,13 @@
 #       to use 'docker compose run guix_ubuntu' to drop into an
 #       interactive shell
 
-FROM ubuntu:jammy
+FROM ubuntu:noble
 
 SHELL ["/bin/bash", "-c"]
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-upgrade \
     build-essential \
-    bzip2 \
     ca-certificates \
     curl \
     git \
@@ -52,8 +51,9 @@ RUN guix_file_name=guix-binary-${guix_version}.$(uname -m)-linux.tar.xz         
 
 RUN touch /etc/nsswitch.conf
 
-RUN guix archive --authorize < /usr/local/guix/current/share/guix/ci.guix.gnu.org.pub && \
-    guix archive --authorize < /usr/local/guix/current/share/guix/bordeaux.guix.gnu.org.pub
+RUN guix archive --authorize < /usr/local/guix/current/share/guix/berlin.guix.gnu.org.pub && \
+    guix archive --authorize < /usr/local/guix/current/share/guix/bordeaux.guix.gnu.org.pub && \
+    guix archive --authorize < /usr/local/guix/current/share/guix/ci.guix.gnu.org.pub
 
 # Build Environment Setup
 # https://guix.gnu.org/manual/en/html_node/Build-Environment-Setup.html
@@ -65,18 +65,17 @@ RUN groupadd --system guixbuild && \
               "guixbuilder${i}" ;                \
     done
 
-# Create unprivileged user
+# Setup unprivileged user and grant it passwordless sudo
 ARG USER_ID=1000 \
-    GROUP_ID=1000 \
-    USERNAME=ubuntu
-RUN groupadd -g ${GROUP_ID} ${USERNAME} && \
-    useradd -u ${USER_ID} -g ${USERNAME} -s /bin/bash -m -d /home/${USERNAME} ${USERNAME}
-
-# Grant it passwordless admin permissions
-RUN usermod -aG sudo ${USERNAME} && \
+    GROUP_ID=1000
+RUN groupmod -g ${GROUP_ID} ubuntu; \
+    usermod -u ${USER_ID} -aG sudo ubuntu; \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Copy required files to container
+COPY --chown=${USER_ID}:${GROUP_ID} \
+     --chmod=u=rwX,go=rX \
+     --from=docker_root ./channels.scm         /home/ubuntu/.config/guix/channels.scm
 COPY --from=docker_root ./motd.txt             /etc/motd
 COPY --from=docker_root ./scripts/entrypoint   /usr/local/bin/entrypoint
 COPY --from=docker_root ./scripts/guix-check   /usr/local/bin/guix-check
@@ -85,16 +84,16 @@ COPY --from=docker_root ./scripts/setup-sdk    /usr/local/bin/setup-sdk
 
 # Create directories for mounting to save/restore cache and grant necessary permissions
 RUN mkdir -p \
-        /home/${USERNAME}/.cache \
-        /src/dash/depends/{built,sources,work}; \
+        /home/ubuntu/.cache \
+        /src/orin/depends/{built,sources,work}; \
     chown -R ${USER_ID}:${GROUP_ID} \
-        /home/${USERNAME}/.cache \
+        /home/ubuntu/.cache \
         /src;
 
-WORKDIR "/src/dash"
+WORKDIR "/src/orin"
 
 # Switch to unprivileged context
-USER ${USERNAME}
+USER ubuntu
 
 # Set entrypoint to copied file
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

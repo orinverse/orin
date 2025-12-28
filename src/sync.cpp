@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -251,7 +251,7 @@ void LeaveCritical()
     pop_lock();
 }
 
-std::string LocksHeld()
+static std::string LocksHeld()
 {
     LockData& lockdata = GetLockData();
     std::lock_guard<std::mutex> lock(lockdata.dd_mutex);
@@ -286,6 +286,15 @@ void AssertLockHeldInternal(const char* pszName, const char* pszFile, int nLine,
 template void AssertLockHeldInternal(const char*, const char*, int, Mutex*);
 template void AssertLockHeldInternal(const char*, const char*, int, RecursiveMutex*);
 template void AssertLockHeldInternal(const char*, const char*, int, SharedMutex*);
+
+template <typename MutexType>
+void AssertSharedLockHeldInternal(const char* pszName, const char* pszFile, int nLine, MutexType* cs)
+{
+    if (LockHeld(cs)) return;
+    tfm::format(std::cerr, "Assertion failed: shared lock %s not held in %s:%i; locks held:\n%s", pszName, pszFile, nLine, LocksHeld());
+    abort();
+}
+template void AssertSharedLockHeldInternal(const char*, const char*, int, SharedMutex*);
 
 template <typename MutexType>
 void AssertLockNotHeldInternal(const char* pszName, const char* pszFile, int nLine, MutexType* cs)

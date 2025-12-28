@@ -1,12 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <fs.h>
 #include <logging.h>
 #include <util/string.h>
-#include <util/system.h>
 #include <util/threadnames.h>
 #include <util/time.h>
 
@@ -183,7 +182,7 @@ const CLogCategoryDesc LogCategories[] =
     {BCLog::ALL, "1"},
     {BCLog::ALL, "all"},
 
-    //Start Dash
+    //Start Orin
     {BCLog::CHAINLOCKS, "chainlocks"},
     {BCLog::GOBJECT, "gobject"},
     {BCLog::INSTANTSEND, "instantsend"},
@@ -197,8 +196,8 @@ const CLogCategoryDesc LogCategories[] =
     {BCLog::NETCONN, "netconn"},
     {BCLog::CREDITPOOL, "creditpool"},
     {BCLog::EHF, "ehf"},
-    {BCLog::DASH, "dash"},
-    //End Dash
+    {BCLog::ORIN, "orin"},
+    //End Orin
 };
 
 bool GetLogCategory(BCLog::LogFlags& flag, const std::string& str)
@@ -297,7 +296,7 @@ std::string LogCategoryToStr(BCLog::LogFlags category)
         return "blockstorage";
     case BCLog::LogFlags::TXRECONCILIATION:
         return "txreconciliation";
-    /* Start Dash */
+    /* Start Orin */
     case BCLog::LogFlags::CHAINLOCKS:
         return "chainlocks";
     case BCLog::LogFlags::GOBJECT:
@@ -324,11 +323,11 @@ std::string LogCategoryToStr(BCLog::LogFlags category)
         return "creditpool";
     case BCLog::LogFlags::EHF:
         return "ehf";
-    case BCLog::LogFlags::DASH:
-        return "dash";
+    case BCLog::LogFlags::ORIN:
+        return "orin";
     case BCLog::LogFlags::NET_NETCONN:
         return "net|netconn";
-    /* End Dash */
+    /* End Orin */
     case BCLog::LogFlags::ALL:
         return "all";
     }
@@ -363,7 +362,7 @@ std::vector<LogCategory> BCLog::Logger::LogCategoriesList(bool enabled_only) con
 
     std::vector<LogCategory> ret;
     for (const CLogCategoryDesc& category_desc : categories) {
-        if (category_desc.flag == BCLog::NONE || category_desc.flag == BCLog::ALL || category_desc.flag == BCLog::DASH) continue;
+        if (category_desc.flag == BCLog::NONE || category_desc.flag == BCLog::ALL || category_desc.flag == BCLog::ORIN) continue;
         LogCategory catActive;
         catActive.category = category_desc.category;
         catActive.active = WillLogCategory(category_desc.flag);
@@ -396,13 +395,13 @@ std::string BCLog::Logger::LogTimestampStr(const std::string& str)
     if (m_started_new_line) {
         int64_t nTimeMicros = GetTimeMicros();
         strStamped = FormatISO8601DateTime(nTimeMicros/1000000);
-        if (m_log_time_micros) {
+        if (m_log_time_micros && !strStamped.empty()) {
             strStamped.pop_back();
             strStamped += strprintf(".%06dZ", nTimeMicros%1000000);
         }
         std::chrono::seconds mocktime = GetMockTime();
         if (mocktime > 0s) {
-            strStamped += " (mocktime: " + FormatISO8601DateTime(count_seconds(mocktime)) + ")";
+            strStamped += strprintf(" (mocktime: %d)", count_seconds(mocktime));
         }
         strStamped += ' ' + str;
     } else
@@ -463,8 +462,9 @@ void BCLog::Logger::LogPrintStr(const std::string& str, const std::string& loggi
     }
 
     if (m_log_threadnames && m_started_new_line) {
-        // 16 chars total, "dash-" is 5 of them and another 1 is a NUL terminator
-        str_prefixed.insert(0, "[" + strprintf("%10s", util::ThreadGetInternalName()) + "] ");
+        const auto threadname = util::ThreadGetInternalName();
+        // 16 chars total, "orin-" is 5 of them and another 1 is a NUL terminator
+        str_prefixed.insert(0, "[" + strprintf("%10s", (threadname.empty() ? "unknown" : threadname)) + "] ");
     }
 
     str_prefixed = LogTimestampStr(str_prefixed);

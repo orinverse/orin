@@ -1,8 +1,7 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <llmq/debug.h>
 #include <llmq/dkgsessionmgr.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
@@ -34,15 +33,15 @@ CDKGSessionManager::CDKGSessionManager(CBLSWorker& _blsWorker, CChainState& chai
                                        CDKGDebugManager& _dkgDebugManager, CMasternodeMetaMan& mn_metaman,
                                        CQuorumBlockProcessor& _quorumBlockProcessor, CQuorumSnapshotManager& qsnapman,
                                        const CActiveMasternodeManager* const mn_activeman,
-                                       const CSporkManager& sporkman, bool unitTests, bool fWipe) :
-    db(std::make_unique<CDBWrapper>(unitTests ? "" : (gArgs.GetDataDirNet() / "llmq/dkgdb"), 1 << 20, unitTests, fWipe)),
-    blsWorker(_blsWorker),
-    m_chainstate(chainstate),
-    m_dmnman(dmnman),
-    dkgDebugManager(_dkgDebugManager),
-    quorumBlockProcessor(_quorumBlockProcessor),
-    m_qsnapman(qsnapman),
-    spork_manager(sporkman)
+                                       const CSporkManager& sporkman, const util::DbWrapperParams& db_params) :
+    db{util::MakeDbWrapper({db_params.path / "llmq" / "dkgdb", db_params.memory, db_params.wipe, /*cache_size=*/1 << 20})},
+    blsWorker{_blsWorker},
+    m_chainstate{chainstate},
+    m_dmnman{dmnman},
+    dkgDebugManager{_dkgDebugManager},
+    quorumBlockProcessor{_quorumBlockProcessor},
+    m_qsnapman{qsnapman},
+    spork_manager{sporkman}
 {
     if (mn_activeman == nullptr && !IsWatchQuorumsEnabled()) {
         // Regular nodes do not care about any DKG internals, bail out
@@ -93,11 +92,11 @@ void CDKGSessionManager::UpdatedBlockTip(const CBlockIndex* pindexNew, bool fIni
     }
 }
 
-PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman, bool is_masternode,
-                                              const std::string& msg_type, CDataStream& vRecv)
+MessageProcessingResult CDKGSessionManager::ProcessMessage(CNode& pfrom, bool is_masternode, std::string_view msg_type,
+                                                           CDataStream& vRecv)
 {
     static Mutex cs_indexedQuorumsCache;
-    static std::map<Consensus::LLMQType, unordered_lru_cache<uint256, int, StaticSaltedHasher>> indexedQuorumsCache GUARDED_BY(cs_indexedQuorumsCache);
+    static std::map<Consensus::LLMQType, Uint256LruHashMap<int>> indexedQuorumsCache GUARDED_BY(cs_indexedQuorumsCache);
 
     if (!IsQuorumDKGEnabled(spork_manager))
         return {};
@@ -113,7 +112,7 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
     if (msg_type == NetMsgType::QWATCH) {
         if (!is_masternode) {
             // non-masternodes should never receive this
-            return tl::unexpected{10};
+            return MisbehavingError{10};
         }
         pfrom.qwatch = true;
         return {};
@@ -121,11 +120,11 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
 
     if ((!is_masternode && !IsWatchQuorumsEnabled())) {
         // regular non-watching nodes should never receive any of these
-        return tl::unexpected{10};
+        return MisbehavingError{10};
     }
 
     if (vRecv.empty()) {
-        return tl::unexpected{100};
+        return MisbehavingError{100};
     }
 
     Consensus::LLMQType llmqType;
@@ -138,7 +137,7 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
     if (!llmq_params_opt.has_value()) {
         LogPrintf("CDKGSessionManager -- invalid llmqType [%d]\n", ToUnderlying(llmqType));
-        return tl::unexpected{100};
+        return MisbehavingError{100};
     }
     const auto& llmq_params = llmq_params_opt.value();
 
@@ -155,16 +154,16 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
 
     // No luck, try to compute
     if (quorumIndex == -1) {
-        CBlockIndex* pQuorumBaseBlockIndex = WITH_LOCK(cs_main, return m_chainstate.m_blockman.LookupBlockIndex(quorumHash));
+        CBlockIndex* pQuorumBaseBlockIndex = WITH_LOCK(::cs_main, return m_chainstate.m_blockman.LookupBlockIndex(quorumHash));
         if (pQuorumBaseBlockIndex == nullptr) {
             LogPrintf("CDKGSessionManager -- unknown quorumHash %s\n", quorumHash.ToString());
             // NOTE: do not insta-ban for this, we might be lagging behind
-            return tl::unexpected{10};
+            return MisbehavingError{10};
         }
 
         if (!IsQuorumTypeEnabled(llmqType, pQuorumBaseBlockIndex->pprev)) {
             LogPrintf("CDKGSessionManager -- llmqType [%d] quorums aren't active\n", ToUnderlying(llmqType));
-            return tl::unexpected{100};
+            return MisbehavingError{100};
         }
 
         quorumIndex = pQuorumBaseBlockIndex->nHeight % llmq_params.dkgInterval;
@@ -173,19 +172,18 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
 
         if (quorumIndex > quorumIndexMax) {
             LogPrintf("CDKGSessionManager -- invalid quorumHash %s\n", quorumHash.ToString());
-            return tl::unexpected{100};
+            return MisbehavingError{100};
         }
 
         if (!dkgSessionHandlers.count(std::make_pair(llmqType, quorumIndex))) {
             LogPrintf("CDKGSessionManager -- no session handlers for quorumIndex [%d]\n", quorumIndex);
-            return tl::unexpected{100};
+            return MisbehavingError{100};
         }
     }
 
     assert(quorumIndex != -1);
     WITH_LOCK(cs_indexedQuorumsCache, indexedQuorumsCache[llmqType].insert(quorumHash, quorumIndex));
-    dkgSessionHandlers.at(std::make_pair(llmqType, quorumIndex)).ProcessMessage(pfrom, peerman, msg_type, vRecv);
-    return {};
+    return dkgSessionHandlers.at(std::make_pair(llmqType, quorumIndex)).ProcessMessage(pfrom.GetId(), msg_type, vRecv);
 }
 
 bool CDKGSessionManager::AlreadyHave(const CInv& inv) const
@@ -318,6 +316,9 @@ bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, 
             if (it == contributionsCache.end()) {
                 CDataStream s(SER_DISK, CLIENT_VERSION);
                 if (!db->ReadDataStream(std::make_tuple(DB_VVEC, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash), s)) {
+                    LogPrint(BCLog::LLMQ, "%s -- this node does not have vvec for llmq=%d block=%s protx=%s\n",
+                             __func__, ToUnderlying(llmqType), pQuorumBaseBlockIndex->GetBlockHash().ToString(),
+                             proTxHash.ToString());
                     return false;
                 }
                 size_t vvec_size = ReadCompactSize(s);
@@ -332,7 +333,7 @@ bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, 
                 CBLSSecretKey skContribution;
                 db->Read(std::make_tuple(DB_SKCONTRIB, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash), skContribution);
 
-                it = contributionsCache.emplace(cacheKey, ContributionsCacheEntry{GetTimeMillis(), vvecPtr, skContribution}).first;
+                it = contributionsCache.emplace(cacheKey, ContributionsCacheEntry{TicksSinceEpoch<std::chrono::milliseconds>(SystemClock::now()), vvecPtr, skContribution}).first;
             }
 
             memberIndexesRet.emplace_back(i);
@@ -379,7 +380,7 @@ bool CDKGSessionManager::GetEncryptedContributions(Consensus::LLMQType llmqType,
 void CDKGSessionManager::CleanupCache() const
 {
     LOCK(contributionsCacheCs);
-    auto curTime = GetTimeMillis();
+    auto curTime = TicksSinceEpoch<std::chrono::milliseconds>(SystemClock::now());
     for (auto it = contributionsCache.begin(); it != contributionsCache.end(); ) {
         if (curTime - it->second.entryTime > MAX_CONTRIBUTION_CACHE_TIME) {
             it = contributionsCache.erase(it);
@@ -408,7 +409,7 @@ void CDKGSessionManager::CleanupOldContributions() const
             decltype(start) k;
 
             pcursor->Seek(start);
-            LOCK(cs_main);
+            LOCK(::cs_main);
             while (pcursor->Valid()) {
                 if (!pcursor->GetKey(k) || std::get<0>(k) != prefix || std::get<1>(k) != params.type) {
                     break;

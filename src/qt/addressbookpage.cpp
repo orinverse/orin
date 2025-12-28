@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2022 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2022 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -21,6 +21,11 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSortFilterProxyModel>
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#include <QRegularExpression>
+#else
+#include <QRegExp>
+#endif
 
 class AddressBookSortFilterProxyModel final : public QSortFilterProxyModel
 {
@@ -48,12 +53,13 @@ protected:
 
         auto address = model->index(row, AddressTableModel::Address, parent);
 
-        if (filterRegExp().indexIn(model->data(address).toString()) < 0 &&
-            filterRegExp().indexIn(model->data(label).toString()) < 0) {
-            return false;
-        }
-
-        return true;
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        const auto pattern = filterRegularExpression();
+#else
+        const auto pattern = filterRegExp();
+#endif
+        return (model->data(address).toString().contains(pattern) ||
+                model->data(label).toString().contains(pattern));
     }
 };
 
@@ -71,9 +77,7 @@ AddressBookPage::AddressBookPage(Mode _mode, Tabs _tab, QWidget* parent) :
     ui->showAddressQRCode->setEnabled(false);
 #endif
 
-    switch(mode)
-    {
-    case ForSelection:
+    if (mode == ForSelection) {
         switch(tab)
         {
         case SendingTab: setWindowTitle(tr("Choose the address to send coins to")); break;
@@ -84,24 +88,16 @@ AddressBookPage::AddressBookPage(Mode _mode, Tabs _tab, QWidget* parent) :
         ui->tableView->setFocus();
         ui->closeButton->setText(tr("C&hoose"));
         ui->exportButton->hide();
-        break;
-    case ForEditing:
-        switch(tab)
-        {
-        case SendingTab: setWindowTitle(tr("Sending addresses")); break;
-        case ReceivingTab: setWindowTitle(tr("Receiving addresses")); break;
-        }
-        break;
     }
     switch(tab)
     {
     case SendingTab:
-        ui->labelExplanation->setText(tr("These are your Dash addresses for sending payments. Always check the amount and the receiving address before sending coins."));
+        ui->labelExplanation->setText(tr("These are your Orin addresses for sending payments. Always check the amount and the receiving address before sending coins."));
         ui->deleteAddress->setVisible(true);
         ui->newAddress->setVisible(true);
         break;
     case ReceivingTab:
-        ui->labelExplanation->setText(tr("These are your Dash addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses."));
+        ui->labelExplanation->setText(tr("These are your Orin addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses."));
         ui->deleteAddress->setVisible(false);
         ui->newAddress->setVisible(false);
         break;
@@ -162,6 +158,7 @@ void AddressBookPage::setModel(AddressTableModel *_model)
     connect(_model, &AddressTableModel::rowsInserted, this, &AddressBookPage::selectNewAddress);
 
     selectionChanged();
+    this->updateWindowsTitleWithWalletName();
 }
 
 void AddressBookPage::on_copyAddress_clicked()
@@ -185,14 +182,14 @@ void AddressBookPage::onEditAction()
     if(indexes.isEmpty())
         return;
 
-    EditAddressDialog dlg(
+    auto dlg = new EditAddressDialog(
         tab == SendingTab ?
         EditAddressDialog::EditSendingAddress :
         EditAddressDialog::EditReceivingAddress, this);
-    dlg.setModel(model);
+    dlg->setModel(model);
     QModelIndex origIndex = proxyModel->mapToSource(indexes.at(0));
-    dlg.loadRow(origIndex.row());
-    dlg.exec();
+    dlg->loadRow(origIndex.row());
+    GUIUtil::ShowModalDialogAsynchronously(dlg);
 }
 
 void AddressBookPage::on_newAddress_clicked()
@@ -236,7 +233,7 @@ void AddressBookPage::on_showAddressQRCode_clicked()
     QRDialog* dialog = new QRDialog(this);
 
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setInfo(tr("QR code"), "dash:"+strAddress, "", strAddress);
+    dialog->setInfo(tr("QR code"), "orin:"+strAddress, "", strAddress);
     dialog->show();
 }
 
@@ -345,5 +342,18 @@ void AddressBookPage::selectNewAddress(const QModelIndex &parent, int begin, int
         ui->tableView->setFocus();
         ui->tableView->selectRow(idx.row());
         newAddressToSelect.clear();
+    }
+}
+
+void AddressBookPage::updateWindowsTitleWithWalletName()
+{
+    const QString walletName = this->model->GetWalletDisplayName();
+
+    if (mode == ForEditing) {
+        switch(tab)
+        {
+        case SendingTab: setWindowTitle(tr("Sending addresses - %1").arg(walletName)); break;
+        case ReceivingTab: setWindowTitle(tr("Receiving addresses - %1").arg(walletName)); break;
+        }
     }
 }

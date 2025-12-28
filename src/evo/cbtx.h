@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2025 The Dash Core developers
+// Copyright (c) 2017-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,26 +6,24 @@
 #define BITCOIN_EVO_CBTX_H
 
 #include <bls/bls.h>
+
 #include <primitives/transaction.h>
+
 #include <univalue.h>
 
 #include <optional>
+#include <string>
 
 class BlockValidationState;
 class CBlock;
 class CBlockIndex;
-class CCoinsViewCache;
-class CDeterministicMNManager;
+class CDeterministicMNList;
 class TxValidationState;
+struct RPCResult;
 
 namespace llmq {
-class CChainLocksHandler;
 class CQuorumBlockProcessor;
-class CQuorumSnapshotManager;
 }// namespace llmq
-
-// Forward declaration from core_io to get rid of circular dependency
-UniValue ValueFromAmount(const CAmount amount);
 
 // coinbase transaction
 class CCbTx
@@ -63,44 +61,18 @@ public:
 
     }
 
+    [[nodiscard]] static RPCResult GetJsonHelp(const std::string& key, bool optional);
     std::string ToString() const;
 
-    [[nodiscard]] UniValue ToJson() const
-    {
-        UniValue obj;
-        obj.setObject();
-        obj.pushKV("version", (int)nVersion);
-        obj.pushKV("height", nHeight);
-        obj.pushKV("merkleRootMNList", merkleRootMNList.ToString());
-        if (nVersion >= Version::MERKLE_ROOT_QUORUMS) {
-            obj.pushKV("merkleRootQuorums", merkleRootQuorums.ToString());
-            if (nVersion >= Version::CLSIG_AND_BALANCE) {
-                obj.pushKV("bestCLHeightDiff", static_cast<int>(bestCLHeightDiff));
-                obj.pushKV("bestCLSignature", bestCLSignature.ToString());
-                obj.pushKV("creditPoolBalance", ValueFromAmount(creditPoolBalance));
-            }
-        }
-        return obj;
-    }
+    [[nodiscard]] UniValue ToJson() const;
 };
 template<> struct is_serializable_enum<CCbTx::Version> : std::true_type {};
 
-bool CheckCbTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidationState& state);
+bool CheckCbTx(const CCbTx& cbTx, const CBlockIndex* pindexPrev, TxValidationState& state);
 
-bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CDeterministicMNManager& dmnman,
-                          llmq::CQuorumSnapshotManager& qsnapman, const llmq::CQuorumBlockProcessor& quorum_block_processor,
-                          BlockValidationState& state, const CCoinsViewCache& view);
-bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev, uint256& merkleRootRet,
-                              BlockValidationState& state, CDeterministicMNManager& dmnman,
-                              llmq::CQuorumSnapshotManager& qsnapman, const CCoinsViewCache& view);
 bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPrev,
                                const llmq::CQuorumBlockProcessor& quorum_block_processor, uint256& merkleRootRet,
                                BlockValidationState& state);
-
-bool CheckCbTxBestChainlock(const CBlock& block, const CBlockIndex* pindexPrev,
-                            const llmq::CChainLocksHandler& chainlock_handler, BlockValidationState& state);
-bool CalcCbTxBestChainlock(const llmq::CChainLocksHandler& chainlock_handler, const CBlockIndex* pindexPrev,
-                           uint32_t& bestCLHeightDiff, CBLSSignature& bestCLSignature);
 
 std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(const CBlockIndex* pindex);
 

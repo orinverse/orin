@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-2024 The Dash Core developers
+# Copyright (c) 2020-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 from test_framework.messages import CTransaction, from_hex, hash256, ser_compact_size, ser_string
 from test_framework.test_framework import DashTestFramework
-from test_framework.util import assert_raises_rpc_error, satoshi_round
+from test_framework.util import assert_equal, assert_raises_rpc_error, satoshi_round
 
 '''
 rpc_verifyislock.py
@@ -17,7 +17,7 @@ Test verifyislock rpc
 class RPCVerifyISLockTest(DashTestFramework):
     def set_test_params(self):
         # -whitelist is needed to avoid the trickling logic on node0
-        self.set_dash_test_params(6, 5, [["-whitelist=127.0.0.1"], [], [], [], [], []])
+        self.set_orin_test_params(6, 5, [["-whitelist=127.0.0.1"], [], [], [], [], []])
 
     def get_request_id(self, tx_hex):
         tx = from_hex(CTransaction(), tx_hex)
@@ -38,9 +38,12 @@ class RPCVerifyISLockTest(DashTestFramework):
         self.generate(self.nodes[0], 8, sync_fun=self.sync_blocks())
 
         txid = node.sendtoaddress(node.getnewaddress(), 1)
+        self.bump_mocktime(30)
         self.wait_for_instantlock(txid, node)
 
         request_id = self.get_request_id(self.nodes[0].getrawtransaction(txid))
+        request_id_rpc = self.nodes[0].getislocks([txid])[0]["id"]
+        assert_equal(request_id, request_id_rpc)
         self.wait_until(lambda: node.quorum("hasrecsig", 103, request_id, txid))
 
         rec_sig = node.quorum("getrecsig", 103, request_id, txid)['sig']
@@ -55,7 +58,7 @@ class RPCVerifyISLockTest(DashTestFramework):
         assert node.verifyislock(request_id, txid, rec_sig, node.getblockcount() + 100)
 
         # Mine one more cycle of rotated quorums
-        self.mine_cycle_quorum(is_first=False)
+        self.mine_cycle_quorum()
         # Create an ISLOCK using an active quorum which will be replaced when a new cycle happens
         request_id = None
         utxos = node.listunspent()
@@ -78,7 +81,7 @@ class RPCVerifyISLockTest(DashTestFramework):
         # Create the ISDLOCK, then mine a cycle quorum to move renew active set
         isdlock = self.create_isdlock(rawtx)
         # Mine one block to trigger the "signHeight + dkgInterval" verification for the ISDLOCK
-        self.mine_cycle_quorum(is_first=False)
+        self.mine_cycle_quorum()
         # Verify the ISLOCK for a transaction that is not yet known by the node
         rawtx_txid = node.decoderawtransaction(rawtx)["txid"]
         assert_raises_rpc_error(-5, "No such mempool or blockchain transaction", node.getrawtransaction, rawtx_txid)

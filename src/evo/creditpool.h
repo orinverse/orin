@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2024 The Dash Core developers
+// Copyright (c) 2023-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,7 +20,6 @@
 #include <optional>
 #include <unordered_set>
 
-class BlockManager;
 class CBlock;
 class CBlockIndex;
 class BlockValidationState;
@@ -32,6 +31,9 @@ struct Params;
 namespace llmq {
 class CQuorumManager;
 } // namespace llmq
+namespace node {
+class BlockManager;
+} // namespace node
 
 struct CCreditPool {
     CAmount locked{0};
@@ -75,7 +77,7 @@ private:
     CAmount platformReward{0};
 
     const CBlockIndex *pindexPrev{nullptr};
-    const Consensus::Params& params;
+
 public:
     explicit CCreditPoolDiff(CCreditPool starter, const CBlockIndex *pindexPrev,
                              const Consensus::Params& consensusParams,
@@ -86,7 +88,7 @@ public:
      * to change amount of credit pool
      * @return true if transaction can be included in this block
      */
-    bool ProcessLockUnlockTransaction(const BlockManager& blockman, const llmq::CQuorumManager& qman, const CTransaction& tx, TxValidationState& state);
+    bool ProcessLockUnlockTransaction(const node::BlockManager& blockman, const llmq::CQuorumManager& qman, const CTransaction& tx, TxValidationState& state);
 
     /**
      * this function returns total amount of credits for the next block
@@ -109,7 +111,7 @@ class CCreditPoolManager
 private:
     static constexpr size_t CreditPoolCacheSize = 1000;
     Mutex cache_mutex;
-    unordered_lru_cache<uint256, CCreditPool, StaticSaltedHasher> creditPoolCache GUARDED_BY(cache_mutex) {CreditPoolCacheSize};
+    Uint256LruHashMap<CCreditPool> creditPoolCache GUARDED_BY(cache_mutex){CreditPoolCacheSize};
 
     CEvoDB& evoDb;
 
@@ -119,27 +121,31 @@ public:
     static constexpr CAmount LimitAmountLow = 100 * COIN;
     static constexpr CAmount LimitAmountHigh = 1000 * COIN;
     static constexpr CAmount LimitAmountV22 = 2000 * COIN;
+    static constexpr CAmount LimitAmountV24 = 4000 * COIN;
 
+    CCreditPoolManager() = delete;
+    CCreditPoolManager(const CCreditPoolManager&) = delete;
+    CCreditPoolManager& operator=(const CCreditPoolManager&) = delete;
     explicit CCreditPoolManager(CEvoDB& _evoDb);
-
-    ~CCreditPoolManager() = default;
+    ~CCreditPoolManager();
 
     /**
       * @return CCreditPool with data or with empty depends on activation V19 at that block
       * In case if block is invalid the function GetCreditPool throws an exception
       * it can happen if there limits of withdrawal (unlock) exceed
       */
-    CCreditPool GetCreditPool(const CBlockIndex* block, const Consensus::Params& consensusParams);
+    CCreditPool GetCreditPool(const CBlockIndex* block, const Consensus::Params& consensusParams)
+        EXCLUSIVE_LOCKS_REQUIRED(!cache_mutex);
 
 private:
-    std::optional<CCreditPool> GetFromCache(const CBlockIndex& block_index);
-    void AddToCache(const uint256& block_hash, int height, const CCreditPool& pool);
+    std::optional<CCreditPool> GetFromCache(const CBlockIndex& block_index) EXCLUSIVE_LOCKS_REQUIRED(!cache_mutex);
+    void AddToCache(const uint256& block_hash, int height, const CCreditPool& pool) EXCLUSIVE_LOCKS_REQUIRED(!cache_mutex);
 
     CCreditPool ConstructCreditPool(const gsl::not_null<const CBlockIndex*> block_index, CCreditPool prev,
-                                    const Consensus::Params& consensusParams);
+                                    const Consensus::Params& consensusParams) EXCLUSIVE_LOCKS_REQUIRED(!cache_mutex);
 };
 
-std::optional<CCreditPoolDiff> GetCreditPoolDiffForBlock(CCreditPoolManager& cpoolman, const BlockManager& blockman, const llmq::CQuorumManager& qman,
+std::optional<CCreditPoolDiff> GetCreditPoolDiffForBlock(CCreditPoolManager& cpoolman, const node::BlockManager& blockman, const llmq::CQuorumManager& qman,
                                                          const CBlock& block, const CBlockIndex* pindexPrev, const Consensus::Params& consensusParams,
                                                          const CAmount blockSubsidy, BlockValidationState& state);
 

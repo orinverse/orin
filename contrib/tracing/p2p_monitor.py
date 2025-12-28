@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+# Copyright (c) 2021 The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-""" Interactive dashd P2P network traffic monitor utilizing USDT and the
+""" Interactive orind P2P network traffic monitor utilizing USDT and the
     net:inbound_message and net:outbound_message tracepoints. """
 
-# This script demonstrates what USDT for Dash Core can enable. It uses BCC
+# This script demonstrates what USDT for Orin Core can enable. It uses BCC
 # (https://github.com/iovisor/bcc) to load a sandboxed eBPF program into the
 # Linux kernel (root privileges are required). The eBPF program attaches to two
 # statically defined tracepoints. The tracepoint 'net:inbound_message' is called
@@ -244,7 +247,7 @@ def render(screen, peers, cur_list_pos, scroll, ROWS_AVALIABLE_FOR_LIST, info_pa
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("USAGE:", sys.argv[0], "path/to/dashd")
+        print("USAGE:", sys.argv[0], "path/to/orind")
         exit()
     path = sys.argv[1]
     main(path)

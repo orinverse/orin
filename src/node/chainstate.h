@@ -27,8 +27,12 @@ struct LLMQContext;
 
 namespace Consensus {
 struct Params;
-}
+} // namespace Consensus
+namespace fs {
+class path;
+} // namespace fs
 
+namespace node {
 enum class ChainstateLoadingError {
     ERROR_LOADING_BLOCK_DB,
     ERROR_BAD_GENESIS_BLOCK,
@@ -89,6 +93,7 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      std::unique_ptr<CMNHFManager>& mnhf_manager,
                                                      std::unique_ptr<LLMQContext>& llmq_ctx,
                                                      CTxMemPool* mempool,
+                                                     const fs::path& data_dir,
                                                      bool fPruneMode,
                                                      bool is_addrindex_enabled,
                                                      bool is_governance_enabled,
@@ -103,10 +108,11 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      int64_t nCoinCacheUsage,
                                                      bool block_tree_db_in_memory,
                                                      bool coins_db_in_memory,
+                                                     bool orin_dbs_in_memory,
                                                      std::function<bool()> shutdown_requested = nullptr,
                                                      std::function<void()> coins_error_cb = nullptr);
 
-/** Initialize Dash-specific components during chainstate initialization */
+/** Initialize Orin-specific components during chainstate initialization */
 void DashChainstateSetup(ChainstateManager& chainman,
                          CGovernanceManager& govman,
                          CMasternodeMetaMan& mn_metaman,
@@ -120,8 +126,9 @@ void DashChainstateSetup(ChainstateManager& chainman,
                          std::unique_ptr<CMNHFManager>& mnhf_manager,
                          std::unique_ptr<LLMQContext>& llmq_ctx,
                          CTxMemPool* mempool,
-                         bool fReset,
-                         bool fReindexChainState,
+                         const fs::path& data_dir,
+                         bool llmq_dbs_in_memory,
+                         bool llmq_dbs_wipe,
                          const Consensus::Params& consensus_params);
 
 void DashChainstateSetupClose(std::unique_ptr<CChainstateHelper>& chain_helper,
@@ -147,5 +154,6 @@ std::optional<ChainstateLoadVerifyError> VerifyLoadedChainstate(ChainstateManage
                                                                 int check_level,
                                                                 std::function<int64_t()> get_unix_time_seconds,
                                                                 std::function<void(bool)> notify_bls_state = nullptr);
+} // namespace node
 
 #endif // BITCOIN_NODE_CHAINSTATE_H

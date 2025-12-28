@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -111,8 +111,7 @@ bool NetWhitelistPermissions::TryParse(const std::string& str, NetWhitelistPermi
     if (!TryParsePermissionFlags(str, flags, offset, error)) return false;
 
     const std::string net = str.substr(offset);
-    CSubNet subnet;
-    LookupSubNet(net, subnet);
+    const CSubNet subnet{LookupSubNet(net)};
     if (!subnet.IsValid()) {
         error = strprintf(_("Invalid netmask specified in -whitelist: '%s'"), net);
         return false;

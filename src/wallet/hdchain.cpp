@@ -1,14 +1,14 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 
 #include <wallet/hdchain.h>
 
 #include <wallet/bip39.h>
 #include <chainparams.h>
-#include <key_io.h>
 #include <tinyformat.h>
 #include <util/system.h>
 
+namespace wallet {
 bool CHDChain::SetNull()
 {
     LOCK(cs);
@@ -61,13 +61,13 @@ bool CHDChain::SetMnemonic(const SecureString& ssMnemonic, const SecureString& s
 
         // empty mnemonic i.e. "generate a new one"
         if (ssMnemonic.empty()) {
-            ssMnemonicTmp = CMnemonic::Generate(gArgs.GetArg("-mnemonicbits", DEFAULT_MNEMONIC_BITS));
+            ssMnemonicTmp = CMnemonic::Generate(gArgs.GetIntArg("-mnemonicbits", DEFAULT_MNEMONIC_BITS));
         }
         // NOTE: default mnemonic passphrase is an empty string
 
         // printf("mnemonic: %s\n", ssMnemonicTmp.c_str());
         if (!CMnemonic::Check(ssMnemonicTmp)) {
-            throw std::runtime_error(std::string(__func__) + ": invalid mnemonic: `" + std::string(ssMnemonicTmp.c_str()) + "`");
+            throw std::runtime_error(std::string(__func__) + ": invalid mnemonic: `" + std::string(ssMnemonicTmp) + "`");
         }
 
         CMnemonic::ToSeed(ssMnemonicTmp, ssMnemonicPassphrase, vchSeed);
@@ -129,6 +129,14 @@ uint256 CHDChain::GetSeedHash()
     return Hash(vchSeed);
 }
 
+//! Try to derive an extended key, throw if it fails.
+static void DeriveExtKey(CExtKey& key_in, unsigned int index, CExtKey& key_out)
+{
+    if (!key_in.Derive(key_out, index)) {
+        throw std::runtime_error("Could not derive extended key");
+    }
+}
+
 void CHDChain::DeriveChildExtKey(uint32_t nAccountIndex, bool fInternal, uint32_t nChildIndex, CExtKey& extKeyRet, KeyOriginInfo& key_origin)
 {
     LOCK(cs);
@@ -146,15 +154,15 @@ void CHDChain::DeriveChildExtKey(uint32_t nAccountIndex, bool fInternal, uint32_
     // (keys >= 0x80000000 are hardened after bip32)
 
     // derive m/purpose'
-    masterKey.Derive(purposeKey, 44 | 0x80000000);
+    DeriveExtKey(masterKey, 44 | 0x80000000, purposeKey);
     // derive m/purpose'/coin_type'
-    purposeKey.Derive(cointypeKey, Params().ExtCoinType() | 0x80000000);
+    DeriveExtKey(purposeKey, Params().ExtCoinType() | 0x80000000, cointypeKey);
     // derive m/purpose'/coin_type'/account'
-    cointypeKey.Derive(accountKey, nAccountIndex | 0x80000000);
+    DeriveExtKey(cointypeKey, nAccountIndex | 0x80000000, accountKey);
     // derive m/purpose'/coin_type'/account'/change
-    accountKey.Derive(changeKey, fInternal ? 1 : 0);
+    DeriveExtKey(accountKey, fInternal ? 1 : 0, changeKey);
     // derive m/purpose'/coin_type'/account'/change/address_index
-    changeKey.Derive(extKeyRet, nChildIndex);
+    DeriveExtKey(changeKey, nChildIndex, extKeyRet);
 
 #ifdef ENABLE_WALLET
     // We should never ever update an already existing key_origin here
@@ -203,5 +211,7 @@ size_t CHDChain::CountAccounts()
 
 std::string CHDPubKey::GetKeyPath() const
 {
-    return strprintf("m/44'/%d'/%d'/%d/%d", Params().ExtCoinType(), nAccountIndex, nChangeIndex, extPubKey.nChild);
+    return strprintf("m/%d'/%d'/%d'/%d/%d", BIP32_PURPOSE_STANDARD, Params().ExtCoinType(), nAccountIndex, nChangeIndex,
+                     extPubKey.nChild);
 }
+} // namespace wallet

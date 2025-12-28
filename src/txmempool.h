@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -17,6 +17,7 @@
 #include <addressindex.h>
 #include <coins.h>
 #include <consensus/amount.h>
+#include <evo/netinfo.h>
 #include <gsl/pointers.h>
 #include <indirectmap.h>
 #include <netaddress.h>
@@ -113,7 +114,7 @@ private:
     const unsigned int entryHeight; //!< Chain height when entering the mempool
     const bool spendsCoinbase;      //!< keep track of transactions that spend a coinbase
     const int64_t sigOpCount;       //!< Legacy sig ops plus P2SH sig op count
-    int64_t feeDelta{0};            //!< Used for determining the priority of the transaction for mining in a block
+    CAmount m_modified_fee;         //!< Used for determining the priority of the transaction for mining in a block
     LockPoints lockPoints;          //!< Track the height and time at which tx was final
 
     // Information about descendants of this transaction that are in the
@@ -142,7 +143,7 @@ public:
     std::chrono::seconds GetTime() const { return std::chrono::seconds{nTime}; }
     unsigned int GetHeight() const { return entryHeight; }
     int64_t GetSigOpCount() const { return sigOpCount; }
-    int64_t GetModifiedFee() const { return nFee + feeDelta; }
+    CAmount GetModifiedFee() const { return m_modified_fee; }
     size_t DynamicMemoryUsage() const { return nUsageSize; }
     const LockPoints& GetLockPoints() const { return lockPoints; }
 
@@ -150,9 +151,8 @@ public:
     void UpdateDescendantState(int64_t modifySize, CAmount modifyFee, int64_t modifyCount);
     // Adjusts the ancestor state
     void UpdateAncestorState(int64_t modifySize, CAmount modifyFee, int64_t modifyCount, int64_t modifySigOps);
-    // Updates the fee delta used for mining priority score, and the
-    // modified fees with descendants.
-    void UpdateFeeDelta(int64_t feeDelta);
+    // Updates the modified fees with descendants/ancestors.
+    void UpdateModifiedFee(CAmount newFeeDelta);
     // Update the LockPoints after a reorg
     void UpdateLockPoints(const LockPoints& lp);
 
@@ -356,6 +356,8 @@ enum class MemPoolRemovalReason {
     MANUAL       //!< Removed manually
 };
 
+std::string RemovalReasonToString(const MemPoolRemovalReason& r) noexcept;
+
 /**
  * CTxMemPool stores valid-according-to-the-current-best-chain transactions
  * that may be included in the next block.
@@ -433,8 +435,8 @@ protected:
     const int m_check_ratio; //!< Value n means that 1 times in n we check.
     std::atomic<unsigned int> nTransactionsUpdated{0}; //!< Used by getblocktemplate to trigger CreateNewBlock() invocation
     CBlockPolicyEstimator* const minerPolicyEstimator;
-    CDeterministicMNManager* m_dmnman{nullptr};
-    llmq::CInstantSendManager* m_isman{nullptr};
+    std::atomic<CDeterministicMNManager*> m_dmnman{nullptr};
+    std::atomic<llmq::CInstantSendManager*> m_isman{nullptr};
 
     uint64_t totalTxSize GUARDED_BY(cs);      //!< sum of all mempool tx' byte sizes
     CAmount m_total_fee GUARDED_BY(cs);       //!< sum of all mempool tx's fees (NOT modified fee)
@@ -520,21 +522,13 @@ public:
 private:
     typedef std::map<txiter, setEntries, CompareIteratorByHash> cacheMap;
 
-
-    typedef std::map<CMempoolAddressDeltaKey, CMempoolAddressDelta, CMempoolAddressDeltaKeyCompare> addressDeltaMap;
-    addressDeltaMap mapAddress;
-
-    typedef std::map<uint256, std::vector<CMempoolAddressDeltaKey> > addressDeltaMapInserted;
-    addressDeltaMapInserted mapAddressInserted;
-
-    typedef std::map<CSpentIndexKey, CSpentIndexValue, CSpentIndexKeyCompare> mapSpentIndex;
-    mapSpentIndex mapSpent;
-
-    typedef std::map<uint256, std::vector<CSpentIndexKey> > mapSpentIndexInserted;
-    mapSpentIndexInserted mapSpentInserted;
+    std::map<CMempoolAddressDeltaKey, CMempoolAddressDelta, CMempoolAddressDeltaKeyCompare> mapAddress;
+    std::map<uint256, std::vector<CMempoolAddressDeltaKey>> mapAddressInserted;
+    std::map<CSpentIndexKey, CSpentIndexValue, CSpentIndexKeyCompare> mapSpent;
+    std::map<uint256, std::vector<CSpentIndexKey>> mapSpentInserted;
 
     std::multimap<uint256, uint256> mapProTxRefs; // proTxHash -> transaction (all TXs that refer to an existing proTx)
-    std::map<CService, uint256> mapProTxAddresses;
+    std::map<NetInfoEntry, uint256> mapProTxAddresses;
     std::map<CKeyID, uint256> mapProTxPubKeyIDs;
     std::map<uint256, uint256> mapProTxBlsPubKeyHashes;
     std::map<COutPoint, uint256> mapProTxCollaterals;
@@ -596,7 +590,7 @@ public:
      *
      * @pre Must be called before CDeterministicMNManager and CInstantSendManager are destroyed.
      */
-    void DisconnectManagers() { m_dmnman = nullptr; m_isman = nullptr; }
+    void DisconnectManagers();
 
     /**
      * If sanity-checking is turned on, check makes sure the pool is
@@ -619,11 +613,11 @@ public:
     void addAddressIndex(const CTxMemPoolEntry& entry, const CCoinsViewCache& view);
     bool getAddressIndex(const std::vector<CMempoolAddressDeltaKey>& addresses,
                          std::vector<CMempoolAddressDeltaEntry>& results) const;
-    bool removeAddressIndex(const uint256 txhash);
+    void removeAddressIndex(const uint256 txhash);
 
     void addSpentIndex(const CTxMemPoolEntry& entry, const CCoinsViewCache& view);
     bool getSpentIndex(const CSpentIndexKey& key, CSpentIndexValue& value) const;
-    bool removeSpentIndex(const uint256 txhash);
+    void removeSpentIndex(const uint256 txhash);
 
     void removeRecursive(const CTransaction& tx, MemPoolRemovalReason reason) EXCLUSIVE_LOCKS_REQUIRED(cs);
     /** After reorg, filter the entries that would no longer be valid in the next block, and update
@@ -762,8 +756,10 @@ public:
     /**
      * Calculate the ancestor and descendant count for the given transaction.
      * The counts include the transaction itself.
+     * When ancestors is non-zero (ie, the transaction itself is in the mempool),
+     * ancestorsize and ancestorfees will also be set to the appropriate values.
      */
-    void GetTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants) const;
+    void GetTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants, size_t* ancestorsize = nullptr, CAmount* ancestorfees = nullptr) const;
 
     /** @returns true if the mempool is fully loaded */
     bool IsLoaded() const;
@@ -847,7 +843,7 @@ private:
      *  mempool but may have child transactions in the mempool, eg during a
      *  chain reorg.
      *
-     * @pre CTxMemPool::m_children is correct for the given tx and all
+     * @pre CTxMemPoolEntry::m_children is correct for the given tx and all
      *      descendants.
      * @pre cachedDescendants is an accurate cache where each entry has all
      *      descendants of the corresponding key, including those that should
@@ -889,10 +885,10 @@ private:
     void UpdateChildrenForRemoval(txiter entry) EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     /**
-     * addUnchecked extension for Dash-specific transactions (ProTx).
-     * Depends on CDeterministicMNManager.
+     * addUnchecked extension for Orin-specific transactions (ProTx).
      */
-    void addUncheckedProTx(indexed_transaction_set::iterator& newit, const CTransaction& tx);
+    void addUncheckedProTx(CDeterministicMNManager& dmnman, indexed_transaction_set::iterator& newit,
+                           const CTransaction& tx);
 
     /** Before calling removeUnchecked for a given transaction,
      *  UpdateForRemoveFromMempool must be called on the entire (dependent) set

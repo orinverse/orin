@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2025 The Dash Core developers
+// Copyright (c) 2016-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,17 +7,15 @@
 
 #include <evo/deterministicmns.h>
 #include <qt/clientmodel.h>
-#include <clientversion.h>
 #include <coins.h>
 #include <qt/guiutil.h>
-#include <netbase.h>
 #include <qt/walletmodel.h>
 
 #include <univalue.h>
 
+#include <QClipboard>
 #include <QMessageBox>
 #include <QTableWidgetItem>
-#include <QtGui/QClipboard>
 
 template <typename T>
 class CMasternodeListWidgetItem : public QTableWidgetItem
@@ -221,10 +219,10 @@ void MasternodeList::updateDIP3List()
         }
         // populate list
         // Address, Protocol, Status, Active Seconds, Last Seen, Pub Key
-        auto addr_key = dmn.pdmnState->addr.GetKey();
+        auto addr_key = dmn.pdmnState->netInfo->GetPrimary().GetKey();
         QByteArray addr_ba(reinterpret_cast<const char*>(addr_key.data()), addr_key.size());
         QTableWidgetItem* addressItem = new CMasternodeListWidgetItem<QByteArray>(
-            QString::fromStdString(dmn.pdmnState->addr.ToStringAddrPort()), addr_ba);
+            QString::fromStdString(dmn.pdmnState->netInfo->GetPrimary().ToStringAddrPort()), addr_ba);
         QTableWidgetItem* typeItem = new QTableWidgetItem(QString::fromStdString(std::string(GetMnType(dmn.nType).description)));
         QTableWidgetItem* statusItem = new QTableWidgetItem(dmn.pdmnState->IsBanned() ? tr("POSE_BANNED") : tr("ENABLED"));
         QTableWidgetItem* PoSeScoreItem = new CMasternodeListWidgetItem<int>(QString::number(dmn.pdmnState->nPoSePenalty), dmn.pdmnState->nPoSePenalty);

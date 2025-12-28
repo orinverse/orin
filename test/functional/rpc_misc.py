@@ -62,6 +62,10 @@ class RpcMiscTest(BitcoinTestFramework):
         assert_equal(node.logging()['qt'], False)
         node.logging(include=['qt'])
         assert_equal(node.logging()['qt'], True)
+        node.debug('none')
+        assert_equal(node.logging()['qt'], False)
+        node.debug('qt')
+        assert_equal(node.logging()['qt'], True)
 
         # Test logging RPC returns the logging categories in alphabetical order.
         sorted_logging_categories = sorted(node.logging())
@@ -71,12 +75,13 @@ class RpcMiscTest(BitcoinTestFramework):
         categories = ', '.join(sorted_logging_categories)
         logging_help = self.nodes[0].help('logging')
         assert f"valid logging categories are: {categories}" in logging_help
+        assert f"valid logging categories are: {categories}" in self.nodes[0].help('debug')
 
         self.log.info("test echoipc (testing spawned process in multiprocess build)")
         assert_equal(node.echoipc("hello"), "hello")
 
         self.log.info("test getindexinfo")
-        self.restart_node(0, ["-txindex=0"])
+        self.restart_node(0, ["-txindex=0", "-blockfilterindex=0", "-peerblockfilters=0"])
         # Without any indices running the RPC returns an empty object
         assert_equal(node.getindexinfo(), {})
 

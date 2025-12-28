@@ -1,10 +1,11 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_QT_OPTIONSMODEL_H
 #define BITCOIN_QT_OPTIONSMODEL_H
 
+#include <qt/bitcoinunits.h>
 #include <qt/guiconstants.h>
 
 #include <cstdint>
@@ -44,49 +45,50 @@ public:
     explicit OptionsModel(QObject *parent = nullptr, bool resetSettings = false);
 
     enum OptionID {
-        StartAtStartup,       // bool
-        ShowTrayIcon,         // bool
-        MinimizeToTray,       // bool
-        MapPortUPnP,          // bool
-        MapPortNatpmp,        // bool
-        MinimizeOnClose,      // bool
-        ProxyUse,             // bool
-        ProxyIP,              // QString
-        ProxyPort,            // int
-        ProxyUseTor,          // bool
-        ProxyIPTor,           // QString
-        ProxyPortTor,         // int
-        DisplayUnit,          // BitcoinUnits::Unit
-        ThirdPartyTxUrls,     // QString
-        Digits,               // QString
-        Theme,                // QString
-        FontFamily,           // int
-        FontScale,            // int
-        FontWeightNormal,     // int
-        FontWeightBold,       // int
-        Language,             // QString
-        CoinControlFeatures,  // bool
-        SubFeeFromAmount,     // bool
-        KeepChangeAddress,    // bool
-        ThreadsScriptVerif,   // int
-        Prune,                // bool
-        PruneSize,            // int
-        DatabaseCache,        // int
-        SpendZeroConfChange,  // bool
-        ShowMasternodesTab,   // bool
-        ShowGovernanceTab,    // bool
-        CoinJoinEnabled,      // bool
-        ShowAdvancedCJUI,     // bool
-        ShowCoinJoinPopups,   // bool
-        LowKeysWarning,       // bool
-        CoinJoinSessions,     // int
-        CoinJoinRounds,       // int
-        CoinJoinAmount,       // int
-        CoinJoinDenomsGoal,   // int
-        CoinJoinDenomsHardCap,// int
-        CoinJoinMultiSession, // bool
-        Listen,               // bool
-        Server,               // bool
+        StartAtStartup,         // bool
+        ShowTrayIcon,           // bool
+        MinimizeToTray,         // bool
+        MapPortUPnP,            // bool
+        MapPortNatpmp,          // bool
+        MinimizeOnClose,        // bool
+        ProxyUse,               // bool
+        ProxyIP,                // QString
+        ProxyPort,              // int
+        ProxyUseTor,            // bool
+        ProxyIPTor,             // QString
+        ProxyPortTor,           // int
+        DisplayUnit,            // BitcoinUnit
+        ThirdPartyTxUrls,       // QString
+        Digits,                 // QString
+        Theme,                  // QString
+        FontFamily,             // int
+        FontScale,              // int
+        FontWeightNormal,       // int
+        FontWeightBold,         // int
+        Language,               // QString
+        CoinControlFeatures,    // bool
+        SubFeeFromAmount,       // bool
+        KeepChangeAddress,      // bool
+        ThreadsScriptVerif,     // int
+        Prune,                  // bool
+        PruneSize,              // int
+        DatabaseCache,          // int
+        SpendZeroConfChange,    // bool
+        ShowMasternodesTab,     // bool
+        ShowGovernanceTab,      // bool
+        CoinJoinEnabled,        // bool
+        ShowAdvancedCJUI,       // bool
+        ShowCoinJoinPopups,     // bool
+        LowKeysWarning,         // bool
+        CoinJoinSessions,       // int
+        CoinJoinRounds,         // int
+        CoinJoinAmount,         // int
+        CoinJoinDenomsGoal,     // int
+        CoinJoinDenomsHardCap,  // int
+        CoinJoinMultiSession,   // bool
+        Listen,                 // bool
+        Server,                 // bool
+        EnablePSBTControls,     // bool
         OptionIDRowCount,
     };
 
@@ -96,17 +98,18 @@ public:
     int rowCount(const QModelIndex & parent = QModelIndex()) const override;
     QVariant data(const QModelIndex & index, int role = Qt::DisplayRole) const override;
     bool setData(const QModelIndex & index, const QVariant & value, int role = Qt::EditRole) override;
-    /** Updates current unit in memory, settings and emits displayUnitChanged(newUnit) signal */
-    void setDisplayUnit(const QVariant &value);
+    /** Updates current unit in memory, settings and emits displayUnitChanged(new_unit) signal */
+    void setDisplayUnit(const QVariant& new_unit);
 
     /* Explicit getters */
     bool getShowTrayIcon() const { return m_show_tray_icon; }
     bool getMinimizeToTray() const { return fMinimizeToTray; }
     bool getMinimizeOnClose() const { return fMinimizeOnClose; }
-    int getDisplayUnit() const { return nDisplayUnit; }
+    BitcoinUnit getDisplayUnit() const { return m_display_bitcoin_unit; }
     QString getThirdPartyTxUrls() const { return strThirdPartyTxUrls; }
     bool getCoinControlFeatures() const { return fCoinControlFeatures; }
     bool getSubFeeFromAmount() const { return m_sub_fee_from_amount; }
+    bool getEnablePSBTControls() const { return m_enable_psbt_controls; }
     bool getKeepChangeAddress() const { return fKeepChangeAddress; }
     bool getShowAdvancedCJUI() { return fShowAdvancedCJUI; }
     const QString& getOverriddenByCommandLine() { return strOverriddenByCommandLine; }
@@ -131,10 +134,11 @@ private:
     bool fMinimizeToTray;
     bool fMinimizeOnClose;
     QString language;
-    int nDisplayUnit;
+    BitcoinUnit m_display_bitcoin_unit;
     QString strThirdPartyTxUrls;
     bool fCoinControlFeatures;
     bool m_sub_fee_from_amount;
+    bool m_enable_psbt_controls;
     bool fKeepChangeAddress;
     bool fShowAdvancedCJUI;
     /* settings that were overridden by command-line */
@@ -146,7 +150,7 @@ private:
     // Check settings version and upgrade default values if required
     void checkAndMigrate();
 Q_SIGNALS:
-    void displayUnitChanged(int unit);
+    void displayUnitChanged(BitcoinUnit unit);
     void coinJoinEnabledChanged();
     void coinJoinRoundsChanged();
     void coinJoinAmountChanged();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2020 The Bitcoin Core developers
+# Copyright (c) 2015-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
@@ -10,7 +10,7 @@ Otherwise the exit status will be 1 and it will log which executables failed whi
 import sys
 from typing import List
 
-import lief #type:ignore
+import lief
 
 def check_ELF_RELRO(binary) -> bool:
     '''

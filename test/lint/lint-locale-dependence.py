@@ -49,6 +49,7 @@ KNOWN_VIOLATIONS = [
     "src/dbwrapper.cpp:.*vsnprintf",
     "src/test/fuzz/locale.cpp",
     "src/test/fuzz/string.cpp",
+    "src/test/util_tests.cpp",
     "src/util/strencodings.cpp:.*strtoll",
     "src/util/system.cpp:.*fprintf",
     "src/wallet/bdb.cpp:.*DbEnv::strerror",  # False positive
@@ -61,8 +62,7 @@ REGEXP_EXTERNAL_DEPENDENCIES_EXCLUSIONS = [
     "src/secp256k1/",
     "src/minisketch/",
     "src/tinyformat.h",
-    "src/univalue/",
-    "src/dashbls/",
+    "src/orinbls/",
     "src/immer/"
 ]
 

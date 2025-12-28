@@ -1,0 +1,6 @@
+usr/local/bin/orin-qt usr/bin
+share/pixmaps/orin32.xpm usr/share/pixmaps
+share/pixmaps/orin16.xpm usr/share/pixmaps
+share/pixmaps/orin128.png usr/share/pixmaps
+debian/orin-qt.desktop usr/share/applications
+debian/orin-qt.protocol usr/share/kde4/services/

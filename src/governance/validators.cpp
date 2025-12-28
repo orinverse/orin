@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2023 The Dash Core developers
+// Copyright (c) 2014-2023 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -268,7 +268,7 @@ bool CProposalValidator::GetDataValue(const std::string& strKey, int64_t& nValue
         const UniValue uValue = objJSON[strKey];
         switch (uValue.getType()) {
         case UniValue::VNUM:
-            nValueRet = uValue.get_int64();
+            nValueRet = uValue.getInt<int64_t>();
             fOK = true;
             break;
         default:

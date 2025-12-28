@@ -4,13 +4,15 @@
 
 #include <node/caches.h>
 
+#include <index/mappointindex.h>
 #include <txdb.h>
 #include <util/system.h>
 #include <validation.h>
 
+namespace node {
 CacheSizes CalculateCacheSizes(const ArgsManager& args, size_t n_indexes)
 {
-    int64_t nTotalCache = (args.GetArg("-dbcache", nDefaultDbCache) << 20);
+    int64_t nTotalCache = (args.GetIntArg("-dbcache", nDefaultDbCache) << 20);
     nTotalCache = std::max(nTotalCache, nMinDbCache << 20); // total cache cannot be less than nMinDbCache
     nTotalCache = std::min(nTotalCache, nMaxDbCache << 20); // total cache cannot be greater than nMaxDbcache
     CacheSizes sizes;
@@ -18,6 +20,8 @@ CacheSizes CalculateCacheSizes(const ArgsManager& args, size_t n_indexes)
     nTotalCache -= sizes.block_tree_db;
     sizes.tx_index = std::min(nTotalCache / 8, args.GetBoolArg("-txindex", DEFAULT_TXINDEX) ? nMaxTxIndexCache << 20 : 0);
     nTotalCache -= sizes.tx_index;
+    sizes.map_point_index = std::min(nTotalCache / 8, args.GetBoolArg("-mappointindex", DEFAULT_MAPPOINTINDEX) ? nMaxTxIndexCache << 20 : 0);
+    nTotalCache -= sizes.map_point_index;
     sizes.filter_index = 0;
     if (n_indexes > 0) {
         int64_t max_cache = std::min(nTotalCache / 8, max_filter_index_cache << 20);
@@ -30,3 +34,4 @@ CacheSizes CalculateCacheSizes(const ArgsManager& args, size_t n_indexes)
     sizes.coins = nTotalCache; // the rest goes to in-memory cache
     return sizes;
 }
+} // namespace node

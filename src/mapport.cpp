@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,9 +13,9 @@
 #include <net.h>
 #include <netaddress.h>
 #include <netbase.h>
-#include <threadinterrupt.h>
 #include <util/system.h>
 #include <util/thread.h>
+#include <util/threadinterrupt.h>
 
 #ifdef USE_NATPMP
 #include <compat/compat.h>
@@ -26,9 +26,9 @@
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
 #include <miniupnpc/upnperrors.h>
-// The minimum supported miniUPnPc API version is set to 10. This keeps compatibility
-// with Ubuntu 16.04 LTS and Debian 8 libminiupnpc-dev packages.
-static_assert(MINIUPNPC_API_VERSION >= 10, "miniUPnPc API version >= 10 assumed");
+// The minimum supported miniUPnPc API version is set to 17. This excludes
+// versions with known vulnerabilities.
+static_assert(MINIUPNPC_API_VERSION >= 17, "miniUPnPc API version >= 17 assumed");
 #endif // USE_UPNP
 
 #include <atomic>
@@ -158,11 +158,7 @@ static bool ProcessUpnp()
     char lanaddr[64];
 
     int error = 0;
-#if MINIUPNPC_API_VERSION < 14
-    devlist = upnpDiscover(2000, multicastif, minissdpdpath, 0, 0, &error);
-#else
     devlist = upnpDiscover(2000, multicastif, minissdpdpath, 0, 0, 2, &error);
-#endif
 
     struct UPNPUrls urls;
     struct IGDdatas data;
@@ -195,7 +191,7 @@ static bool ProcessUpnp()
         std::string strDesc = PACKAGE_NAME " " + FormatFullVersion();
 
         do {
-            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype, port.c_str(), port.c_str(), lanaddr, strDesc.c_str(), "TCP", 0, "0");
+            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype, port.c_str(), port.c_str(), lanaddr, strDesc.c_str(), "TCP", nullptr, "0");
 
             if (r != UPNPCOMMAND_SUCCESS) {
                 ret = false;
@@ -208,7 +204,7 @@ static bool ProcessUpnp()
         } while (g_mapport_interrupt.sleep_for(PORT_MAPPING_REANNOUNCE_PERIOD));
         g_mapport_interrupt.reset();
 
-        r = UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, port.c_str(), "TCP", 0);
+        r = UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, port.c_str(), "TCP", nullptr);
         LogPrintf("UPNP_DeletePortMapping() returned: %d\n", r);
         freeUPNPDevlist(devlist); devlist = nullptr;
         FreeUPNPUrls(&urls);

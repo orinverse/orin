@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,6 +9,7 @@
 #include <coins.h>
 #include <dbwrapper.h>
 #include <spentindex.h>
+#include <sync.h>
 #include <timestampindex.h>
 
 #include <memory>
@@ -68,8 +69,8 @@ public:
     bool BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock, bool erase = true) override;
     std::unique_ptr<CCoinsViewCursor> Cursor() const override;
 
-    //! Attempt to update from an older database format. Returns whether an error occurred.
-    bool Upgrade();
+    //! Whether an unsupported database format is used.
+    bool NeedsUpgrade();
     size_t EstimateSize() const override;
 
     //! Dynamically alter the underlying leveldb cache size.
@@ -110,7 +111,5 @@ public:
     bool LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex)
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 };
-
-std::optional<bilingual_str> CheckLegacyTxindex(CBlockTreeDB& block_tree_db);
 
 #endif // BITCOIN_TXDB_H

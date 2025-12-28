@@ -5,30 +5,30 @@
 
 #include <validationinterface.h>
 
+#include <attributes.h>
 #include <chain.h>
 #include <consensus/validation.h>
-#include <governance/common.h>
 #include <logging.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <scheduler.h>
-#include <evo/deterministicmns.h>
-#include <governance/vote.h>
-#include <llmq/clsig.h>
-#include <llmq/signing.h>
 
 #include <future>
 #include <unordered_map>
 #include <utility>
 
-//! The MainSignalsInstance manages a list of shared_ptr<CValidationInterface>
-//! callbacks.
-//!
-//! A std::unordered_map is used to track what callbacks are currently
-//! registered, and a std::list is to used to store the callbacks that are
-//! currently registered as well as any callbacks that are just unregistered
-//! and about to be deleted when they are done executing.
-struct MainSignalsInstance {
+std::string RemovalReasonToString(const MemPoolRemovalReason& r) noexcept;
+
+/**
+ * MainSignalsImpl manages a list of shared_ptr<CValidationInterface> callbacks.
+ *
+ * A std::unordered_map is used to track what callbacks are currently
+ * registered, and a std::list is used to store the callbacks that are
+ * currently registered as well as any callbacks that are just unregistered
+ * and about to be deleted when they are done executing.
+ */
+class MainSignalsImpl
+{
 private:
     Mutex m_mutex;
     //! List entries consist of a callback pointer and reference count. The
@@ -45,7 +45,7 @@ public:
     // our own queue here :(
     SingleThreadedSchedulerClient m_schedulerClient;
 
-    explicit MainSignalsInstance(CScheduler& scheduler LIFETIMEBOUND) : m_schedulerClient(scheduler) {}
+    explicit MainSignalsImpl(CScheduler& scheduler LIFETIMEBOUND) : m_schedulerClient(scheduler) {}
 
     void Register(std::shared_ptr<CValidationInterface> callbacks) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
     {
@@ -97,7 +97,7 @@ static CMainSignals g_signals;
 void CMainSignals::RegisterBackgroundSignalScheduler(CScheduler& scheduler)
 {
     assert(!m_internals);
-    m_internals = std::make_unique<MainSignalsInstance>(scheduler);
+    m_internals = std::make_unique<MainSignalsImpl>(scheduler);
 }
 
 void CMainSignals::UnregisterBackgroundSignalScheduler()
@@ -220,8 +220,9 @@ void CMainSignals::TransactionRemovedFromMempool(const CTransactionRef& tx, MemP
     auto event = [tx, reason, mempool_sequence, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.TransactionRemovedFromMempool(tx, reason, mempool_sequence); });
     };
-    ENQUEUE_AND_LOG_EVENT(event, "%s: txid=%s", __func__,
-                          tx->GetHash().ToString());
+    ENQUEUE_AND_LOG_EVENT(event, "%s: txid=%s reason=%s", __func__,
+                          tx->GetHash().ToString(),
+                          RemovalReasonToString(reason));
 }
 
 void CMainSignals::BlockConnected(const std::shared_ptr<const CBlock> &pblock, const CBlockIndex *pindex) {
@@ -271,7 +272,7 @@ void CMainSignals::NotifyHeaderTip(const CBlockIndex *pindexNew, bool fInitialDo
     m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.NotifyHeaderTip(pindexNew, fInitialDownload); });
 }
 
-void CMainSignals::NotifyTransactionLock(const CTransactionRef &tx, const std::shared_ptr<const llmq::CInstantSendLock>& islock) {
+void CMainSignals::NotifyTransactionLock(const CTransactionRef &tx, const std::shared_ptr<const instantsend::InstantSendLock>& islock) {
     auto event = [tx, islock, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.NotifyTransactionLock(tx, islock); });
     };
@@ -279,27 +280,27 @@ void CMainSignals::NotifyTransactionLock(const CTransactionRef &tx, const std::s
                           tx->GetHash().ToString());
 }
 
-void CMainSignals::NotifyChainLock(const CBlockIndex* pindex, const std::shared_ptr<const llmq::CChainLockSig>& clsig) {
+void CMainSignals::NotifyChainLock(const CBlockIndex* pindex, const std::shared_ptr<const chainlock::ChainLockSig>& clsig, const std::string& id) {
     auto event = [pindex, clsig, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.NotifyChainLock(pindex, clsig); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: notify chainlock at block=%s cl=%s", __func__,
             pindex->GetBlockHash().ToString(),
-            clsig->ToString());
+            id);
 }
 
-void CMainSignals::NotifyGovernanceVote(const CDeterministicMNList& tip_mn_list, const std::shared_ptr<const CGovernanceVote>& vote) {
+void CMainSignals::NotifyGovernanceVote(const std::shared_ptr<CDeterministicMNList>& tip_mn_list, const std::shared_ptr<const CGovernanceVote>& vote, const std::string& id) {
     auto event = [vote, tip_mn_list, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.NotifyGovernanceVote(tip_mn_list, vote); });
     };
-    ENQUEUE_AND_LOG_EVENT(event, "%s: notify governance vote: %s", __func__, vote->GetHash().ToString());
+    ENQUEUE_AND_LOG_EVENT(event, "%s: notify governance vote: %s", __func__, id);
 }
 
-void CMainSignals::NotifyGovernanceObject(const std::shared_ptr<const Governance::Object>& object) {
+void CMainSignals::NotifyGovernanceObject(const std::shared_ptr<const Governance::Object>& object, const std::string& id) {
     auto event = [object, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.NotifyGovernanceObject(object); });
     };
-    ENQUEUE_AND_LOG_EVENT(event, "%s: notify governance object: %s", __func__, object->GetHash().ToString());
+    ENQUEUE_AND_LOG_EVENT(event, "%s: notify governance object: %s", __func__, id);
 }
 
 void CMainSignals::NotifyInstantSendDoubleSpendAttempt(const CTransactionRef& currentTx, const CTransactionRef& previousTx) {
@@ -311,12 +312,12 @@ void CMainSignals::NotifyInstantSendDoubleSpendAttempt(const CTransactionRef& cu
             previousTx->GetHash().ToString());
 }
 
-void CMainSignals::NotifyRecoveredSig(const std::shared_ptr<const llmq::CRecoveredSig>& sig) {
+void CMainSignals::NotifyRecoveredSig(const std::shared_ptr<const llmq::CRecoveredSig>& sig, const std::string& id) {
     auto event = [sig, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.NotifyRecoveredSig(sig); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: notify recoveredsig=%s", __func__,
-            sig->GetHash().ToString());
+            id);
 }
 
 void CMainSignals::NotifyMasternodeListChanged(bool undo, const CDeterministicMNList& oldMNList, const CDeterministicMNListDiff& diff) {

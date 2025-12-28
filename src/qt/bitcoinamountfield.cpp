@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,18 +7,19 @@
 #include <qt/bitcoinunits.h>
 #include <qt/guiutil.h>
 
-#include <QApplication>
-#include <QAbstractSpinBox>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QVariant>
+
+#include <cassert>
 
 /**
  * Parse a string into a number of base monetary units and
  * return validity.
  * @note Must return 0 if !valid.
  */
-static CAmount parse(const QString &text, int nUnit, bool *valid_out= nullptr)
+static CAmount parse(const QString &text, BitcoinUnit nUnit, bool *valid_out= nullptr)
 {
     CAmount val = 0;
     bool valid = BitcoinUnits::parse(nUnit, text, &val);
@@ -37,11 +38,12 @@ static CAmount parse(const QString &text, int nUnit, bool *valid_out= nullptr)
 class AmountValidator : public QValidator
 {
     Q_OBJECT
-    int currentUnit;
+    BitcoinUnit currentUnit{BitcoinUnit::ORIN};
+
 public:
     explicit AmountValidator(QObject *parent) :
-        QValidator(parent),
-        currentUnit(BitcoinUnits::DASH) {}
+        QValidator(parent)
+        {}
 
     State validate(QString &input, int &pos) const override
     {
@@ -53,7 +55,7 @@ public:
         return valid ? QValidator::Intermediate : QValidator::Invalid;
     }
 
-    void updateUnit(int nUnit)
+    void updateUnit(BitcoinUnit nUnit)
     {
         currentUnit = nUnit;
     }
@@ -68,8 +70,7 @@ class AmountLineEdit: public QLineEdit
     AmountValidator* amountValidator;
 public:
     explicit AmountLineEdit(QWidget *parent):
-        QLineEdit(parent),
-        currentUnit(BitcoinUnits::DASH)
+        QLineEdit(parent)
     {
         setAlignment(Qt::AlignLeft);
         amountValidator = new AmountValidator(this);
@@ -122,7 +123,7 @@ public:
         m_max_amount = value;
     }
 
-    void setDisplayUnit(int unit)
+    void setDisplayUnit(BitcoinUnit unit)
     {
         bool valid = false;
         CAmount val = value(&valid);
@@ -142,14 +143,14 @@ public:
         ensurePolished();
         const QFontMetrics fm(fontMetrics());
         int h = 0;
-        int w = GUIUtil::TextWidth(fm, BitcoinUnits::format(BitcoinUnits::DASH, BitcoinUnits::maxMoney(), false, BitcoinUnits::SeparatorStyle::ALWAYS));
+        int w = GUIUtil::TextWidth(fm, BitcoinUnits::format(BitcoinUnit::ORIN, BitcoinUnits::maxMoney(), false, BitcoinUnits::SeparatorStyle::ALWAYS));
         w += 2; // cursor blinking space
-        w += GUIUtil::dashThemeActive() ? 24 : 0; // counteract padding from css
+        w += GUIUtil::orinThemeActive() ? 24 : 0; // counteract padding from css
         return QSize(w, h);
     }
 
 private:
-    int currentUnit{BitcoinUnits::DASH};
+    BitcoinUnit currentUnit{BitcoinUnit::ORIN};
     bool m_allow_empty{true};
     CAmount m_min_amount{CAmount(0)};
     CAmount m_max_amount{BitcoinUnits::maxMoney()};
@@ -287,14 +288,13 @@ void BitcoinAmountField::unitChanged(int idx)
     amount->setToolTip(units->data(idx, Qt::ToolTipRole).toString());
 
     // Determine new unit ID
-    int newUnit = units->data(idx, BitcoinUnits::UnitRole).toInt();
-
-    amount->setPlaceholderText(tr("Amount in %1").arg(units->data(idx,Qt::DisplayRole).toString()));
-
-    amount->setDisplayUnit(newUnit);
+    QVariant new_unit = units->data(idx, BitcoinUnits::UnitRole);
+    assert(new_unit.isValid());
+    amount->setPlaceholderText(tr("Amount in %1").arg(units->data(idx, Qt::DisplayRole).toString()));
+    amount->setDisplayUnit(new_unit.value<BitcoinUnit>());
 }
 
-void BitcoinAmountField::setDisplayUnit(int newUnit)
+void BitcoinAmountField::setDisplayUnit(BitcoinUnit new_unit)
 {
-    unitChanged(newUnit);
+    unitChanged(QVariant::fromValue(new_unit).toInt());
 }

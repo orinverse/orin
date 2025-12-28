@@ -9,20 +9,26 @@
 #include <bls/bls.h>
 #include <clientversion.h>
 #include <crypto/sha256.h>
+#include <crypto/x11/dispatch.h>
+#include <fs.h>
 #include <key.h>
 #include <logging.h>
 #include <node/interface_ui.h>
 #include <random.h>
+#include <tinyformat.h>
+#include <util/time.h>
 #include <util/string.h>
 #include <util/system.h>
-#include <util/time.h>
 #include <util/translation.h>
 
-#include <memory>
+#include <algorithm>
+#include <string>
+#include <vector>
 
 namespace init {
 void SetGlobals()
 {
+    SapphireAutoDetect();
     std::string sha256_algo = SHA256AutoDetect();
     LogPrintf("Using the '%s' SHA256 implementation\n", sha256_algo);
     RandomInit();
@@ -46,10 +52,6 @@ bool SanityChecks()
 
     if (!Random_SanityCheck()) {
         return InitError(Untranslated("OS cryptographic RNG sanity check failure. Aborting."));
-    }
-
-    if (!ChronoSanityCheck()) {
-        return InitError(Untranslated("Clock epoch mismatch. Aborting."));
     }
 
     return true;
@@ -155,7 +157,7 @@ bool StartLogging(const ArgsManager& args)
     LogPrintf("Using data directory %s\n", fs::PathToString(gArgs.GetDataDirNet()));
 
     // Only log conf file usage message if conf file actually exists.
-    fs::path config_file_path = GetConfigFile(args.GetArg("-conf", BITCOIN_CONF_FILENAME));
+    fs::path config_file_path = GetConfigFile(args.GetPathArg("-conf", BITCOIN_CONF_FILENAME));
     if (fs::exists(config_file_path)) {
         LogPrintf("Config file: %s\n", fs::PathToString(config_file_path));
     } else if (args.IsArgSet("-conf")) {

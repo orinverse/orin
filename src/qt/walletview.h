@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,6 +6,7 @@
 #define BITCOIN_QT_WALLETVIEW_H
 
 #include <consensus/amount.h>
+#include <qt/bitcoinunits.h>
 #include <qt/governancelist.h>
 #include <qt/masternodelist.h>
 
@@ -19,6 +20,7 @@ class SendCoinsRecipient;
 class TransactionView;
 class WalletModel;
 class AddressBookPage;
+class MapPointsWidget;
 
 QT_BEGIN_NAMESPACE
 class QLabel;
@@ -37,19 +39,14 @@ class WalletView : public QStackedWidget
     Q_OBJECT
 
 public:
-    explicit WalletView(QWidget* parent);
+    explicit WalletView(WalletModel* wallet_model, QWidget* parent);
     ~WalletView();
 
     /** Set the client model.
         The client model represents the part of the core that communicates with the P2P network, and is wallet-agnostic.
     */
     void setClientModel(ClientModel *clientModel);
-    WalletModel *getWalletModel() { return walletModel; }
-    /** Set the wallet model.
-        The wallet model represents a bitcoin wallet, and offers access to the list of transactions, address book and sending
-        functionality.
-    */
-    void setWalletModel(WalletModel *walletModel);
+    WalletModel* getWalletModel() const noexcept { return walletModel; }
 
     bool handlePaymentRequest(const SendCoinsRecipient& recipient);
 
@@ -57,7 +54,12 @@ public:
 
 private:
     ClientModel *clientModel;
-    WalletModel *walletModel;
+
+    //!
+    //! The wallet model represents a bitcoin wallet, and offers access to
+    //! the list of transactions, address book and sending functionality.
+    //!
+    WalletModel* const walletModel;
 
     OverviewPage *overviewPage;
     QWidget *transactionsPage;
@@ -68,6 +70,7 @@ private:
     AddressBookPage *usedReceivingAddressesPage;
     MasternodeList* masternodeListPage{nullptr};
     GovernanceList* governanceListPage{nullptr};
+    MapPointsWidget* mapPointsPage{nullptr};
 
     TransactionView *transactionView;
 
@@ -89,6 +92,8 @@ public Q_SLOTS:
     void gotoSendCoinsPage(QString addr = "");
     /** Switch to CoinJoin coins page */
     void gotoCoinJoinCoinsPage(QString addr = "");
+    /** Switch to RealMap page */
+    void gotoMapPointsPage();
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");
@@ -119,7 +124,7 @@ public Q_SLOTS:
     /** Show progress dialog e.g. for rescan */
     void showProgress(const QString &title, int nProgress);
 
-    /** Update selected DASH amount from transactionview */
+    /** Update selected ORIN amount from transactionview */
     void trxAmount(QString amount);
 Q_SIGNALS:
     void setPrivacy(bool privacy);
@@ -130,7 +135,7 @@ Q_SIGNALS:
     /** Encryption status of wallet changed */
     void encryptionStatusChanged();
     /** Notify that a new transaction appeared */
-    void incomingTransaction(const QString& date, int unit, const CAmount& amount, const QString& type, const QString& address, const QString& label, const QString& walletName);
+    void incomingTransaction(const QString& date, BitcoinUnit unit, const CAmount& amount, const QString& type, const QString& address, const QString& label, const QString& walletName);
     /** Notify that the out of sync warning icon has been pressed */
     void outOfSyncWarningClicked();
 };

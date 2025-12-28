@@ -6,7 +6,6 @@
 #define BITCOIN_TEST_FUZZ_UTIL_H
 
 #include <arith_uint256.h>
-#include <attributes.h>
 #include <chainparamsbase.h>
 #include <coins.h>
 #include <compat/compat.h>
@@ -67,8 +66,6 @@ public:
 
     FuzzedSock& operator=(Sock&& other) override;
 
-    void Reset() override;
-
     ssize_t Send(const void* data, size_t len, int flags) const override;
 
     ssize_t Recv(void* buf, size_t len, int flags) const override;
@@ -89,9 +86,11 @@ public:
 
     bool SetNonBlocking() const override;
 
-    bool IsSelectable() const override;
+    bool IsSelectable(bool is_select) const override;
 
-    bool Wait(std::chrono::milliseconds timeout, Event requested, Event* occurred = nullptr) const override;
+    bool Wait(std::chrono::milliseconds timeout, Event requested, SocketEventsParams event_params, Event* occurred = nullptr) const override;
+
+    bool WaitMany(std::chrono::milliseconds timeout, EventsPerSock& events_per_sock, SocketEventsParams event_params) const override;
 
     bool IsConnected(std::string& errmsg) const override;
 };
@@ -115,7 +114,7 @@ void CallOneOf(FuzzedDataProvider& fuzzed_data_provider, Callables... callables)
 template <typename Collection>
 auto& PickValue(FuzzedDataProvider& fuzzed_data_provider, Collection& col)
 {
-    const auto sz = col.size();
+    auto sz{col.size()};
     assert(sz >= 1);
     auto it = col.begin();
     std::advance(it, fuzzed_data_provider.ConsumeIntegralInRange<decltype(sz)>(0, sz - 1));
@@ -198,7 +197,7 @@ template <typename WeakEnumType, size_t size>
 
 [[nodiscard]] CMutableTransaction ConsumeTransaction(FuzzedDataProvider& fuzzed_data_provider, const std::optional<std::vector<uint256>>& prevout_txids, const int max_num_in = 10, const int max_num_out = 10) noexcept;
 
-[[nodiscard]] CScript ConsumeScript(FuzzedDataProvider& fuzzed_data_provider, const std::optional<size_t>& max_length = std::nullopt) noexcept;
+[[nodiscard]] CScript ConsumeScript(FuzzedDataProvider& fuzzed_data_provider) noexcept;
 
 [[nodiscard]] uint32_t ConsumeSequence(FuzzedDataProvider& fuzzed_data_provider) noexcept;
 
@@ -390,17 +389,16 @@ public:
 
 class FuzzedAutoFileProvider
 {
-    FuzzedDataProvider& m_fuzzed_data_provider;
     FuzzedFileProvider m_fuzzed_file_provider;
 
 public:
-    FuzzedAutoFileProvider(FuzzedDataProvider& fuzzed_data_provider) : m_fuzzed_data_provider{fuzzed_data_provider}, m_fuzzed_file_provider{fuzzed_data_provider}
+    FuzzedAutoFileProvider(FuzzedDataProvider& fuzzed_data_provider) : m_fuzzed_file_provider{fuzzed_data_provider}
     {
     }
 
-    CAutoFile open()
+    AutoFile open()
     {
-        return {m_fuzzed_file_provider.open(), m_fuzzed_data_provider.ConsumeIntegral<int>(), m_fuzzed_data_provider.ConsumeIntegral<int>()};
+        return AutoFile{m_fuzzed_file_provider.open()};
     }
 };
 

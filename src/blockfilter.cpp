@@ -1,18 +1,19 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <mutex>
-#include <sstream>
 #include <set>
 
 #include <blockfilter.h>
 #include <crypto/siphash.h>
+#include <evo/specialtx_filter.h>
 #include <hash.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <streams.h>
 #include <util/golombrice.h>
+#include <util/string.h>
 
 /// SerType used to serialize parameters in GCS filter encoding.
 static constexpr int GCS_SER_TYPE = SER_NETWORK;
@@ -50,7 +51,7 @@ GCSFilter::GCSFilter(const Params& params)
 GCSFilter::GCSFilter(const Params& params, std::vector<unsigned char> encoded_filter, bool skip_decode_check)
     : m_params(params), m_encoded(std::move(encoded_filter))
 {
-    SpanReader stream{GCS_SER_TYPE, GCS_SER_VERSION, m_encoded, 0};
+    SpanReader stream{GCS_SER_TYPE, GCS_SER_VERSION, m_encoded};
 
     uint64_t N = ReadCompactSize(stream);
     m_N = static_cast<uint32_t>(N);
@@ -104,7 +105,7 @@ GCSFilter::GCSFilter(const Params& params, const ElementSet& elements)
 
 bool GCSFilter::MatchInternal(const uint64_t* element_hashes, size_t size) const
 {
-    SpanReader stream{GCS_SER_TYPE, GCS_SER_VERSION, m_encoded, 0};
+    SpanReader stream{GCS_SER_TYPE, GCS_SER_VERSION, m_encoded};
 
     // Seek forward by size of N
     uint64_t N = ReadCompactSize(stream);
@@ -148,7 +149,7 @@ bool GCSFilter::MatchAny(const ElementSet& elements) const
 
 const std::string& BlockFilterTypeName(BlockFilterType filter_type)
 {
-    static std::string unknown_retval = "";
+    static std::string unknown_retval;
     auto it = g_filter_types.find(filter_type);
     return it != g_filter_types.end() ? it->second : unknown_retval;
 }
@@ -179,19 +180,7 @@ const std::set<BlockFilterType>& AllBlockFilterTypes()
 
 const std::string& ListBlockFilterTypes()
 {
-    static std::string type_list;
-
-    static std::once_flag flag;
-    std::call_once(flag, []() {
-            std::stringstream ret;
-            bool first = true;
-            for (auto entry : g_filter_types) {
-                if (!first) ret << ", ";
-                ret << entry.second;
-                first = false;
-            }
-            type_list = ret.str();
-        });
+    static std::string type_list{Join(g_filter_types, ", ", [](const auto& entry) { return entry.second; })};
 
     return type_list;
 }
@@ -207,6 +196,11 @@ static GCSFilter::ElementSet BasicFilterElements(const CBlock& block,
             if (script.empty() || script[0] == OP_RETURN) continue;
             elements.emplace(script.begin(), script.end());
         }
+
+        // Extract special transaction elements using delegation pattern
+        ExtractSpecialTxFilterElements(*tx, [&elements](Span<const unsigned char> data) {
+            elements.emplace(data.begin(), data.end());
+        });
     }
 
     for (const CTxUndo& tx_undo : block_undo.vtxundo) {

@@ -62,7 +62,12 @@ class AssumeValidTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 3
-        self.extra_args = ["-dip3params=9000:9000", "-checkblockindex=0"]
+        self.extra_args = [
+            "-dip3params=9000:9000",
+            '-testactivationheight=v20@9000',
+            '-testactivationheight=mn_rr@9000',
+            "-checkblockindex=0",
+        ]
         self.rpc_timeout = 120
 
     def setup_network(self):
@@ -133,7 +138,7 @@ class AssumeValidTest(BitcoinTestFramework):
         self.block_time += 1
         height += 1
 
-        # Bury the assumed valid block 8400 deep (Dash needs 4x as much blocks to allow -assumevalid to work)
+        # Bury the assumed valid block 8400 deep (Orin needs 4x as much blocks to allow -assumevalid to work)
         for _ in range(8400):
             block = create_block(self.tip, create_coinbase(height), self.block_time)
             block.nVersion = 4
@@ -178,7 +183,7 @@ class AssumeValidTest(BitcoinTestFramework):
         for i in range(200):
             p2p1.send_message(msg_block(self.blocks[i]))
         # Syncing so many blocks can take a while on slow systems. Give it plenty of time to sync.
-        p2p1.sync_with_ping(960)
+        p2p1.sync_with_ping(timeout=960)
         assert_equal(self.nodes[1].getblock(self.nodes[1].getbestblockhash())['height'], 200)
 
         # Send blocks to node2. Block 102 will be rejected.

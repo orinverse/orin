@@ -1,17 +1,17 @@
 # Copyright (c) 2013-2016 The Bitcoin Core developers
-# Copyright (c) 2014-2018 The Dash Core developers
+# Copyright (c) 2014-2018 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-bin_PROGRAMS += qt/dash-qt
+bin_PROGRAMS += qt/orin-qt
 
 if BUILD_BITCOIN_GUI
-  bin_PROGRAMS += dash-gui
+  bin_PROGRAMS += orin-gui
 endif
 
 EXTRA_LIBRARIES += qt/libbitcoinqt.a
 
-# dash qt core #
+# orin qt core #
 include Makefile.qt_locale.include
 
 QT_FORMS_UI = \
@@ -22,6 +22,7 @@ QT_FORMS_UI = \
   qt/forms/createwalletdialog.ui \
   qt/forms/editaddressdialog.ui \
   qt/forms/governancelist.ui \
+  qt/forms/proposalwizard.ui \
   qt/forms/helpmessagedialog.ui \
   qt/forms/intro.ui \
   qt/forms/modaloverlay.ui \
@@ -57,6 +58,7 @@ QT_MOC_CPP = \
   qt/moc_csvmodelwriter.cpp \
   qt/moc_editaddressdialog.cpp \
   qt/moc_governancelist.cpp \
+  qt/moc_proposalwizard.cpp \
   qt/moc_guiutil.cpp \
   qt/moc_initexecutor.cpp \
   qt/moc_intro.cpp \
@@ -64,6 +66,7 @@ QT_MOC_CPP = \
   qt/moc_macnotificationhandler.cpp \
   qt/moc_modaloverlay.cpp \
   qt/moc_masternodelist.cpp \
+  qt/moc_mappointswidget.cpp \
   qt/moc_notificator.cpp \
   qt/moc_openuridialog.cpp \
   qt/moc_optionsdialog.cpp \
@@ -110,9 +113,9 @@ QT_MOC = \
   qt/rpcconsole.moc
 
 QT_QRC_CPP = qt/qrc_bitcoin.cpp
-QT_QRC = qt/dash.qrc
-QT_QRC_LOCALE_CPP = qt/qrc_dash_locale.cpp
-QT_QRC_LOCALE = qt/dash_locale.qrc
+QT_QRC = qt/orin.qrc
+QT_QRC_LOCALE_CPP = qt/qrc_orin_locale.cpp
+QT_QRC_LOCALE = qt/orin_locale.qrc
 
 BITCOIN_QT_H = \
   qt/addressbookpage.h \
@@ -131,7 +134,9 @@ BITCOIN_QT_H = \
   qt/createwalletdialog.h \
   qt/csvmodelwriter.h \
   qt/editaddressdialog.h \
+  qt/mappointswidget.h \
   qt/governancelist.h \
+  qt/proposalwizard.h \
   qt/guiconstants.h \
   qt/guiutil.h \
   qt/initexecutor.h \
@@ -181,10 +186,10 @@ BITCOIN_QT_H = \
   qt/walletview.h \
   qt/winshutdownmonitor.h
 
-RES_ICONS = \
-  qt/res/icons/dash.ico \
-  qt/res/icons/dash_testnet.ico \
-  qt/res/icons/dash.png \
+QT_RES_ICONS = \
+  qt/res/icons/orin.ico \
+  qt/res/icons/orin_testnet.ico \
+  qt/res/icons/orin.png \
   qt/res/icons/warning.png \
   qt/res/icons/address-book.png \
   qt/res/icons/transaction0.png \
@@ -251,7 +256,9 @@ BITCOIN_QT_WALLET_CPP = \
   qt/coincontroltreewidget.cpp \
   qt/createwalletdialog.cpp \
   qt/editaddressdialog.cpp \
+  qt/mappointswidget.cpp \
   qt/governancelist.cpp \
+  qt/proposalwizard.cpp \
   qt/masternodelist.cpp \
   qt/openuridialog.cpp \
   qt/overviewpage.cpp \
@@ -268,6 +275,7 @@ BITCOIN_QT_WALLET_CPP = \
   qt/transactiondesc.cpp \
   qt/transactiondescdialog.cpp \
   qt/transactionfilterproxy.cpp \
+  qt/transactionoverviewwidget.cpp \
   qt/transactionrecord.cpp \
   qt/transactiontablemodel.cpp \
   qt/transactionview.cpp \
@@ -285,7 +293,7 @@ if ENABLE_WALLET
 BITCOIN_QT_CPP += $(BITCOIN_QT_WALLET_CPP)
 endif # ENABLE_WALLET
 
-RES_IMAGES = \
+QT_RES_IMAGES = \
   qt/res/images/arrow_down_dark.png \
   qt/res/images/arrow_down_light.png \
   qt/res/images/arrow_left_dark.png \
@@ -320,8 +328,8 @@ RES_IMAGES = \
   qt/res/images/checkbox_partly_checked_light.png \
   qt/res/images/checkbox_partly_checked_hover_light.png \
   qt/res/images/checkbox_partly_checked_disabled_light.png \
-  qt/res/images/dash_logo_toolbar.png \
-  qt/res/images/dash_logo_toolbar_blue.png \
+  qt/res/images/orin_logo_toolbar.png \
+  qt/res/images/orin_logo_toolbar_blue.png \
   qt/res/images/radio_normal_dark.png \
   qt/res/images/radio_normal_hover_dark.png \
   qt/res/images/radio_checked_dark.png \
@@ -336,13 +344,13 @@ RES_IMAGES = \
   qt/res/images/radio_checked_disabled_light.png \
   qt/res/images/splash.png
 
-RES_CSS = \
+QT_RES_CSS = \
   qt/res/css/dark.css \
   qt/res/css/general.css \
   qt/res/css/light.css \
   qt/res/css/traditional.css
 
-RES_FONTS = \
+QT_RES_FONTS = \
   qt/res/fonts/Montserrat/Montserrat-Black.otf \
   qt/res/fonts/Montserrat/Montserrat-BlackItalic.otf \
   qt/res/fonts/Montserrat/Montserrat-Bold.otf \
@@ -363,19 +371,19 @@ RES_FONTS = \
   qt/res/fonts/Montserrat/Montserrat-ThinItalic.otf \
   qt/res/fonts/RobotoMono-Bold.ttf
 
-RES_ANIMATION = $(wildcard $(srcdir)/qt/res/animation/spinner-*.png)
+QT_RES_ANIMATION = $(wildcard $(srcdir)/qt/res/animation/spinner-*.png)
 
-BITCOIN_RC = qt/res/dash-qt-res.rc
+BITCOIN_QT_RC = qt/res/orin-qt-res.rc
 
 BITCOIN_QT_INCLUDES = -DQT_NO_KEYWORDS -DQT_USE_QSTRINGBUILDER
 
 qt_libbitcoinqt_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BITCOIN_QT_INCLUDES) \
-  $(QT_INCLUDES) $(QT_DBUS_INCLUDES) $(QR_CFLAGS)
+  $(QT_INCLUDES) $(QT_DBUS_INCLUDES) $(QR_CFLAGS) $(BOOST_CPPFLAGS)
 qt_libbitcoinqt_a_CXXFLAGS = $(AM_CXXFLAGS) $(QT_PIE_FLAGS)
 qt_libbitcoinqt_a_OBJCXXFLAGS = $(AM_OBJCXXFLAGS) $(QT_PIE_FLAGS)
 
 qt_libbitcoinqt_a_SOURCES = $(BITCOIN_QT_CPP) $(BITCOIN_QT_H) $(QT_FORMS_UI) \
-  $(QT_QRC) $(QT_QRC_LOCALE) $(QT_TS) $(RES_ICONS) $(RES_IMAGES) $(RES_CSS) $(RES_FONTS) $(RES_ANIMATION)
+  $(QT_QRC) $(QT_QRC_LOCALE) $(QT_TS) $(QT_RES_ICONS) $(QT_RES_IMAGES) $(QT_RES_CSS) $(QT_RES_FONTS) $(QT_RES_ANIMATION)
 if TARGET_DARWIN
   qt_libbitcoinqt_a_SOURCES += $(BITCOIN_MM)
 endif
@@ -389,80 +397,84 @@ QT_FORMS_H=$(join $(dir $(QT_FORMS_UI)),$(addprefix ui_, $(notdir $(QT_FORMS_UI:
 # Most files will depend on the forms and moc files as includes. Generate them
 # before anything else.
 $(QT_MOC): $(QT_FORMS_H)
-$(qt_libbitcoinqt_a_OBJECTS) $(qt_dash_qt_OBJECTS) $(dash_gui_OBJECTS): | $(QT_MOC)
+$(qt_libbitcoinqt_a_OBJECTS) $(qt_orin_qt_OBJECTS) $(orin_gui_OBJECTS): | $(QT_MOC)
 
-# dash-qt binary and dash-gui binaries #
+# orin-qt binary and orin-gui binaries #
 bitcoin_qt_cppflags = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BITCOIN_QT_INCLUDES) \
   $(QT_INCLUDES) $(QR_CFLAGS)
 bitcoin_qt_cxxflags = $(AM_CXXFLAGS) $(QT_PIE_FLAGS)
 
 bitcoin_qt_sources = qt/main.cpp
 if TARGET_WINDOWS
-  bitcoin_qt_sources += $(BITCOIN_RC)
+  bitcoin_qt_sources += $(BITCOIN_QT_RC)
 endif
-bitcoin_qt_ldadd = qt/libbitcoinqt.a $(LIBBITCOIN_SERVER)
+bitcoin_qt_ldadd = qt/libbitcoinqt.a $(LIBBITCOIN_NODE)
 if ENABLE_WALLET
 bitcoin_qt_ldadd += $(LIBBITCOIN_UTIL) $(LIBBITCOIN_WALLET)
 endif
 if ENABLE_ZMQ
 bitcoin_qt_ldadd += $(LIBBITCOIN_ZMQ) $(ZMQ_LIBS)
 endif
-bitcoin_qt_ldadd += $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBBITCOIN_UTIL) $(LIBBITCOIN_CONSENSUS) $(LIBBITCOIN_CRYPTO) $(LIBDASHBLS) $(LIBUNIVALUE) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) \
+bitcoin_qt_ldadd += $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBBITCOIN_UTIL) $(LIBBITCOIN_CONSENSUS) $(LIBBITCOIN_CRYPTO) $(LIBDASHBLS) $(LIBUNIVALUE) $(LIBLEVELDB) $(LIBMEMENV) \
   $(BACKTRACE_LIB) $(QT_LIBS) $(QT_DBUS_LIBS) $(QR_LIBS) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(LIBSECP256K1) \
   $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(GMP_LIBS)
 bitcoin_qt_ldflags = $(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(QT_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
 bitcoin_qt_libtoolflags = $(AM_LIBTOOLFLAGS) --tag CXX
 
-qt_dash_qt_CPPFLAGS = $(bitcoin_qt_cppflags)
-qt_dash_qt_CXXFLAGS = $(bitcoin_qt_cxxflags)
-qt_dash_qt_SOURCES = $(bitcoin_qt_sources)
-qt_dash_qt_LDADD = $(bitcoin_qt_ldadd)
-qt_dash_qt_LDFLAGS = $(bitcoin_qt_ldflags)
-qt_dash_qt_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
+qt_orin_qt_CPPFLAGS = $(bitcoin_qt_cppflags)
+qt_orin_qt_CXXFLAGS = $(bitcoin_qt_cxxflags)
+qt_orin_qt_SOURCES = $(bitcoin_qt_sources) init/bitcoind.cpp
+qt_orin_qt_LDADD = $(bitcoin_qt_ldadd)
+qt_orin_qt_LDFLAGS = $(bitcoin_qt_ldflags)
+qt_orin_qt_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
 
-dash_gui_CPPFLAGS = $(bitcoin_qt_cppflags)
-dash_gui_CXXFLAGS = $(bitcoin_qt_cxxflags)
-dash_gui_SOURCES = $(bitcoin_qt_sources)
-dash_gui_LDADD = $(bitcoin_qt_ldadd)
-dash_gui_LDFLAGS = $(bitcoin_qt_ldflags)
-dash_gui_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
+orin_gui_CPPFLAGS = $(bitcoin_qt_cppflags)
+orin_gui_CXXFLAGS = $(bitcoin_qt_cxxflags)
+orin_gui_SOURCES = $(bitcoin_qt_sources) init/bitcoind.cpp
+orin_gui_LDADD = $(bitcoin_qt_ldadd)
+orin_gui_LDFLAGS = $(bitcoin_qt_ldflags)
+orin_gui_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
 
 #locale/foo.ts -> locale/foo.qm
 QT_QM=$(QT_TS:.ts=.qm)
 
 SECONDARY: $(QT_QM)
 
-$(srcdir)/qt/dashstrings.cpp: FORCE
+$(srcdir)/qt/orinstrings.cpp: FORCE
 	@test -n $(XGETTEXT) || echo "xgettext is required for updating translations"
-	$(AM_V_GEN) cd $(srcdir); XGETTEXT=$(XGETTEXT) COPYRIGHT_HOLDERS="$(COPYRIGHT_HOLDERS)" $(PYTHON) ../share/qt/extract_strings_qt.py $(libbitcoin_server_a_SOURCES) $(libbitcoin_wallet_a_SOURCES) $(libbitcoin_common_a_SOURCES) $(libbitcoin_zmq_a_SOURCES) $(libbitcoin_consensus_a_SOURCES) $(libbitcoin_util_a_SOURCES)
+	$(AM_V_GEN) cd $(srcdir); XGETTEXT=$(XGETTEXT) COPYRIGHT_HOLDERS="$(COPYRIGHT_HOLDERS)" $(PYTHON) ../share/qt/extract_strings_qt.py $(libbitcoin_node_a_SOURCES) $(libbitcoin_wallet_a_SOURCES) $(libbitcoin_common_a_SOURCES) $(libbitcoin_zmq_a_SOURCES) $(libbitcoin_consensus_a_SOURCES) $(libbitcoin_util_a_SOURCES)
 
-translate: $(srcdir)/qt/dashstrings.cpp $(QT_FORMS_UI) $(QT_FORMS_UI) $(BITCOIN_QT_BASE_CPP) qt/bitcoin.cpp $(BITCOIN_QT_WINDOWS_CPP) $(BITCOIN_QT_WALLET_CPP) $(BITCOIN_QT_H) $(BITCOIN_MM)
+# The resulted orin_en.xlf source file should follow Transifex requirements.
+# See: https://docs.transifex.com/formats/xliff#how-to-distinguish-between-a-source-file-and-a-translation-file
+translate: $(srcdir)/qt/orinstrings.cpp $(QT_FORMS_UI) $(QT_FORMS_UI) $(BITCOIN_QT_BASE_CPP) qt/bitcoin.cpp $(BITCOIN_QT_WINDOWS_CPP) $(BITCOIN_QT_WALLET_CPP) $(BITCOIN_QT_H) $(BITCOIN_MM)
 	@test -n $(LUPDATE) || echo "lupdate is required for updating translations"
-	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(LUPDATE) -no-obsolete -I $(srcdir) -locations relative $^ -ts $(srcdir)/qt/locale/dash_en.ts
+	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(LUPDATE) -no-obsolete -I $(srcdir) -locations relative $^ -ts $(srcdir)/qt/locale/orin_en.ts
 	@test -n $(LCONVERT) || echo "lconvert is required for updating translations"
-	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(LCONVERT) -o $(srcdir)/qt/locale/dash_en.xlf -i $(srcdir)/qt/locale/dash_en.ts
+	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(LCONVERT) -drop-translations -o $(srcdir)/qt/locale/orin_en.xlf -i $(srcdir)/qt/locale/orin_en.ts
+	@$(SED) -i.old -e 's|source-language="en" target-language="en"|source-language="en"|' -e '/<target xml:space="preserve"><\/target>/d' $(srcdir)/qt/locale/orin_en.xlf
+	@rm -f $(srcdir)/qt/locale/orin_en.xlf.old
 
 $(QT_QRC_LOCALE_CPP): $(QT_QRC_LOCALE) $(QT_QM)
-	@test -f $(RCC)
+	@test -f $(RCC) || (echo "rcc $(RCC) not found, but is required for generating qrc cpp files"; exit 1)
 	@cp -f $< $(@D)/temp_$(<F)
-	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(RCC) -name dash_locale --format-version 1 $(@D)/temp_$(<F) > $@
+	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(RCC) -name orin_locale --format-version 1 $(@D)/temp_$(<F) > $@
 	@rm $(@D)/temp_$(<F)
 
-$(QT_QRC_CPP): $(QT_QRC) $(QT_FORMS_H) $(RES_ICONS) $(RES_IMAGES) $(RES_CSS) $(RES_FONTS) $(RES_ANIMATION)
-	@test -f $(RCC)
-	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(RCC) -name dash --format-version 1 $< > $@
+$(QT_QRC_CPP): $(QT_QRC) $(QT_FORMS_H) $(QT_RES_ICONS) $(QT_RES_IMAGES) $(QT_RES_CSS) $(QT_RES_FONTS) $(QT_RES_ANIMATION)
+	@test -f $(RCC) || (echo "rcc $(RCC) not found, but is required for generating qrc cpp files"; exit 1)
+	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(RCC) -name orin --format-version 1 $< > $@
 
-CLEAN_QT = $(nodist_qt_libbitcoinqt_a_SOURCES) $(QT_QM) $(QT_FORMS_H) qt/*.gcda qt/*.gcno qt/temp_dash_locale.qrc qt/res/css/colors/*
+CLEAN_QT = $(nodist_qt_libbitcoinqt_a_SOURCES) $(QT_QM) $(QT_FORMS_H) qt/*.gcda qt/*.gcno qt/temp_orin_locale.qrc qt/res/css/colors/*
 
 CLEANFILES += $(CLEAN_QT)
 
-dash_qt_clean: FORCE
-	rm -f $(CLEAN_QT) $(qt_libbitcoinqt_a_OBJECTS) $(qt_dash_qt_OBJECTS) qt/dash-qt$(EXEEXT) $(LIBBITCOINQT)
+orin_qt_clean: FORCE
+	rm -f $(CLEAN_QT) $(qt_libbitcoinqt_a_OBJECTS) $(qt_orin_qt_OBJECTS) qt/orin-qt$(EXEEXT) $(LIBBITCOINQT)
 
-dash_qt : qt/dash-qt$(EXEEXT)
+orin_qt : qt/orin-qt$(EXEEXT)
 
 ui_%.h: %.ui
-	@test -f $(UIC)
+	@test -f $(UIC) || (echo "uic $(UIC) not found, but is required for generating ui headers"; exit 1)
 	@$(MKDIR_P) $(@D)
 	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(UIC) -o $@ $< || (echo "Error creating $@"; false)
 
@@ -473,6 +485,6 @@ moc_%.cpp: %.h
 	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(MOC) $(DEFAULT_INCLUDES) $(QT_INCLUDES_UNSUPPRESSED) $(MOC_DEFS) $< > $@
 
 %.qm: %.ts
-	@test -f $(LRELEASE)
+	@test -f $(LRELEASE) || (echo "lrelease $(LRELEASE) not found, but is required for generating translations"; exit 1)
 	@$(MKDIR_P) $(@D)
 	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(LRELEASE) -silent $< -qm $@

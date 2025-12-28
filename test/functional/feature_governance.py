@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2025 The Dash Core developers
+# Copyright (c) 2018-2025 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Tests around dash governance."""
+"""Tests around orin governance."""
 
 import json
 
 from test_framework.messages import uint256_to_string
-from test_framework.test_framework import DashTestFramework
+from test_framework.test_framework import (
+    DashTestFramework,
+    MasternodeInfo,
+)
 from test_framework.governance import have_trigger_for_height, prepare_object
 from test_framework.util import assert_equal, satoshi_round
 
@@ -15,10 +18,10 @@ GOVERNANCE_UPDATE_MIN = 60 * 60 # src/governance/object.h
 
 class DashGovernanceTest (DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(6, 5, [[
+        self.set_orin_test_params(6, 5, [[
             "-budgetparams=10:10:10",
-            '-testactivationheight=v20@160',
         ]] * 6)
+        self.delay_v20_and_mn_rr(height=160)
 
     def check_superblockbudget(self, v20_active):
         v20_state = self.nodes[0].getblockchaininfo()["softforks"]["v20"]
@@ -163,6 +166,9 @@ class DashGovernanceTest (DashTestFramework):
         self.wait_until(lambda: self.nodes[1].gobject("get", self.p2_hash)["FundingResult"]["NoCount"] == 2, timeout = 5)
 
         assert_equal(len(self.nodes[0].gobject("list", "valid", "triggers")), 0)
+        # 5 nodes voted on 3 proposals so we expect to see 15 votes total
+        assert_equal(self.nodes[0].gobject("count")["votes"], 15)
+        assert_equal(self.nodes[1].gobject("count")["votes"], 15)
 
         block_count = self.nodes[0].getblockcount()
 
@@ -187,7 +193,7 @@ class DashGovernanceTest (DashTestFramework):
         _, mn_payee_protx = height_protx_list[1]
 
         payee_idx = None
-        for mn in self.mninfo:
+        for mn in self.mninfo: # type: MasternodeInfo
             if mn.proTxHash == mn_payee_protx:
                 payee_idx = mn.nodeIdx
                 break
@@ -206,6 +212,10 @@ class DashGovernanceTest (DashTestFramework):
         self.wait_until(lambda: list(isolated.gobject("list", "valid", "triggers").values())[0]['YesCount'] == 1, timeout=5)
         more_votes = self.wait_until(lambda: list(isolated.gobject("list", "valid", "triggers").values())[0]['YesCount'] > 1, timeout=5, do_assert=False)
         assert_equal(more_votes, False)
+        # Isolated node created a trigger and voted YES for it (16 votes total)
+        assert_equal(isolated.gobject("count")["votes"], 16)
+        # Non-isolated nodes don't see this (still 15 votes total)
+        assert_equal(self.nodes[0].gobject("count")["votes"], 15)
 
         self.log.info("Move 1 block enabling the Superblock maturity window on non-isolated nodes")
         self.bump_mocktime(1)
@@ -228,6 +238,10 @@ class DashGovernanceTest (DashTestFramework):
         self.wait_until(lambda: list(self.nodes[0].gobject("list", "valid", "triggers").values())[0]['YesCount'] == 1, timeout=5)
         more_votes = self.wait_until(lambda: list(self.nodes[0].gobject("list", "valid", "triggers").values())[0]['YesCount'] > 1, timeout=5, do_assert=False)
         assert_equal(more_votes, False)
+        # Non-isolated node created a trigger and voted YES for it (16 votes total)
+        assert_equal(self.nodes[0].gobject("count")["votes"], 16)
+        # Isolated node don't see this (still 16 votes total)
+        assert_equal(isolated.gobject("count")["votes"], 16)
 
         self.log.info("Make sure amounts aren't trimmed")
         payment_amounts_expected = [str(satoshi_round(str(self.p0_amount))), str(satoshi_round(str(self.p1_amount))), str(satoshi_round(str(self.p2_amount)))]
@@ -244,6 +258,10 @@ class DashGovernanceTest (DashTestFramework):
         self.wait_until(lambda: list(self.nodes[0].gobject("list", "valid", "triggers").values())[0]['YesCount'] == self.mn_count - 1, timeout=5)
         more_triggers = self.wait_until(lambda: len(self.nodes[0].gobject("list", "valid", "triggers")) > 1, timeout=5, do_assert=False)
         assert_equal(more_triggers, False)
+        # All 4 non-isolated nodes voted YES for a trigger created by a non-isolated node earlier (19 votes total)
+        assert_equal(self.nodes[0].gobject("count")["votes"], 19)
+        # Isolated node don't see this (still 16 votes total)
+        assert_equal(isolated.gobject("count")["votes"], 16)
 
         self.reconnect_isolated_node(payee_idx, 0)
         # self.connect_nodes(0, payee_idx)
@@ -276,9 +294,21 @@ class DashGovernanceTest (DashTestFramework):
         self.bump_mocktime(1)
         self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks())
 
-        self.log.info("Should see NO votes on both triggers now")
-        self.wait_until(lambda: self.nodes[0].gobject("list", "valid", "triggers")[winning_trigger_hash]['NoCount'] == 1, timeout=5)
-        self.wait_until(lambda: self.nodes[0].gobject("list", "valid", "triggers")[isolated_trigger_hash]['NoCount'] == self.mn_count - 1, timeout=5)
+        self.log.info("Should see same YES and NO vote count for both triggers on all nodes now")
+        for node in self.nodes:
+            self.wait_until(lambda: node.gobject("list", "valid", "triggers")[winning_trigger_hash]['YesCount'] == self.mn_count - 1, timeout=5)
+            self.wait_until(lambda: node.gobject("list", "valid", "triggers")[winning_trigger_hash]['NoCount'] == 1, timeout=5)
+            self.wait_until(lambda: node.gobject("list", "valid", "triggers")[isolated_trigger_hash]['YesCount'] == 1, timeout=5)
+            self.wait_until(lambda: node.gobject("list", "valid", "triggers")[isolated_trigger_hash]['NoCount'] == self.mn_count - 1, timeout=5)
+
+        self.log.info("Should have 25 votes on all nodes")
+        # All 4 non-isolated nodes voted NO for a trigger created by a now reconnected node.
+        # They also see 1 YES vote for this trigger the reconnected node created earlier.
+        # The reconnected node received earlier votes from non-isolated ones and
+        # voted NO vote for the trigger non-isolated node created.
+        # So everyone should be on the same page now with 25 votes total.
+        for node in self.nodes:
+            assert_equal(node.gobject("count")["votes"], 25)
 
         self.log.info("Remember vote count")
         before = self.nodes[1].gobject("count")["votes"]
@@ -287,7 +317,7 @@ class DashGovernanceTest (DashTestFramework):
         self.bump_mocktime(GOVERNANCE_UPDATE_MIN + 1, update_schedulers=False)
 
         self.log.info("Move another block inside the Superblock maturity window")
-        with self.nodes[1].assert_debug_log(["CGovernanceManager::VoteGovernanceTriggers"]):
+        with self.nodes[1].assert_debug_log(["VoteGovernanceTriggers --"]):
             self.bump_mocktime(1)
             self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks())
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019-2024 The Dash Core developers
+# Copyright (c) 2019-2025 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -66,6 +66,8 @@ class CoinJoinTest(BitcoinTestFramework):
         assert_equal(cj_info['running'], True)
         # Repeated start should yield error
         assert_raises_rpc_error(-32603, 'Mixing has been started already.', node.coinjoin, 'start')
+        # Requesting status shouldn't complain
+        node.coinjoin('status')
 
         # Stop mix session and ensure it's reported
         node.coinjoin('stop')
@@ -74,6 +76,8 @@ class CoinJoinTest(BitcoinTestFramework):
         assert_equal(cj_info['running'], False)
         # Repeated stop should yield error
         assert_raises_rpc_error(-32603, 'No mix session to stop', node.coinjoin, 'stop')
+        # Requesting status should tell us off
+        assert_raises_rpc_error(-32603, 'No ongoing mix session', node.coinjoin, 'status')
 
         # Reset mix session
         assert_equal(node.coinjoin('reset'), "Mixing was reset")
@@ -86,7 +90,7 @@ class CoinJoinTest(BitcoinTestFramework):
             assert_equal(node.getcoinjoininfo()['max_amount'], value)
         # Test values below minimum and above maximum
         for value in [COINJOIN_TARGET_MIN - 1, COINJOIN_TARGET_MAX + 1]:
-            assert_raises_rpc_error(-8, "Invalid amount of DASH as mixing goal amount", node.setcoinjoinamount, value)
+            assert_raises_rpc_error(-8, "Invalid amount of ORIN as mixing goal amount", node.setcoinjoinamount, value)
 
     def test_setcoinjoinrounds(self, node):
         self.log.info('"setcoinjoinrounds" should update mixing rounds')

@@ -1,19 +1,15 @@
-// Copyright (c) 2021-2025 The Dash Core developers
+// Copyright (c) 2021-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <llmq/snapshot.h>
 
+#include <chainparams.h>
 #include <evo/evodb.h>
 #include <evo/simplifiedmns.h>
-#include <evo/specialtx.h>
-
+#include <evo/smldiff.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
-
-#include <base58.h>
-#include <chainparams.h>
-#include <serialize.h>
 #include <univalue.h>
 #include <validation.h>
 
@@ -21,75 +17,12 @@ namespace llmq {
 
 static const std::string DB_QUORUM_SNAPSHOT = "llmq_S";
 
-UniValue CQuorumSnapshot::ToJson() const
-{
-    UniValue obj;
-    obj.setObject();
-    UniValue activeQ(UniValue::VARR);
-    for (const bool h : activeQuorumMembers) {
-        // cppcheck-suppress useStlAlgorithm
-        activeQ.push_back(h);
-    }
-    obj.pushKV("activeQuorumMembers", activeQ);
-    obj.pushKV("mnSkipListMode", mnSkipListMode);
-    UniValue skipList(UniValue::VARR);
-    for (const auto& h : mnSkipList) {
-        // cppcheck-suppress useStlAlgorithm
-        skipList.push_back(h);
-    }
-    obj.pushKV("mnSkipList", skipList);
-    return obj;
-}
-
-UniValue CQuorumRotationInfo::ToJson() const
-{
-    UniValue obj;
-    obj.setObject();
-    obj.pushKV("extraShare", extraShare);
-
-    obj.pushKV("quorumSnapshotAtHMinusC", quorumSnapshotAtHMinusC.ToJson());
-    obj.pushKV("quorumSnapshotAtHMinus2C", quorumSnapshotAtHMinus2C.ToJson());
-    obj.pushKV("quorumSnapshotAtHMinus3C", quorumSnapshotAtHMinus3C.ToJson());
-
-    if (extraShare && quorumSnapshotAtHMinus4C.has_value()) {
-        obj.pushKV("quorumSnapshotAtHMinus4C", quorumSnapshotAtHMinus4C->ToJson());
-    }
-
-    obj.pushKV("mnListDiffTip", mnListDiffTip.ToJson());
-    obj.pushKV("mnListDiffH", mnListDiffH.ToJson());
-    obj.pushKV("mnListDiffAtHMinusC", mnListDiffAtHMinusC.ToJson());
-    obj.pushKV("mnListDiffAtHMinus2C", mnListDiffAtHMinus2C.ToJson());
-    obj.pushKV("mnListDiffAtHMinus3C", mnListDiffAtHMinus3C.ToJson());
-
-    if (extraShare && mnListDiffAtHMinus4C.has_value()) {
-        obj.pushKV("mnListDiffAtHMinus4C", mnListDiffAtHMinus4C->ToJson());
-    }
-    UniValue hqclists(UniValue::VARR);
-    for (const auto& qc : lastCommitmentPerIndex) {
-        hqclists.push_back(qc.ToJson());
-    }
-    obj.pushKV("lastCommitmentPerIndex", hqclists);
-
-    UniValue snapshotlist(UniValue::VARR);
-    for (const auto& snap : quorumSnapshotList) {
-        snapshotlist.push_back(snap.ToJson());
-    }
-    obj.pushKV("quorumSnapshotList", snapshotlist);
-
-    UniValue mnlistdifflist(UniValue::VARR);
-    for (const auto& mnlist : mnListDiffList) {
-        mnlistdifflist.push_back(mnlist.ToJson());
-    }
-    obj.pushKV("mnListDiffList", mnlistdifflist);
-    return obj;
-}
-
 bool BuildQuorumRotationInfo(CDeterministicMNManager& dmnman, CQuorumSnapshotManager& qsnapman,
                              const ChainstateManager& chainman, const CQuorumManager& qman,
                              const CQuorumBlockProcessor& qblockman, const CGetQuorumRotationInfo& request,
                              bool use_legacy_construction, CQuorumRotationInfo& response, std::string& errorRet)
 {
-    AssertLockHeld(cs_main);
+    AssertLockHeld(::cs_main);
 
     std::vector<const CBlockIndex*> baseBlockIndexes;
     if (request.baseBlockHashes.size() == 0) {
@@ -273,7 +206,7 @@ bool BuildQuorumRotationInfo(CDeterministicMNManager& dmnman, CQuorumSnapshotMan
             errorRet = strprintf("Can not find quorum snapshot at H-4C");
             return false;
         } else {
-            response.quorumSnapshotAtHMinus4C = std::move(snapshotHMinus4C);
+            response.quorumSnapshotAtHMinus4C = std::move(snapshotHMinus4C.value());
         }
 
         CSimplifiedMNListDiff mn4c;
@@ -289,23 +222,21 @@ bool BuildQuorumRotationInfo(CDeterministicMNManager& dmnman, CQuorumSnapshotMan
         response.mnListDiffAtHMinus4C = std::move(mn4c);
     } else {
         response.extraShare = false;
-        response.quorumSnapshotAtHMinus4C.reset();
-        response.mnListDiffAtHMinus4C.reset();
     }
 
     std::set<int> snapshotHeightsNeeded;
 
-    std::vector<std::pair<int, const CBlockIndex*>> qdata = qblockman.GetLastMinedCommitmentsPerQuorumIndexUntilBlock(llmqType, blockIndex, 0);
+    std::vector<const CBlockIndex*> qdata = qblockman.GetLastMinedCommitmentsPerQuorumIndexUntilBlock(llmqType,
+                                                                                                      blockIndex, 0);
 
     for (const auto& obj : qdata) {
-        uint256 minedBlockHash;
-        llmq::CFinalCommitmentPtr qc = qblockman.GetMinedCommitment(llmqType, obj.second->GetBlockHash(), minedBlockHash);
-        if (qc == nullptr) {
+        auto [qc, minedBlockHash] = qblockman.GetMinedCommitment(llmqType, obj->GetBlockHash());
+        if (minedBlockHash == uint256::ZERO) {
             return false;
         }
-        response.lastCommitmentPerIndex.push_back(*qc);
+        response.lastCommitmentPerIndex.emplace_back(std::move(qc));
 
-        int quorumCycleStartHeight = obj.second->nHeight - (obj.second->nHeight % llmq_params_opt->dkgInterval);
+        int quorumCycleStartHeight = obj->nHeight - (obj->nHeight % llmq_params_opt->dkgInterval);
         snapshotHeightsNeeded.insert(quorumCycleStartHeight - cycleLength);
         snapshotHeightsNeeded.insert(quorumCycleStartHeight - 2 * cycleLength);
         snapshotHeightsNeeded.insert(quorumCycleStartHeight - 3 * cycleLength);
@@ -405,6 +336,14 @@ uint256 GetLastBaseBlockHash(Span<const CBlockIndex*> baseBlockIndexes, const CB
     return hash;
 }
 
+CQuorumSnapshotManager::CQuorumSnapshotManager(CEvoDB& evoDb) :
+    m_evoDb{evoDb},
+    quorumSnapshotCache{32}
+{
+}
+
+CQuorumSnapshotManager::~CQuorumSnapshotManager() = default;
+
 std::optional<CQuorumSnapshot> CQuorumSnapshotManager::GetSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex)
 {
     CQuorumSnapshot snapshot = {};
@@ -428,7 +367,7 @@ void CQuorumSnapshotManager::StoreSnapshotForBlock(const Consensus::LLMQType llm
 {
     auto snapshotHash = ::SerializeHash(std::make_pair(llmqType, pindex->GetBlockHash()));
 
-    // LOCK(cs_main);
+    // LOCK(::cs_main);
     AssertLockNotHeld(m_evoDb.cs);
     LOCK2(snapshotCacheCs, m_evoDb.cs);
     m_evoDb.GetRawDB().Write(std::make_pair(DB_QUORUM_SNAPSHOT, snapshotHash), snapshot);

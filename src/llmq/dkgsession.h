@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,6 +11,8 @@
 #include <bls/bls.h>
 #include <bls/bls_ies.h>
 #include <bls/bls_worker.h>
+#include <evo/types.h>
+
 #include <saltedhasher.h>
 #include <sync.h>
 #include <util/underlying.h>
@@ -25,8 +27,6 @@ class CDeterministicMN;
 class CMasternodeMetaMan;
 class CSporkManager;
 class PeerManager;
-
-using CDeterministicMNCPtr = std::shared_ptr<const CDeterministicMN>;
 
 namespace llmq
 {
@@ -298,7 +298,7 @@ private:
 private:
     std::vector<std::unique_ptr<CDKGMember>> members;
     std::map<uint256, size_t> membersMap;
-    std::unordered_set<uint256, StaticSaltedHasher> relayMembers;
+    Uint256HashSet relayMembers;
     BLSVerificationVectorPtr vvecContribution;
     std::vector<CBLSSecretKey> m_sk_contributions;
 
@@ -357,37 +357,41 @@ public:
     void Contribute(CDKGPendingMessages& pendingMessages, PeerManager& peerman);
     void SendContributions(CDKGPendingMessages& pendingMessages, PeerManager& peerman);
     bool PreVerifyMessage(const CDKGContribution& qc, bool& retBan) const;
-    std::optional<CInv> ReceiveMessage(const CDKGContribution& qc);
+    std::optional<CInv> ReceiveMessage(const CDKGContribution& qc) EXCLUSIVE_LOCKS_REQUIRED(!invCs, !cs_pending);
     void VerifyPendingContributions() EXCLUSIVE_LOCKS_REQUIRED(cs_pending);
 
     // Phase 2: complaint
-    void VerifyAndComplain(CConnman& connman, CDKGPendingMessages& pendingMessages, PeerManager& peerman);
+    void VerifyAndComplain(CConnman& connman, CDKGPendingMessages& pendingMessages, PeerManager& peerman)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_pending);
     void VerifyConnectionAndMinProtoVersions(CConnman& connman) const;
     void SendComplaint(CDKGPendingMessages& pendingMessages, PeerManager& peerman);
     bool PreVerifyMessage(const CDKGComplaint& qc, bool& retBan) const;
-    std::optional<CInv> ReceiveMessage(const CDKGComplaint& qc);
+    std::optional<CInv> ReceiveMessage(const CDKGComplaint& qc) EXCLUSIVE_LOCKS_REQUIRED(!invCs);
 
     // Phase 3: justification
-    void VerifyAndJustify(CDKGPendingMessages& pendingMessages, PeerManager& peerman);
+    void VerifyAndJustify(CDKGPendingMessages& pendingMessages, PeerManager& peerman) EXCLUSIVE_LOCKS_REQUIRED(!invCs);
     void SendJustification(CDKGPendingMessages& pendingMessages, PeerManager& peerman, const std::set<uint256>& forMembers);
     bool PreVerifyMessage(const CDKGJustification& qj, bool& retBan) const;
-    std::optional<CInv> ReceiveMessage(const CDKGJustification& qj);
+    std::optional<CInv> ReceiveMessage(const CDKGJustification& qj) EXCLUSIVE_LOCKS_REQUIRED(!invCs);
 
     // Phase 4: commit
     void VerifyAndCommit(CDKGPendingMessages& pendingMessages, PeerManager& peerman);
     void SendCommitment(CDKGPendingMessages& pendingMessages, PeerManager& peerman);
     bool PreVerifyMessage(const CDKGPrematureCommitment& qc, bool& retBan) const;
-    std::optional<CInv> ReceiveMessage(const CDKGPrematureCommitment& qc);
+    std::optional<CInv> ReceiveMessage(const CDKGPrematureCommitment& qc) EXCLUSIVE_LOCKS_REQUIRED(!invCs);
 
     // Phase 5: aggregate/finalize
-    std::vector<CFinalCommitment> FinalizeCommitments();
+    std::vector<CFinalCommitment> FinalizeCommitments() EXCLUSIVE_LOCKS_REQUIRED(!invCs);
+
+    // All Phases 5-in-1 for single-node-quorum
+    CFinalCommitment FinalizeSingleCommitment();
 
     [[nodiscard]] bool AreWeMember() const { return !myProTxHash.IsNull(); }
     void MarkBadMember(size_t idx);
 
 public:
     [[nodiscard]] CDKGMember* GetMember(const uint256& proTxHash) const;
-    [[nodiscard]] const std::unordered_set<uint256, StaticSaltedHasher>& RelayMembers() const { return relayMembers; }
+    [[nodiscard]] const Uint256HashSet& RelayMembers() const { return relayMembers; }
     [[nodiscard]] const CBlockIndex* BlockIndex() const { return m_quorum_base_block_index; }
     [[nodiscard]] const uint256& ProTx() const { return myProTxHash; }
     [[nodiscard]] const Consensus::LLMQParams GetParams() const { return params; }

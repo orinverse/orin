@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -58,7 +58,7 @@ CDKGSessionHandler::CDKGSessionHandler(CBLSWorker& _blsWorker, CChainState& chai
 
 CDKGSessionHandler::~CDKGSessionHandler() = default;
 
-void CDKGPendingMessages::PushPendingMessage(NodeId from, CDataStream& vRecv, PeerManager& peerman)
+MessageProcessingResult CDKGPendingMessages::PushPendingMessage(NodeId from, CDataStream& vRecv)
 {
     // this will also consume the data, even if we bail out early
     auto pm = std::make_shared<CDataStream>(std::move(vRecv));
@@ -67,8 +67,9 @@ void CDKGPendingMessages::PushPendingMessage(NodeId from, CDataStream& vRecv, Pe
     hw.write(AsWritableBytes(Span{*pm}));
     uint256 hash = hw.GetHash();
 
+    MessageProcessingResult ret{};
     if (from != -1) {
-        WITH_LOCK(::cs_main, peerman.EraseObjectRequest(from, CInv(invType, hash)));
+        ret.m_to_erase = CInv{invType, hash};
     }
 
     LOCK(cs_messages);
@@ -76,16 +77,17 @@ void CDKGPendingMessages::PushPendingMessage(NodeId from, CDataStream& vRecv, Pe
     if (messagesPerNode[from] >= maxMessagesPerNode) {
         // TODO ban?
         LogPrint(BCLog::LLMQ_DKG, "CDKGPendingMessages::%s -- too many messages, peer=%d\n", __func__, from);
-        return;
+        return ret;
     }
     messagesPerNode[from]++;
 
     if (!seenMessages.emplace(hash).second) {
         LogPrint(BCLog::LLMQ_DKG, "CDKGPendingMessages::%s -- already seen %s, peer=%d\n", __func__, hash.ToString(), from);
-        return;
+        return ret;
     }
 
     pendingMessages.emplace_back(std::make_pair(from, std::move(pm)));
+    return ret;
 }
 
 std::list<CDKGPendingMessages::BinaryMessage> CDKGPendingMessages::PopPendingMessages(size_t maxCount)
@@ -150,19 +152,19 @@ void CDKGSessionHandler::UpdatedBlockTip(const CBlockIndex* pindexNew)
              params.name, quorumIndex, currentHeight, pQuorumBaseBlockIndex->nHeight, ToUnderlying(oldPhase), ToUnderlying(phase));
 }
 
-void CDKGSessionHandler::ProcessMessage(const CNode& pfrom, PeerManager& peerman, const std::string& msg_type,
-                                        CDataStream& vRecv)
+MessageProcessingResult CDKGSessionHandler::ProcessMessage(NodeId from, std::string_view msg_type, CDataStream& vRecv)
 {
     // We don't handle messages in the calling thread as deserialization/processing of these would block everything
     if (msg_type == NetMsgType::QCONTRIB) {
-        pendingContributions.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        return pendingContributions.PushPendingMessage(from, vRecv);
     } else if (msg_type == NetMsgType::QCOMPLAINT) {
-        pendingComplaints.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        return pendingComplaints.PushPendingMessage(from, vRecv);
     } else if (msg_type == NetMsgType::QJUSTIFICATION) {
-        pendingJustifications.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        return pendingJustifications.PushPendingMessage(from, vRecv);
     } else if (msg_type == NetMsgType::QPCOMMITMENT) {
-        pendingPrematureCommitments.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        return pendingPrematureCommitments.PushPendingMessage(from, vRecv);
     }
+    return {};
 }
 
 void CDKGSessionHandler::StartThread(CConnman& connman, PeerManager& peerman)
@@ -301,13 +303,13 @@ void CDKGSessionHandler::SleepBeforePhase(QuorumPhase curPhase,
     double adjustedPhaseSleepTimePerMember = phaseSleepTimePerMember * randomSleepFactor;
 
     int64_t sleepTime = (int64_t)(adjustedPhaseSleepTimePerMember * curSession->GetMyMemberIndex().value_or(0));
-    int64_t endTime = GetTimeMillis() + sleepTime;
+    int64_t endTime = TicksSinceEpoch<std::chrono::milliseconds>(SystemClock::now()) + sleepTime;
     int heightTmp{currentHeight.load()};
     int heightStart{heightTmp};
 
     LogPrint(BCLog::LLMQ_DKG, "CDKGSessionManager::%s -- %s qi[%d] - starting sleep for %d ms, curPhase=%d\n", __func__, params.name, quorumIndex, sleepTime, ToUnderlying(curPhase));
 
-    while (GetTimeMillis() < endTime) {
+    while (TicksSinceEpoch<std::chrono::milliseconds>(SystemClock::now()) < endTime) {
         if (stopRequested) {
             LogPrint(BCLog::LLMQ_DKG, "CDKGSessionManager::%s -- %s qi[%d] - aborting due to stop/shutdown requested\n", __func__, params.name, quorumIndex);
             throw AbortPhaseException();
@@ -465,7 +467,7 @@ static void RelayInvToParticipants(const CDKGSession& session, const CConnman& c
     logger.Flush();
 }
 
-template <typename Message, int MessageType>
+template <typename Message>
 bool ProcessPendingMessageBatch(const CConnman& connman, CDKGSession& session, CDKGPendingMessages& pendingMessages,
                                 PeerManager& peerman, size_t maxCount)
 {
@@ -535,9 +537,9 @@ void CDKGSessionHandler::HandleDKGRound(CConnman& connman, PeerManager& peerman)
     pendingPrematureCommitments.Clear();
     uint256 curQuorumHash = WITH_LOCK(cs_phase_qhash, return quorumHash);
 
-    const CBlockIndex* pQuorumBaseBlockIndex = WITH_LOCK(cs_main, return m_chainstate.m_blockman.LookupBlockIndex(curQuorumHash));
+    const CBlockIndex* pQuorumBaseBlockIndex = WITH_LOCK(::cs_main, return m_chainstate.m_blockman.LookupBlockIndex(curQuorumHash));
 
-    if (!InitNewQuorum(pQuorumBaseBlockIndex)) {
+    if (!pQuorumBaseBlockIndex || !InitNewQuorum(pQuorumBaseBlockIndex)) {
         // should actually never happen
         WaitForNewQuorum(curQuorumHash);
         throw AbortPhaseException();
@@ -548,6 +550,17 @@ void CDKGSessionHandler::HandleDKGRound(CConnman& connman, PeerManager& peerman)
         status.phase = QuorumPhase::Initialized;
         return changed;
     });
+
+    if (params.is_single_member()) {
+        auto finalCommitment = curSession->FinalizeSingleCommitment();
+        if (!finalCommitment.IsNull()) { // it can be null only if we are not member
+            if (auto inv_opt = quorumBlockProcessor.AddMineableCommitment(finalCommitment); inv_opt.has_value()) {
+                peerman.RelayInv(inv_opt.value());
+            }
+        }
+        WaitForNextPhase(QuorumPhase::Initialized, QuorumPhase::Contribute, curQuorumHash);
+        return;
+    }
 
     const auto tip_mn_list = m_dmnman.GetListAtChainTip();
     utils::EnsureQuorumConnections(params, connman, m_dmnman, m_sporkman, m_qsnapman, tip_mn_list, pQuorumBaseBlockIndex,
@@ -562,8 +575,7 @@ void CDKGSessionHandler::HandleDKGRound(CConnman& connman, PeerManager& peerman)
     // Contribute
     auto fContributeStart = [this, &peerman]() { curSession->Contribute(pendingContributions, peerman); };
     auto fContributeWait = [this, &connman, &peerman] {
-        return ProcessPendingMessageBatch<CDKGContribution, MSG_QUORUM_CONTRIB>(connman, *curSession,
-                                                                                pendingContributions, peerman, 8);
+        return ProcessPendingMessageBatch<CDKGContribution>(connman, *curSession, pendingContributions, peerman, 8);
     };
     HandlePhase(QuorumPhase::Contribute, QuorumPhase::Complain, curQuorumHash, 0.05, fContributeStart, fContributeWait);
 
@@ -572,24 +584,22 @@ void CDKGSessionHandler::HandleDKGRound(CConnman& connman, PeerManager& peerman)
         curSession->VerifyAndComplain(connman, pendingComplaints, peerman);
     };
     auto fComplainWait = [this, &connman, &peerman] {
-        return ProcessPendingMessageBatch<CDKGComplaint, MSG_QUORUM_COMPLAINT>(connman, *curSession, pendingComplaints,
-                                                                               peerman, 8);
+        return ProcessPendingMessageBatch<CDKGComplaint>(connman, *curSession, pendingComplaints, peerman, 8);
     };
     HandlePhase(QuorumPhase::Complain, QuorumPhase::Justify, curQuorumHash, 0.05, fComplainStart, fComplainWait);
 
     // Justify
     auto fJustifyStart = [this, &peerman]() { curSession->VerifyAndJustify(pendingJustifications, peerman); };
     auto fJustifyWait = [this, &connman, &peerman] {
-        return ProcessPendingMessageBatch<CDKGJustification, MSG_QUORUM_JUSTIFICATION>(connman, *curSession,
-                                                                                       pendingJustifications, peerman, 8);
+        return ProcessPendingMessageBatch<CDKGJustification>(connman, *curSession, pendingJustifications, peerman, 8);
     };
     HandlePhase(QuorumPhase::Justify, QuorumPhase::Commit, curQuorumHash, 0.05, fJustifyStart, fJustifyWait);
 
     // Commit
     auto fCommitStart = [this, &peerman]() { curSession->VerifyAndCommit(pendingPrematureCommitments, peerman); };
     auto fCommitWait = [this, &connman, &peerman] {
-        return ProcessPendingMessageBatch<CDKGPrematureCommitment, MSG_QUORUM_PREMATURE_COMMITMENT>(
-            connman, *curSession, pendingPrematureCommitments, peerman, 8);
+        return ProcessPendingMessageBatch<CDKGPrematureCommitment>(connman, *curSession, pendingPrematureCommitments,
+                                                                   peerman, 8);
     };
     HandlePhase(QuorumPhase::Commit, QuorumPhase::Finalize, curQuorumHash, 0.1, fCommitStart, fCommitWait);
 

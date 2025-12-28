@@ -26,7 +26,7 @@ Developer Notes
     - [Threads](#threads)
     - [Ignoring IDE/editor files](#ignoring-ideeditor-files)
 - [Development guidelines](#development-guidelines)
-    - [General Dash Core](#general-dash-core)
+    - [General Orin Core](#general-orin-core)
     - [Wallet](#wallet)
     - [General C++](#general-c)
     - [C++ data structures](#c-data-structures)
@@ -110,6 +110,8 @@ code.
   - `nullptr` is preferred over `NULL` or `(void*)0`.
   - `static_assert` is preferred over `assert` where possible. Generally; compile-time checking is preferred over run-time checking.
   - Align pointers and references to the left i.e. use `type& var` and not `type &var`.
+  - Prefer [`list initialization ({})`](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-list) where possible.
+    For example `int x{0};` instead of `int x = 0;` or `int x(0);`
 
 For function calls a namespace should be specified explicitly, unless such functions have been declared within it.
 Otherwise, [argument-dependent lookup](https://en.cppreference.com/w/cpp/language/adl), also known as ADL, could be
@@ -135,7 +137,7 @@ int main()
 
 Block style example:
 ```c++
-int g_count = 0;
+int g_count{0};
 
 namespace foo {
 class Class
@@ -147,7 +149,7 @@ public:
     {
         // Comment summarising what this section of code does
         for (int i = 0; i < n; ++i) {
-            int total_sum = 0;
+            int total_sum{0};
             // When something fails, return early
             if (!Something()) return false;
             ...
@@ -214,13 +216,11 @@ apt install clang-tidy bear clang
 Then, pass clang as compiler to configure, and use bear to produce the `compile_commands.json`:
 
 ```sh
-./autogen.sh && ./configure CC=clang CXX=clang++ --enable-suppress-external-warnings
+./autogen.sh && ./configure CC=clang CXX=clang++
 make clean && bear --config src/.bear-tidy-config -- make -j $(nproc)
 ```
 
-The output is denoised of errors from external dependencies and includes with
-`--enable-suppress-external-warnings` and `--config src/.bear-tidy-config`. Both
-options may be omitted to view the full list of errors.
+The output is denoised of errors from external dependencies.
 
 To run clang-tidy on all source files:
 
@@ -243,7 +243,7 @@ Refer to [/test/functional/README.md#style-guidelines](/test/functional/README.m
 Coding Style (Doxygen-compatible comments)
 ------------------------------------------
 
-Dash Core uses [Doxygen](https://www.doxygen.nl/) to generate its official documentation.
+Orin Core uses [Doxygen](https://www.doxygen.nl/) to generate its official documentation.
 
 Use Doxygen-compatible comment blocks for functions, methods, and fields.
 
@@ -391,8 +391,8 @@ If the code is behaving strangely, take a look in the `debug.log` file in the da
 error and debugging messages are written there.
 
 Debug logging can be enabled on startup with the `-debug` and `-loglevel`
-configuration options and toggled while dashd is running with the `logging`
-RPC.  For instance, launching dashd with `-debug` or `-debug=1` will turn on
+configuration options and toggled while orind is running with the `logging`
+RPC.  For instance, launching orind with `-debug` or `-debug=1` will turn on
 all log categories and `-loglevel=trace` will turn on all log severity levels.
 
 The Qt code routes `qDebug()` output to `debug.log` under category "qt": run with `-debug=qt`
@@ -409,7 +409,7 @@ that run in `-regtest` mode.
 
 ### DEBUG_LOCKORDER
 
-Dash Core is a multi-threaded application, and deadlocks or other
+Orin Core is a multi-threaded application, and deadlocks or other
 multi-threading bugs can be very difficult to track down. The `--enable-debug`
 configure option adds `-DDEBUG_LOCKORDER` to the compiler flags. This inserts
 run-time checks to keep track of which locks are held and adds warnings to the
@@ -424,11 +424,11 @@ to the `debug.log` file.
 The `--enable-debug` configure option adds `-DDEBUG_LOCKCONTENTION` to the
 compiler flags. You may also enable it manually for a non-debug build by running
 configure with `-DDEBUG_LOCKCONTENTION` added to your CPPFLAGS,
-i.e. `CPPFLAGS="-DDEBUG_LOCKCONTENTION"`, then build and run dashd.
+i.e. `CPPFLAGS="-DDEBUG_LOCKCONTENTION"`, then build and run orind.
 
-You can then use the `-debug=lock` configuration option at dashd startup or
-`dash-cli logging '["lock"]'` at runtime to turn on lock contention logging.
-It can be toggled off again with `dash-cli logging [] '["lock"]'`.
+You can then use the `-debug=lock` configuration option at orind startup or
+`orin-cli logging '["lock"]'` at runtime to turn on lock contention logging.
+It can be toggled off again with `orin-cli logging [] '["lock"]'`.
 
 ### Assertions and Checks
 
@@ -461,15 +461,15 @@ other input.
 
 Valgrind is a programming tool for memory debugging, memory leak detection, and
 profiling. The repo contains a Valgrind suppressions file
-([`valgrind.supp`](https://github.com/dashpay/dash/blob/master/contrib/valgrind.supp))
+([`valgrind.supp`](https://github.com/orinpay/orin/blob/master/contrib/valgrind.supp))
 which includes known Valgrind warnings in our dependencies that cannot be fixed
 in-tree. Example use:
 
 ```shell
-$ valgrind --suppressions=contrib/valgrind.supp src/test/test_dash
+$ valgrind --suppressions=contrib/valgrind.supp src/test/test_orin
 $ valgrind --suppressions=contrib/valgrind.supp --leak-check=full \
-      --show-leak-kinds=all src/test/test_dash --log_level=test_suite
-$ valgrind -v --leak-check=full src/dashd -printtoconsole
+      --show-leak-kinds=all src/test/test_orin --log_level=test_suite
+$ valgrind -v --leak-check=full src/orind -printtoconsole
 $ ./test/functional/test_runner.py --valgrind
 ```
 
@@ -486,7 +486,7 @@ To enable LCOV report generation during test runs:
 make
 make cov
 
-# A coverage report will now be accessible at `./test_dash.coverage/index.html`.
+# A coverage report will now be accessible at `./test_orin.coverage/index.html`.
 ```
 
 ### Performance profiling with perf
@@ -513,13 +513,13 @@ Make sure you [understand the security
 trade-offs](https://lwn.net/Articles/420403/) of setting these kernel
 parameters.
 
-To profile a running dashd process for 60 seconds, you could use an
+To profile a running orind process for 60 seconds, you could use an
 invocation of `perf record` like this:
 
 ```sh
 $ perf record \
     -g --call-graph dwarf --per-thread -F 140 \
-    -p `pgrep dashd` -- sleep 60
+    -p `pgrep orind` -- sleep 60
 ```
 
 You could then analyze the results by running:
@@ -535,7 +535,7 @@ See the functional test documentation for how to invoke perf within tests.
 
 ### Sanitizers
 
-Dash Core can be compiled with various "sanitizers" enabled, which add
+Orin Core can be compiled with various "sanitizers" enabled, which add
 instrumentation for issues regarding things like memory safety, thread race
 conditions, or undefined behavior. This is controlled with the
 `--with-sanitizers` configure flag, which should be a comma separated list of
@@ -570,13 +570,6 @@ export UBSAN_OPTIONS="suppressions=$(pwd)/test/sanitizer_suppressions/ubsan:prin
 
 See the CI config for more examples, and upstream documentation for more information
 about any additional options.
-
-There are a number of known problems when using the `address` sanitizer. The
-address sanitizer is known to fail in
-[sha256_sse4::Transform](/src/crypto/sha256_sse4.cpp) which makes it unusable
-unless you also use `--disable-asm` when running configure. We would like to fix
-sanitizer issues, so please send pull requests if you can fix any errors found
-by the address sanitizer (or any other sanitizer).
 
 Not all sanitizer options can be enabled at the same time, e.g. trying to build
 with `--with-sanitizers=address,thread` will fail in the configure script as
@@ -615,14 +608,14 @@ and its `cs_KeyStore` lock for example).
 Threads
 -------
 
-- [Main thread (`dashd`)](https://doxygen.bitcoincore.org/bitcoind_8cpp.html#a0ddf1224851353fc92bfbff6f499fa97)
+- [Main thread (`orind`)](https://doxygen.bitcoincore.org/bitcoind_8cpp.html#a0ddf1224851353fc92bfbff6f499fa97)
   : Started from `main()` in `bitcoind.cpp`. Responsible for starting up and
   shutting down the application.
 
-- [ThreadImport (`d-loadblk`)](https://doxygen.bitcoincore.org/init_8cpp.html#ae9e290a0e829ec0198518de2eda579d1)
+- [ThreadImport (`d-loadblk`)](https://doxygen.bitcoincore.org/namespacenode.html#ab4305679079866f0f420f7dbf278381d)
   : Loads blocks from `blk*.dat` files or `-loadblock=<file>` on startup.
 
-- [ThreadScriptCheck (`d-scriptch.x`)](https://doxygen.bitcoincore.org/validation_8cpp.html#a925a33e7952a157922b0bbb8dab29a20)
+- [CCheckQueue::Loop (`d-scriptch.x`)](https://doxygen.bitcoincore.org/class_c_check_queue.html#a6e7fa51d3a25e7cb65446d4b50e6a987)
   : Parallel script validation threads for transactions in blocks.
 
 - [ThreadHTTP (`d-http`)](https://doxygen.bitcoincore.org/httpserver_8cpp.html#abb9f6ea8819672bd9a62d3695070709c)
@@ -638,7 +631,7 @@ Threads
   : Does asynchronous background tasks like dumping wallet contents, dumping
   addrman and running asynchronous validationinterface callbacks.
 
-- [TorControlThread (`d-torcontrol`)](https://doxygen.bitcoincore.org/torcontrol_8cpp.html#a4faed3692d57a0d7bdbecf3b37f72de0)
+- [TorControlThread (`d-torcontrol`)](https://doxygen.bitcoincore.org/torcontrol_8cpp.html#a52a3efff23634500bb42c6474f306091)
   : Libevent thread for tor connections.
 
 - Net threads:
@@ -650,7 +643,7 @@ Threads
   - [ThreadDNSAddressSeed (`d-dnsseed`)](https://doxygen.bitcoincore.org/class_c_connman.html#aa7c6970ed98a4a7bafbc071d24897d13)
     : Loads addresses of peers from the DNS.
 
-  - [ThreadMapPort (`d-upnp`)](https://doxygen.bitcoincore.org/net_8cpp.html#a63f82a71c4169290c2db1651a9bbe249)
+  - ThreadMapPort (`d-mapport`)
     : Universal plug-and-play startup/shutdown.
 
   - [ThreadSocketHandler (`d-net`)](https://doxygen.bitcoincore.org/class_c_connman.html#a765597cbfe99c083d8fa3d61bb464e34)
@@ -661,6 +654,9 @@ Threads
 
   - [ThreadOpenConnections (`d-opencon`)](https://doxygen.bitcoincore.org/class_c_connman.html#a55e9feafc3bab78e5c9d408c207faa45)
     : Initiates new connections to peers.
+
+  - [ThreadI2PAcceptIncoming (`d-i2paccept`)](https://doxygen.bitcoincore.org/class_c_connman.html#a57787b4f9ac847d24065fbb0dd6e70f8)
+    : Listens for and accepts incoming I2P connections through the I2P SAM proxy.
 
   - ThreadOpenMasternodeConnections (`d-mncon`)
     : Opens network connections to masternodes.
@@ -684,7 +680,7 @@ Ignoring IDE/editor files
 In closed-source environments in which everyone uses the same IDE, it is common
 to add temporary files it produces to the project-wide `.gitignore` file.
 
-However, in open source software such as Dash Core, where everyone uses
+However, in open source software such as Orin Core, where everyone uses
 their own editors/IDE/tools, it is less common. Only you know what files your
 editor produces and this may change from version to version. The canonical way
 to do this is thus to create your local gitignore. Add this to `~/.gitconfig`:
@@ -714,9 +710,9 @@ Development guidelines
 ============================
 
 A few non-style-related recommendations for developers, as well as points to
-pay attention to for reviewers of Dash Core code.
+pay attention to for reviewers of Orin Core code.
 
-General Dash Core
+General Orin Core
 ----------------------
 
 - New features should be exposed on RPC first, then can be made available in the GUI.
@@ -870,12 +866,12 @@ Strings and formatting
     buffer overflows, and surprises with `\0` characters. Also, some C string manipulations
     tend to act differently depending on platform, or even the user locale.
 
-- Use `ParseInt32`, `ParseInt64`, `ParseUInt32`, `ParseUInt64`, `ParseDouble` from `utilstrencodings.h` for number parsing.
+- Use `ToIntegral` from [`strencodings.h`](/src/util/strencodings.h) for number parsing. In legacy code you might also find `ParseInt*` family of functions, `ParseDouble` or `LocaleIndependentAtoi`.
 
   - *Rationale*: These functions do overflow checking and avoid pesky locale issues.
 
 - Avoid using locale dependent functions if possible. You can use the provided
-  [`lint-locale-dependence.sh`](/test/lint/lint-locale-dependence.sh)
+  [`lint-locale-dependence.py`](/test/lint/lint-locale-dependence.py)
   to check for accidental use of locale dependent functions.
 
   - *Rationale*: Unnecessary locale dependence can cause bugs that are very tricky to isolate and fix.
@@ -904,7 +900,7 @@ Strings and formatting
 
 - For `strprintf`, `LogPrint`, `LogPrintf` formatting characters don't need size specifiers.
 
-  - *Rationale*: Dash Core uses tinyformat, which is type safe. Leave them out to avoid confusion.
+  - *Rationale*: Orin Core uses tinyformat, which is type safe. Leave them out to avoid confusion.
 
 - Use `.c_str()` sparingly. Its only valid use is to pass C++ strings to C functions that take NULL-terminated
   strings.
@@ -954,8 +950,20 @@ Threads and synchronization
 - Prefer `Mutex` type to `RecursiveMutex` one.
 
 - Consistently use [Clang Thread Safety Analysis](https://clang.llvm.org/docs/ThreadSafetyAnalysis.html) annotations to
-  get compile-time warnings about potential race conditions in code. Combine annotations in function declarations with
-  run-time asserts in function definitions:
+  get compile-time warnings about potential race conditions or deadlocks in code.
+
+  - In functions that are declared separately from where they are defined, the
+    thread safety annotations should be added exclusively to the function
+    declaration. Annotations on the definition could lead to false positives
+    (lack of compile failure) at call sites between the two.
+
+  - Prefer locks that are in a class rather than global, and that are
+    internal to a class (private or protected) rather than public.
+
+  - Combine annotations in function declarations with run-time asserts in
+    function definitions (`AssertLockNotHeld()` can be omitted if `LOCK()` is
+    called unconditionally after it because `LOCK()` does the same check as
+    `AssertLockNotHeld()` internally, for non-recursive mutexes):
 
 ```C++
 // txmempool.h
@@ -980,21 +988,37 @@ void CTxMemPool::UpdateTransactionsFromBlock(...)
 
 ```C++
 // validation.h
-class ChainstateManager
+class CChainState
 {
+protected:
+    ...
+    Mutex m_chainstate_mutex;
+    ...
 public:
     ...
-    bool ProcessNewBlock(...) LOCKS_EXCLUDED(::cs_main);
+    bool ActivateBestChain(
+        BlockValidationState& state,
+        std::shared_ptr<const CBlock> pblock = nullptr)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_chainstate_mutex)
+        LOCKS_EXCLUDED(::cs_main);
+    ...
+    bool PreciousBlock(BlockValidationState& state, CBlockIndex* pindex)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_chainstate_mutex)
+        LOCKS_EXCLUDED(::cs_main);
     ...
 }
 
 // validation.cpp
-bool ChainstateManager::ProcessNewBlock(...)
+bool CChainState::PreciousBlock(BlockValidationState& state, CBlockIndex* pindex)
 {
+    AssertLockNotHeld(m_chainstate_mutex);
     AssertLockNotHeld(::cs_main);
-    ...
-    LOCK(::cs_main);
-    ...
+    {
+        LOCK(cs_main);
+        ...
+    }
+
+    return ActivateBestChain(state, std::shared_ptr<const CBlock>());
 }
 ```
 
@@ -1132,37 +1156,37 @@ Subtrees
 
 Several parts of the repository are subtrees of software maintained elsewhere.
 
-Some of these are maintained by active developers of Bitcoin Core, in which case changes should probably go
-directly upstream without being PRed directly against the project. They will be merged back in the next
-subtree merge.
+Some of these are maintained by active developers of Orin Core, in which case
+changes should go directly upstream without being PRed directly against the project.
+They will be merged back in the next subtree merge.
 
-Others are external projects without a tight relationship with our project. Changes to these should also
-be sent upstream, but bugfixes may also be prudent to PR against Dash Core so that they can be integrated
-quickly. Cosmetic changes should be purely taken upstream.
+Others are external projects without a tight relationship with our project. Changes
+to these should also be sent upstream, but bugfixes may also be prudent to PR against
+a Orin Core subtree, so that they can be integrated quickly. Cosmetic changes
+should be taken upstream.
 
-There is a tool in `test/lint/git-subtree-check.sh` ([instructions](../test/lint#git-subtree-checksh)) to check a subtree directory for consistency with
-its upstream repository.
+There is a tool in `test/lint/git-subtree-check.sh` ([instructions](../test/lint#git-subtree-checksh))
+to check a subtree directory for consistency with its upstream repository.
 
 Current subtrees include:
 
 - src/leveldb
-  - Upstream at https://github.com/google/leveldb ; Maintained by Google, but
-    open important PRs to Core to avoid delay.
+  - Subtree at https://github.com/bitcoin-core/leveldb-subtree ; maintained by Core contributors.
+  - Upstream at https://github.com/google/leveldb ; maintained by Google. Open
+    important PRs to the subtree to avoid delay.
   - **Note**: Follow the instructions in [Upgrading LevelDB](#upgrading-leveldb) when
     merging upstream changes to the LevelDB subtree.
 
 - src/crc32c
   - Used by leveldb for hardware acceleration of CRC32C checksums for data integrity.
-  - Upstream at https://github.com/google/crc32c ; Maintained by Google.
+  - Subtree at https://github.com/bitcoin-core/crc32c-subtree ; maintained by Core contributors.
+  - Upstream at https://github.com/google/crc32c ; maintained by Google.
 
 - src/secp256k1
-  - Upstream at https://github.com/bitcoin-core/secp256k1/ ; actively maintained by Core contributors.
+  - Upstream at https://github.com/bitcoin-core/secp256k1/ ; maintained by Core contributors.
 
 - src/crypto/ctaes
-  - Upstream at https://github.com/bitcoin-core/ctaes ; actively maintained by Core contributors.
-
-- src/univalue
-  - Upstream at https://github.com/bitcoin-core/univalue ; actively maintained by Core contributors, deviates from upstream https://github.com/jgarzik/univalue
+  - Upstream at https://github.com/bitcoin-core/ctaes ; maintained by Core contributors.
 
 - src/minisketch
   - Upstream at https://github.com/sipa/minisketch ; maintained by Core contributors.
@@ -1188,7 +1212,7 @@ In addition to reviewing the upstream changes in `env_posix.cc`, you can use `ls
 check this. For example, on Linux this command will show open `.ldb` file counts:
 
 ```bash
-$ lsof -p $(pidof dashd) |\
+$ lsof -p $(pidof orind) |\
     awk 'BEGIN { fd=0; mem=0; } /ldb$/ { if ($4 == "mem") mem++; else fd++ } END { printf "mem = %s, fd = %s\n", mem, fd}'
 mem = 119, fd = 0
 ```
@@ -1344,7 +1368,7 @@ A few guidelines for introducing and reviewing new RPC interfaces:
 - Try not to overload methods on argument type. E.g. don't make `getblock(true)` and `getblock("hash")`
   do different things.
 
-  - *Rationale*: This is impossible to use with `dash-cli`, and can be surprising to users.
+  - *Rationale*: This is impossible to use with `orin-cli`, and can be surprising to users.
 
   - *Exception*: Some RPC calls can take both an `int` and `bool`, most notably when a bool was switched
     to a multi-value, or due to other historical reasons. **Always** have false map to 0 and
@@ -1356,7 +1380,7 @@ A few guidelines for introducing and reviewing new RPC interfaces:
 
 - Add every non-string RPC argument `(method, idx, name)` to the table `vRPCConvertParams` in `rpc/client.cpp`.
 
-  - *Rationale*: `dash-cli` and the GUI debug console use this table to determine how to
+  - *Rationale*: `orin-cli` and the GUI debug console use this table to determine how to
     convert a plaintext command line to JSON. If the types don't match, the method can be unusable
     from there.
 
@@ -1377,7 +1401,7 @@ A few guidelines for introducing and reviewing new RPC interfaces:
   RPCs whose behavior does *not* depend on the current chainstate may omit this
   call.
 
-  - *Rationale*: In previous versions of Dash Core, the wallet was always
+  - *Rationale*: In previous versions of Orin Core, the wallet was always
     in-sync with the chainstate (by virtue of them all being updated in the
     same cs_main lock). In order to maintain the behavior that wallet RPCs
     return results as of at least the highest best-known block an RPC
@@ -1396,7 +1420,7 @@ A few guidelines for introducing and reviewing new RPC interfaces:
     new RPC is replacing a deprecated RPC, to avoid both RPCs confusingly
     showing up in the command list.
 
-- Use *invalid* Dash addresses (e.g. in the constant array `EXAMPLE_ADDRESS`) for
+- Use *invalid* Orin addresses (e.g. in the constant array `EXAMPLE_ADDRESS`) for
   `RPCExamples` help documentation.
 
   - *Rationale*: Prevent accidental transactions by users.
@@ -1406,7 +1430,7 @@ A few guidelines for introducing and reviewing new RPC interfaces:
 
   - *Rationale*: User-facing consistency.
 
-- Use `fs::path::u8string()` and `fs::u8path()` functions when converting path
+- Use `fs::path::u8string()`/`fs::path::utf8string()` and `fs::u8path()` functions when converting path
   to JSON strings, not `fs::PathToString` and `fs::PathFromString`
 
   - *Rationale*: JSON strings are Unicode strings, not byte strings, and

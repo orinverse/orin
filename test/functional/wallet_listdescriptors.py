@@ -4,8 +4,11 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the listdescriptors RPC."""
 
+from test_framework.blocktools import (
+    TIME_GENESIS_BLOCK,
+)
 from test_framework.descriptors import (
-    descsum_create
+    descsum_create,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -43,12 +46,14 @@ class ListDescriptorsTest(BitcoinTestFramework):
         node.createwallet(wallet_name='w3', descriptors=True)
         result = node.get_wallet_rpc('w3').listdescriptors()
         assert_equal("w3", result['wallet_name'])
-        assert_equal(2, len(result['descriptors']))
+        assert_equal(3, len(result['descriptors']))
         assert_equal(2, len([d for d in result['descriptors'] if d['active']]))
-        assert_equal(1, len([d for d in result['descriptors'] if d['internal']]))
+        self.log.info(f"result: {result['descriptors']}")
+        assert_equal(1, len([d for d in result['descriptors'] if 'internal' in d and d['internal']]))
+        assert_equal(1, len([d for d in result['descriptors'] if 'coinjoin' in d and d['coinjoin']]))
         for item in result['descriptors']:
             assert item['desc'] != ''
-            assert item['next'] == 0
+            assert item['next_index'] == 0
             assert item['range'] == [0, 0]
             assert item['timestamp'] is not None
 
@@ -59,16 +64,17 @@ class ListDescriptorsTest(BitcoinTestFramework):
         wallet = node.get_wallet_rpc('w2')
         wallet.importdescriptors([{
             'desc': descsum_create('pkh(' + xprv + hardened_path + '/0/*)'),
-            'timestamp': 1296688602,
+            'timestamp': TIME_GENESIS_BLOCK,
         }])
         expected = {
             'wallet_name': 'w2',
             'descriptors': [
                 {'desc': descsum_create('pkh([80002067' + hardened_path + ']' + xpub_acc + '/0/*)'),
-                 'timestamp': 1296688602,
+                 'timestamp': TIME_GENESIS_BLOCK,
                  'active': False,
                  'range': [0, 0],
-                 'next': 0},
+                 'next': 0,
+                 'next_index': 0},
             ],
         }
         assert_equal(expected, wallet.listdescriptors())
@@ -79,10 +85,11 @@ class ListDescriptorsTest(BitcoinTestFramework):
             'wallet_name': 'w2',
             'descriptors': [
                 {'desc': descsum_create('pkh(' + xprv + hardened_path + '/0/*)'),
-                 'timestamp': 1296688602,
+                 'timestamp': TIME_GENESIS_BLOCK,
                  'active': False,
                  'range': [0, 0],
-                 'next': 0},
+                 'next': 0,
+                 'next_index': 0},
             ],
         }
         assert_equal(expected_private, wallet.listdescriptors(True))
@@ -101,7 +108,7 @@ class ListDescriptorsTest(BitcoinTestFramework):
         watch_only_wallet = node.get_wallet_rpc('watch-only')
         watch_only_wallet.importdescriptors([{
             'desc': descsum_create('pkh(' + xpub_acc + ')'),
-            'timestamp': 1296688602,
+            'timestamp': TIME_GENESIS_BLOCK,
         }])
         assert_raises_rpc_error(-4, 'Can\'t get descriptor string', watch_only_wallet.listdescriptors, True)
 
@@ -110,14 +117,14 @@ class ListDescriptorsTest(BitcoinTestFramework):
         wallet = node.get_wallet_rpc('w4')
         wallet.importdescriptors([{
             'desc': descsum_create('combo(' + node.get_deterministic_priv_key().key + ')'),
-            'timestamp': 1296688602,
+            'timestamp': TIME_GENESIS_BLOCK,
         }])
         expected = {
             'wallet_name': 'w4',
             'descriptors': [
                 {'active': False,
                  'desc': 'combo(038af19f35924e37ad7c3c8045d1e19b9b90b7310e08b892e620c253a102fe49f0)#2j2j0825',
-                 'timestamp': 1296688602},
+                 'timestamp': TIME_GENESIS_BLOCK},
             ]
         }
         assert_equal(expected, wallet.listdescriptors())

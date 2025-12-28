@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -19,6 +19,8 @@
 #include <validationinterface.h>
 
 #include <thread>
+
+using node::BlockAssembler;
 
 namespace validation_block_tests {
 struct MinerTestingSetup : public RegTestingSetup {
@@ -64,7 +66,7 @@ std::shared_ptr<CBlock> MinerTestingSetup::Block(const uint256& prev_hash)
     static int i = 0;
     static uint64_t time = Params().GenesisBlock().nTime;
 
-    auto ptemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(CScript{} << i++ << OP_TRUE);
+    auto ptemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, m_node.mempool.get(), Params()).CreateNewBlock(CScript{} << i++ << OP_TRUE);
     auto pblock = std::make_shared<CBlock>(ptemplate->block);
     pblock->hashPrevBlock = prev_hash;
     pblock->nTime = ++time;

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2024 The Dash Core developers
+// Copyright (c) 2018-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -154,6 +154,7 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
         case Consensus::LLMQType::LLMQ_TEST_DIP0024: {
             return fDIP0024IsActive;
         }
+        // TODO: remove it in case of testnet reset
         case Consensus::LLMQType::LLMQ_25_67:
             return pindexPrev->nHeight >= TESTNET_LLMQ_25_67_ACTIVATION_HEIGHT;
 

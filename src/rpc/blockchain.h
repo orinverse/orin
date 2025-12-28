@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 The Bitcoin Core developers
+// Copyright (c) 2017-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -7,11 +7,14 @@
 
 #include <consensus/amount.h>
 #include <core_io.h>
+#include <fs.h>
+#include <kernel/coinstats.h>
 #include <streams.h>
 #include <sync.h>
-#include <validation.h>
 
-#include <stdint.h>
+#include <cstdint>
+#include <functional>
+#include <optional>
 #include <vector>
 
 extern RecursiveMutex cs_main;
@@ -19,12 +22,20 @@ extern RecursiveMutex cs_main;
 class CBlock;
 class CBlockIndex;
 class CChainState;
-class UniValue;
-struct NodeContext;
+class CCoinsView;
+namespace kernel {
+enum class CoinStatsHashType : uint8_t;
+}
 namespace llmq {
 class CChainLocksHandler;
 class CInstantSendManager;
 } // namespace llmq
+namespace node {
+class BlockManager;
+struct NodeContext;
+} // namespace node
+
+class UniValue;
 
 static constexpr int NUM_GETBLOCKSTATS_PERCENTILES = 5;
 
@@ -40,7 +51,7 @@ double GetDifficulty(const CBlockIndex* blockindex);
 void RPCNotifyBlockChange(const CBlockIndex*);
 
 /** Block description to JSON */
-UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIndex* tip, const CBlockIndex* blockindex, const llmq::CChainLocksHandler& clhandler, const llmq::CInstantSendManager& isman, bool txDetails = false) LOCKS_EXCLUDED(cs_main);
+UniValue blockToJSON(node::BlockManager& blockman, const CBlock& block, const CBlockIndex* tip, const CBlockIndex* blockindex, const llmq::CChainLocksHandler& clhandler, const llmq::CInstantSendManager& isman, TxVerbosity verbosity) LOCKS_EXCLUDED(cs_main);
 
 /** Block header to JSON */
 UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex, const llmq::CChainLocksHandler& clhandler) LOCKS_EXCLUDED(cs_main);
@@ -48,13 +59,26 @@ UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex
 /** Used by getblockstats to get feerates at different percentiles by weight  */
 void CalculatePercentilesBySize(CAmount result[NUM_GETBLOCKSTATS_PERCENTILES], std::vector<std::pair<CAmount, int64_t>>& scores, int64_t total_size);
 
-void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fIncludeHex);
-void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry, bool include_hex = true, const CTxUndo* txundo = nullptr, const CSpentIndexTxInfo* ptxSpentInfo = nullptr);
-
 /**
  * Helper to create UTXO snapshots given a chainstate and a file handle.
  * @return a UniValue map containing metadata about the snapshot.
  */
-UniValue CreateUTXOSnapshot(NodeContext& node, CChainState& chainstate, CAutoFile& afile);
+UniValue CreateUTXOSnapshot(
+    node::NodeContext& node,
+    CChainState& chainstate,
+    AutoFile& afile,
+    const fs::path& path,
+    const fs::path& tmppath);
+
+/**
+ * Calculate statistics about the unspent transaction output set
+ *
+ * @param[in] index_requested Signals if the coinstatsindex should be used (when available).
+ */
+std::optional<kernel::CCoinsStats> GetUTXOStats(CCoinsView* view, node::BlockManager& blockman,
+                                                kernel::CoinStatsHashType hash_type,
+                                                const std::function<void()>& interruption_point = {},
+                                                const CBlockIndex* pindex = nullptr,
+                                                bool index_requested = true);
 
 #endif // BITCOIN_RPC_BLOCKCHAIN_H

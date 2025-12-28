@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2023-2025 The Dash Core developers
+# Copyright (c) 2023-2025 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -16,7 +16,10 @@ from test_framework.messages import (
     ser_string,
 )
 
-from test_framework.test_framework import DashTestFramework
+from test_framework.test_framework import (
+    DashTestFramework,
+    MasternodeInfo
+)
 from test_framework.util import (
     assert_equal,
     get_bip9_details,
@@ -25,7 +28,7 @@ from test_framework.util import (
 class MnehfTest(DashTestFramework):
     def set_test_params(self):
         extra_args = [["-vbparams=testdummy:0:999999999999:0:4:4:4:5:1", "-persistmempool=0"]] * 4
-        self.set_dash_test_params(4, 3, extra_args=extra_args)
+        self.set_orin_test_params(4, 3, extra_args=extra_args)
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -38,8 +41,8 @@ class MnehfTest(DashTestFramework):
                 self.log.info(f"Actual restart options: {self.extra_args[inode]}")
 
         self.restart_node(0)
-        for mn in self.mninfo:
-            index = mn.node.index
+        for mn in self.mninfo: # type: MasternodeInfo
+            index = mn.nodeIdx
             self.stop_node(index)
             self.start_masternode(mn)
         for i in range(1, self.num_nodes):
@@ -51,7 +54,7 @@ class MnehfTest(DashTestFramework):
         request_id_buf = ser_string(b"mnhf") + struct.pack("<Q", versionBit)
         request_id = hash256(request_id_buf)[::-1].hex()
 
-        quorumHash = self.mninfo[0].node.quorum("selectquorum", 100, request_id)["quorumHash"]
+        quorumHash = self.mninfo[0].get_node(self).quorum("selectquorum", 100, request_id)["quorumHash"]
         mnehf_payload = CMnEhf(
             version = 1,
             versionBit = versionBit,
@@ -121,9 +124,6 @@ class MnehfTest(DashTestFramework):
         node = self.nodes[0]
 
         self.set_sporks()
-        self.log.info("Consensus rules assume there're no EHF signal before V20")
-        self.activate_v20()
-
         self.log.info("Mine a quorum...")
         self.mine_quorum()
         self.check_fork('defined')
@@ -140,7 +140,7 @@ class MnehfTest(DashTestFramework):
         assert_equal(mnehf_payload.version, 1)
         assert_equal(mnehf_payload.versionBit, 28)
         self.log.info("Checking correctness of requestId and quorumHash")
-        assert_equal(mnehf_payload.quorumHash, int(self.mninfo[0].node.quorum("selectquorum", 100, 'a0eee872d7d3170dd20d5c5e8380c92b3aa887da5f63d8033289fafa35a90691')["quorumHash"], 16))
+        assert_equal(mnehf_payload.quorumHash, int(self.mninfo[0].get_node(self).quorum("selectquorum", 100, 'a0eee872d7d3170dd20d5c5e8380c92b3aa887da5f63d8033289fafa35a90691')["quorumHash"], 16))
 
         ehf_tx_sent = self.send_tx(ehf_tx)
         self.log.info(f"ehf tx: {ehf_tx_sent}")
@@ -229,7 +229,7 @@ class MnehfTest(DashTestFramework):
             self.bump_mocktime(1)
             self.generate(self.nodes[1], 1)
             return get_bip9_details(self.nodes[0], 'testdummy')['status'] == 'active'
-        self.wait_until(lambda: check_ehf_activated(self))
+        self.wait_until(lambda: check_ehf_activated(self), sleep=1)
 
 if __name__ == '__main__':
     MnehfTest().main()

@@ -1,10 +1,11 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_COINJOIN_UTIL_H
 #define BITCOIN_COINJOIN_UTIL_H
 
+#include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
 
 class CTransactionBuilder;
@@ -13,11 +14,11 @@ struct bilingual_str;
 class CKeyHolder
 {
 private:
-    ReserveDestination reserveDestination;
+    wallet::ReserveDestination reserveDestination;
     CTxDestination dest;
 
 public:
-    explicit CKeyHolder(CWallet* pwalletIn);
+    explicit CKeyHolder(wallet::CWallet* pwalletIn);
     CKeyHolder(CKeyHolder&&) = delete;
     CKeyHolder& operator=(CKeyHolder&&) = delete;
     void KeepKey();
@@ -33,7 +34,7 @@ private:
     std::vector<std::unique_ptr<CKeyHolder> > storage GUARDED_BY(cs_storage);
 
 public:
-    CScript AddKey(CWallet* pwalletIn) EXCLUSIVE_LOCKS_REQUIRED(!cs_storage);
+    CScript AddKey(wallet::CWallet* pwalletIn) EXCLUSIVE_LOCKS_REQUIRED(!cs_storage);
     void KeepAll() EXCLUSIVE_LOCKS_REQUIRED(!cs_storage);
     void ReturnAll() EXCLUSIVE_LOCKS_REQUIRED(!cs_storage);
 };
@@ -47,14 +48,14 @@ class CTransactionBuilderOutput
     /// Used for amount updates
     CTransactionBuilder* pTxBuilder{nullptr};
     /// Reserve key where the amount of this output will end up
-    ReserveDestination dest;
+    wallet::ReserveDestination dest;
     /// Amount this output will receive
     CAmount nAmount{0};
     /// ScriptPubKey of this output
     CScript script;
 
 public:
-    CTransactionBuilderOutput(CTransactionBuilder* pTxBuilderIn, CWallet& wallet, CAmount nAmountIn);
+    CTransactionBuilderOutput(CTransactionBuilder* pTxBuilderIn, wallet::CWallet& wallet, CAmount nAmountIn);
     CTransactionBuilderOutput(CTransactionBuilderOutput&&) = delete;
     CTransactionBuilderOutput& operator=(CTransactionBuilderOutput&&) = delete;
     /// Get the scriptPubKey of this output
@@ -77,15 +78,15 @@ public:
 class CTransactionBuilder
 {
     /// Wallet the transaction will be build for
-    CWallet& m_wallet;
+    wallet::CWallet& m_wallet;
     /// See CTransactionBuilder() for initialization
-    CCoinControl coinControl;
+    wallet::CCoinControl coinControl;
     /// Dummy since we anyway use tallyItem's destination as change destination in coincontrol.
     /// Its a member just to make sure ReturnKey can be called in destructor just in case it gets generated/kept
     /// somewhere in CWallet code.
-    ReserveDestination dummyReserveDestination;
+    wallet::ReserveDestination dummyReserveDestination;
     /// Contains all utxos available to generate this transactions. They are all from the same address.
-    CompactTallyItem tallyItem;
+    wallet::CompactTallyItem tallyItem;
     /// Contains the number of bytes required for a transaction with only the inputs of tallyItems, no outputs
     int nBytesBase{0};
     /// Contains the number of bytes required to add one output
@@ -100,7 +101,7 @@ class CTransactionBuilder
     friend class CTransactionBuilderOutput;
 
 public:
-    CTransactionBuilder(CWallet& wallet, const CompactTallyItem& tallyItemIn);
+    CTransactionBuilder(wallet::CWallet& wallet, const wallet::CompactTallyItem& tallyItemIn);
     ~CTransactionBuilder();
     /// Check it would be possible to add a single output with the amount nAmount. Returns true if its possible and false if not.
     bool CouldAddOutput(CAmount nAmountOutput) const EXCLUSIVE_LOCKS_REQUIRED(!cs_outputs);
@@ -116,7 +117,11 @@ public:
     /// Check if an amounts should be considered as dust
     bool IsDust(CAmount nAmount) const;
     /// Get the total number of added outputs
-    int CountOutputs() const { LOCK(cs_outputs); return vecOutputs.size(); }
+    int CountOutputs() const EXCLUSIVE_LOCKS_REQUIRED(!cs_outputs)
+    {
+        LOCK(cs_outputs);
+        return vecOutputs.size();
+    }
     /// Create and Commit the transaction to the wallet
     bool Commit(bilingual_str& strResult) EXCLUSIVE_LOCKS_REQUIRED(!cs_outputs);
     /// Convert to a string

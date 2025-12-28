@@ -1,5 +1,5 @@
-// Copyright (c) 2011-2020 The Bitcoin Core developers
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2011-2021 The Bitcoin Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -27,7 +27,6 @@
 #include <QCloseEvent>
 #include <QPainter>
 #include <QScreen>
-
 
 SplashScreen::SplashScreen(const NetworkStyle *networkStyle) :
     QWidget(), curAlignment(0)
@@ -164,16 +163,6 @@ bool SplashScreen::eventFilter(QObject * obj, QEvent * ev) {
         }
     }
     return QObject::eventFilter(obj, ev);
-}
-
-void SplashScreen::finish()
-{
-    /* If the window is minimized, hide() will be ignored. */
-    /* Make sure we de-minimize the splashscreen window before hiding */
-    if (isMinimized())
-        showNormal();
-    hide();
-    deleteLater(); // No more need for this
 }
 
 static void InitMessage(SplashScreen *splash, const std::string &message)

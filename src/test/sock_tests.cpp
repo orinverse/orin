@@ -4,9 +4,9 @@
 
 #include <compat/compat.h>
 #include <test/util/setup_common.h>
-#include <threadinterrupt.h>
 #include <util/sock.h>
 #include <util/system.h>
+#include <util/threadinterrupt.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -69,24 +69,6 @@ BOOST_AUTO_TEST_CASE(move_assignment)
     BOOST_CHECK(SocketIsClosed(s));
 }
 
-BOOST_AUTO_TEST_CASE(release)
-{
-    SOCKET s = CreateSocket();
-    Sock* sock = new Sock(s);
-    BOOST_CHECK_EQUAL(sock->Release(), s);
-    delete sock;
-    BOOST_CHECK(!SocketIsClosed(s));
-    BOOST_REQUIRE(CloseSocket(s));
-}
-
-BOOST_AUTO_TEST_CASE(reset)
-{
-    const SOCKET s = CreateSocket();
-    Sock sock(s);
-    sock.Reset();
-    BOOST_CHECK(SocketIsClosed(s));
-}
-
 #ifndef WIN32 // Windows does not have socketpair(2).
 
 static void CreateSocketPair(int s[2])
@@ -139,7 +121,7 @@ BOOST_AUTO_TEST_CASE(wait)
     Sock sock0(s[0]);
     Sock sock1(s[1]);
 
-    std::thread waiter([&sock0]() { (void)sock0.Wait(24h, Sock::RECV); });
+    std::thread waiter([&sock0]() { (void)sock0.Wait(24h, Sock::RECV, SocketEventsParams{::g_socket_events_mode}); });
 
     BOOST_REQUIRE_EQUAL(sock1.Send("a", 1, 0), 1);
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -6,13 +6,23 @@
 #include <util/system.h>
 #include <walletinitinterface.h>
 
-class CWallet;
-
+class ArgsManager;
 namespace interfaces {
 class Chain;
 class Handler;
 class Wallet;
-}
+class WalletClient;
+class WalletLoader;
+namespace CoinJoin {
+class Loader;
+} // namespace CoinJoin
+} // namespace interfaces
+namespace node {
+class NodeContext;
+} // namespace node
+namespace wallet {
+class CWallet;
+} // namespace wallet
 
 class DummyWalletInit : public WalletInitInterface {
 public:
@@ -20,18 +30,19 @@ public:
     bool HasWalletSupport() const override {return false;}
     void AddWalletOptions(ArgsManager& argsman) const override;
     bool ParameterInteraction() const override {return true;}
-    void Construct(NodeContext& node) const override {LogPrintf("No wallet support compiled in!\n");}
+    void Construct(node::NodeContext& node) const override {LogPrintf("No wallet support compiled in!\n");}
 
-    // Dash Specific WalletInitInterface InitCoinJoinSettings
-    void AutoLockMasternodeCollaterals() const override {}
-    void InitCoinJoinSettings(const CoinJoinWalletManager& cjwalletman) const override {}
-    bool InitAutoBackup() const override {return true;}
+    // Orin Specific WalletInitInterface InitCoinJoinSettings
+    void AutoLockMasternodeCollaterals(interfaces::WalletLoader& wallet_loader) const override {}
+    void InitCoinJoinSettings(interfaces::CoinJoin::Loader& coinjoin_loader, interfaces::WalletLoader& wallet_loader) const override {}
+    void InitAutoBackup() const override {}
 };
 
 void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
 {
     argsman.AddHiddenArgs({
         "-avoidpartialspends",
+        "-consolidatefeerate=<amt>",
         "-createwalletbackups=<n>",
         "-disablewallet",
         "-instantsendnotify=<cmd>",
@@ -67,7 +78,8 @@ void DummyWalletInit::AddWalletOptions(ArgsManager& argsman) const
         "-flushwallet",
         "-privdb",
         "-walletrejectlongchains",
-        "-unsafesqlitesync"
+        "-walletcrosschain",
+        "-unsafesqlitesync",
     });
 }
 
@@ -75,7 +87,18 @@ const WalletInitInterface& g_wallet_init_interface = DummyWalletInit();
 
 namespace interfaces {
 
-std::unique_ptr<Wallet> MakeWallet(const std::shared_ptr<CWallet>& wallet, const CoinJoinWalletManager& cjwalletman)
+std::unique_ptr<CoinJoin::Loader> MakeCoinJoinLoader(node::NodeContext& node)
+{
+    throw std::logic_error("Wallet function called in non-wallet build.");
+}
+
+std::unique_ptr<Wallet> MakeWallet(const std::shared_ptr<wallet::CWallet>& wallet)
+{
+    throw std::logic_error("Wallet function called in non-wallet build.");
+}
+
+std::unique_ptr<WalletClient> MakeWalletLoader(Chain& chain, ArgsManager& args, node::NodeContext& node_context,
+                                               interfaces::CoinJoin::Loader& coinjoin_loader)
 {
     throw std::logic_error("Wallet function called in non-wallet build.");
 }

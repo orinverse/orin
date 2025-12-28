@@ -8,6 +8,7 @@ Test that the CHECKLOCKTIMEVERIFY soft-fork activates.
 """
 
 from test_framework.blocktools import (
+    TIME_GENESIS_BLOCK,
     create_block,
     create_coinbase,
 )
@@ -64,7 +65,7 @@ def cltv_invalidate(tx, failure_reason):
         # +-------------------------------------------------+------------+--------------+
         [[OP_CHECKLOCKTIMEVERIFY],                            None,       None],
         [[OP_1NEGATE, OP_CHECKLOCKTIMEVERIFY, OP_DROP],       None,       None],
-        [[CScriptNum(100), OP_CHECKLOCKTIMEVERIFY, OP_DROP],  0,          1296688602],  # timestamp of genesis block
+        [[CScriptNum(100), OP_CHECKLOCKTIMEVERIFY, OP_DROP],  0,          TIME_GENESIS_BLOCK],
         [[CScriptNum(100), OP_CHECKLOCKTIMEVERIFY, OP_DROP],  0,          50],
         [[CScriptNum(50),  OP_CHECKLOCKTIMEVERIFY, OP_DROP],  SEQUENCE_FINAL, 50],
     ][failure_reason]
@@ -88,10 +89,11 @@ class BIP65Test(BitcoinTestFramework):
         self.extra_args = [[
             f'-testactivationheight=cltv@{CLTV_HEIGHT}',
             '-whitelist=noban@127.0.0.1',
-            '-dip3params=9000:9000',
-            '-testactivationheight=v20@9000', # disabled for this test
             '-par=1',  # Use only one script thread to get the exact reject reason for testing
             '-acceptnonstdtxn=1',  # cltv_invalidate is nonstandard
+            '-dip3params=9000:9000',
+            '-testactivationheight=v20@9000', # disabled for this test
+            '-testactivationheight=mn_rr@9000', # disabled for this test
         ]]
         self.setup_clean_chain = True
         self.rpc_timeout = 480

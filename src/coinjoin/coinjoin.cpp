@@ -1,27 +1,23 @@
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <coinjoin/coinjoin.h>
 
-#include <bls/bls.h>
 #include <chain.h>
 #include <chainparams.h>
-#include <consensus/validation.h>
-#include <governance/common.h>
-#include <llmq/chainlocks.h>
-#include <llmq/instantsend.h>
-#include <masternode/node.h>
-#include <masternode/sync.h>
-#include <messagesigner.h>
-#include <netmessagemaker.h>
 #include <txmempool.h>
 #include <util/moneystr.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <validation.h>
-
 #include <tinyformat.h>
+
+#include <bls/bls.h>
+#include <chainlock/chainlock.h>
+#include <instantsend/instantsend.h>
+#include <masternode/sync.h>
+
 #include <string>
 
 constexpr static CAmount DEFAULT_MAX_RAW_TX_FEE{COIN / 10};
@@ -48,18 +44,6 @@ uint256 CCoinJoinQueue::GetSignatureHash() const
 }
 uint256 CCoinJoinQueue::GetHash() const { return SerializeHash(*this, SER_NETWORK, PROTOCOL_VERSION); }
 
-bool CCoinJoinQueue::Sign(const CActiveMasternodeManager& mn_activeman)
-{
-    uint256 hash = GetSignatureHash();
-    CBLSSignature sig = mn_activeman.Sign(hash, /*is_legacy=*/ false);
-    if (!sig.IsValid()) {
-        return false;
-    }
-    vchSig = sig.ToByteVector(false);
-
-    return true;
-}
-
 bool CCoinJoinQueue::CheckSignature(const CBLSPublicKey& blsPubKey) const
 {
     if (!CBLSSignature(Span{vchSig}, false).VerifyInsecure(blsPubKey, GetSignatureHash(), false)) {
@@ -85,18 +69,6 @@ bool CCoinJoinQueue::IsTimeOutOfBounds(int64_t current_time) const
 uint256 CCoinJoinBroadcastTx::GetSignatureHash() const
 {
     return SerializeHash(*this, SER_GETHASH, PROTOCOL_VERSION);
-}
-
-bool CCoinJoinBroadcastTx::Sign(const CActiveMasternodeManager& mn_activeman)
-{
-    uint256 hash = GetSignatureHash();
-    CBLSSignature sig = mn_activeman.Sign(hash, /*is_legacy=*/ false);
-    if (!sig.IsValid()) {
-        return false;
-    }
-    vchSig = sig.ToByteVector(false);
-
-    return true;
 }
 
 bool CCoinJoinBroadcastTx::CheckSignature(const CBLSPublicKey& blsPubKey) const
@@ -149,6 +121,10 @@ void CCoinJoinBaseSession::SetNull()
     finalMutableTransaction.vout.clear();
     nTimeLastSuccessfulStep = GetTime();
 }
+
+CCoinJoinBaseManager::CCoinJoinBaseManager() = default;
+
+CCoinJoinBaseManager::~CCoinJoinBaseManager() = default;
 
 void CCoinJoinBaseManager::SetNull()
 {
@@ -257,7 +233,7 @@ bool CCoinJoinBaseSession::IsValidInOuts(CChainState& active_chainstate, const l
         nFees -= txout.nValue;
     }
 
-    CCoinsViewMemPool viewMemPool(WITH_LOCK(cs_main, return &active_chainstate.CoinsTip()), mempool);
+    CCoinsViewMemPool viewMemPool(WITH_LOCK(::cs_main, return &active_chainstate.CoinsTip()), mempool);
 
     for (const auto& txin : vin) {
         LogPrint(BCLog::COINJOIN, "CCoinJoinBaseSession::%s -- txin=%s\n", __func__, txin.ToString());
@@ -299,7 +275,7 @@ bool CCoinJoinBaseSession::IsValidInOuts(CChainState& active_chainstate, const l
 // but CoinJoin still requires ATMP with fee sanity checks so we need to implement them separately
 bool ATMPIfSaneFee(ChainstateManager& chainman, const CTransactionRef& tx, bool test_accept)
 {
-    AssertLockHeld(cs_main);
+    AssertLockHeld(::cs_main);
 
     const MempoolAcceptResult result = chainman.ProcessTransaction(tx, /*test_accept=*/true);
     if (result.m_result_type != MempoolAcceptResult::ResultType::VALID) {
@@ -360,7 +336,7 @@ bool CoinJoin::IsCollateralValid(ChainstateManager& chainman, const llmq::CInsta
     LogPrint(BCLog::COINJOIN, "CoinJoin::IsCollateralValid -- %s", txCollateral.ToString()); /* Continued */
 
     {
-        LOCK(cs_main);
+        LOCK(::cs_main);
         if (!ATMPIfSaneFee(chainman, MakeTransactionRef(txCollateral), /*test_accept=*/true)) {
             LogPrint(BCLog::COINJOIN, "CoinJoin::IsCollateralValid -- didn't pass ATMPIfSaneFee()\n");
             return false;
@@ -421,6 +397,10 @@ bilingual_str CoinJoin::GetMessageByID(PoolMessage nMessageID)
         return _("Unknown response.");
     }
 }
+
+CDSTXManager::CDSTXManager() = default;
+
+CDSTXManager::~CDSTXManager() = default;
 
 void CDSTXManager::AddDSTX(const CCoinJoinBroadcastTx& dstx)
 {

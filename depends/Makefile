@@ -32,6 +32,8 @@ SOURCES_PATH ?= $(BASEDIR)/sources
 WORK_PATH = $(BASEDIR)/work
 BASE_CACHE ?= $(BASEDIR)/built
 SDK_PATH ?= $(BASEDIR)/SDKs
+NO_BOOST ?=
+NO_LIBEVENT ?=
 NO_QT ?=
 NO_QR ?=
 NO_BDB ?=
@@ -43,10 +45,11 @@ NO_USDT ?=
 NO_NATPMP ?=
 MULTIPROCESS ?=
 LTO ?=
-FALLBACK_DOWNLOAD_PATH ?= http://dash-depends-sources.s3-website-us-west-2.amazonaws.com
+NO_HARDEN ?=
+FALLBACK_DOWNLOAD_PATH ?= http://orin-depends-sources.s3-website-us-west-2.amazonaws.com
 
 C_STANDARD ?= c11
-CXX_STANDARD ?= c++17
+CXX_STANDARD ?= c++20
 
 BUILD = $(shell ./config.guess)
 HOST ?= $(BUILD)
@@ -122,7 +125,7 @@ include builders/default.mk
 include packages/packages.mk
 
 # Previously, we directly invoked the well-known programs using $(shell ...)
-# to contruct build_id_string. However, that was problematic because:
+# to construct build_id_string. However, that was problematic because:
 #
 # 1. When invoking a shell, GNU Make special-cases exit code 127 (command not
 #    found) by not capturing the output but instead passing it through. This is
@@ -144,8 +147,20 @@ include packages/packages.mk
 #     2. Before including packages/*.mk (excluding packages/packages.mk), since
 #        they rely on the build_id variables
 #
-build_id:=$(shell env CC='$(build_CC)' CXX='$(build_CXX)' AR='$(build_AR)' RANLIB='$(build_RANLIB)' STRIP='$(build_STRIP)' SHA256SUM='$(build_SHA256SUM)' DEBUG='$(DEBUG)' LTO='$(LTO)' ./gen_id '$(BUILD_ID_SALT)' 'GUIX_ENVIRONMENT=$(realpath $(GUIX_ENVIRONMENT))')
-$(host_arch)_$(host_os)_id:=$(shell env CC='$(host_CC)' CXX='$(host_CXX)' AR='$(host_AR)' RANLIB='$(host_RANLIB)' STRIP='$(host_STRIP)' SHA256SUM='$(build_SHA256SUM)' DEBUG='$(DEBUG)' LTO='$(LTO)' ./gen_id '$(HOST_ID_SALT)' 'GUIX_ENVIRONMENT=$(realpath $(GUIX_ENVIRONMENT))')
+build_id:=$(shell env CC='$(build_CC)' C_STANDARD='$(C_STANDARD)' CXX='$(build_CXX)' CXX_STANDARD='$(CXX_STANDARD)' \
+                      AR='$(build_AR)' NM='$(build_NM)' RANLIB='$(build_RANLIB)' STRIP='$(build_STRIP)' SHA256SUM='$(build_SHA256SUM)' \
+                      DEBUG='$(DEBUG)' NO_HARDEN='$(NO_HARDEN)' \
+                      ./gen_id '$(BUILD_ID_SALT)' 'GUIX_ENVIRONMENT=$(realpath $(GUIX_ENVIRONMENT))')
+
+$(host_arch)_$(host_os)_id:=$(shell env CC='$(host_CC)' C_STANDARD='$(C_STANDARD)' CXX='$(host_CXX)' CXX_STANDARD='$(CXX_STANDARD)' \
+                                        CPPFLAGS='$(CPPFLAGS)' CFLAGS='$(CFLAGS)' CXXFLAGS='$(CXXFLAGS)' LDFLAGS='$(LDFLAGS)' \
+                                        AR='$(host_AR)' NM='$(host_NM)' RANLIB='$(host_RANLIB)' STRIP='$(host_STRIP)' SHA256SUM='$(build_SHA256SUM)' \
+                                        DEBUG='$(DEBUG)' LTO='$(LTO)' NO_HARDEN='$(NO_HARDEN)' \
+                                        ./gen_id '$(HOST_ID_SALT)' 'GUIX_ENVIRONMENT=$(realpath $(GUIX_ENVIRONMENT))')
+
+boost_packages_$(NO_BOOST) = $(boost_packages)
+
+libevent_packages_$(NO_LIBEVENT) = $(libevent_packages)
 
 qrencode_packages_$(NO_QR) = $(qrencode_$(host_os)_packages)
 
@@ -162,7 +177,7 @@ zmq_packages_$(NO_ZMQ) = $(zmq_packages)
 multiprocess_packages_$(MULTIPROCESS) = $(multiprocess_packages)
 usdt_packages_$(NO_USDT) = $(usdt_$(host_os)_packages)
 
-packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(qt_packages_) $(wallet_packages_) $(upnp_packages_) $(natpmp_packages_) $(usdt_packages_)
+packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(boost_packages_) $(libevent_packages_) $(qt_packages_) $(wallet_packages_) $(upnp_packages_) $(natpmp_packages_) $(usdt_packages_)
 native_packages += $($(host_arch)_$(host_os)_native_packages) $($(host_os)_native_packages)
 
 ifneq ($(zmq_packages_),)
@@ -224,6 +239,7 @@ $(host_prefix)/share/config.site : config.site.in $(host_prefix)/.stamp_$(final_
             -e 's|@STRIP@|$(host_STRIP)|' \
             -e 's|@OBJDUMP@|$(host_OBJDUMP)|' \
             -e 's|@DSYMUTIL@|$(host_DSYMUTIL)|' \
+            -e 's|@WINDRES@|$(host_WINDRES)|' \
             -e 's|@build_os@|$(build_os)|' \
             -e 's|@host_os@|$(host_os)|' \
             -e 's|@CFLAGS@|$(strip $(host_CFLAGS) $(host_$(release_type)_CFLAGS))|' \
@@ -242,6 +258,7 @@ $(host_prefix)/share/config.site : config.site.in $(host_prefix)/.stamp_$(final_
             -e 's|@no_natpmp@|$(NO_NATPMP)|' \
             -e 's|@multiprocess@|$(MULTIPROCESS)|' \
             -e 's|@lto@|$(LTO)|' \
+            -e 's|@no_harden@|$(NO_HARDEN)|' \
             -e 's|@debug@|$(DEBUG)|' \
             $< > $@
 	touch $@

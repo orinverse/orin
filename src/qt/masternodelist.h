@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2023 The Dash Core developers
+// Copyright (c) 2016-2023 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,8 @@
 #include <primitives/transaction.h>
 #include <sync.h>
 #include <util/system.h>
+
+#include <evo/types.h>
 
 #include <QMenu>
 #include <QTimer>
@@ -20,9 +22,6 @@ namespace Ui
 {
 class MasternodeList;
 }
-
-class CDeterministicMN;
-using CDeterministicMNCPtr = std::shared_ptr<const CDeterministicMN>;
 
 class ClientModel;
 class WalletModel;

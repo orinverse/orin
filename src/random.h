@@ -11,6 +11,7 @@
 #include <span.h>
 #include <uint256.h>
 
+#include <bit>
 #include <cassert>
 #include <chrono> // For std::chrono::microseconds
 #include <cstdint>
@@ -71,7 +72,17 @@
  */
 void GetRandBytes(Span<unsigned char> bytes) noexcept;
 /** Generate a uniform random integer in the range [0..range). Precondition: range > 0 */
-uint64_t GetRand(uint64_t nMax) noexcept;
+uint64_t GetRandInternal(uint64_t nMax) noexcept;
+/** Generate a uniform random integer of type T in the range [0..nMax)
+ *  nMax defaults to std::numeric_limits<T>::max()
+ *  Precondition: nMax > 0, T is an integral type, no larger than uint64_t
+ */
+template<typename T>
+T GetRand(T nMax=std::numeric_limits<T>::max()) noexcept {
+    static_assert(std::is_integral<T>(), "T must be integral");
+    static_assert(std::numeric_limits<T>::max() <= std::numeric_limits<uint64_t>::max(), "GetRand only supports up to uint64_t");
+    return T(GetRandInternal(nMax));
+}
 /** Generate a uniform random duration in the range [0..max). Precondition: max.count() > 0 */
 template <typename D>
 D GetRandomDuration(typename std::common_type<D>::type max) noexcept
@@ -92,12 +103,11 @@ constexpr auto GetRandMillis = GetRandomDuration<std::chrono::milliseconds>;
  * is memoryless and should be used for repeated network events (e.g. sending a
  * certain type of message) to minimize leaking information to observers.
  *
- * The probability of an event occuring before time x is 1 - e^-(x/a) where a
+ * The probability of an event occurring before time x is 1 - e^-(x/a) where a
  * is the average interval between events.
  * */
 std::chrono::microseconds GetExponentialRand(std::chrono::microseconds now, std::chrono::seconds average_interval);
 
-int GetRandInt(int nMax) noexcept;
 uint256 GetRandHash() noexcept;
 
 bool GetRandBool(double rate);
@@ -182,7 +192,7 @@ public:
             return rand64() >> (64 - bits);
         } else {
             if (bitbuf_size < bits) FillBitBuffer();
-            uint64_t ret = bitbuf & (~(uint64_t)0 >> (64 - bits));
+            uint64_t ret = bitbuf & (~uint64_t{0} >> (64 - bits));
             bitbuf >>= bits;
             bitbuf_size -= bits;
             return ret;
@@ -196,7 +206,7 @@ public:
     {
         assert(range);
         --range;
-        int bits = CountBits(range);
+        int bits = std::bit_width(range);
         while (true) {
             uint64_t ret = randbits(bits);
             if (ret <= range) return ret;

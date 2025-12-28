@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 The Bitcoin Core developers
+// Copyright (c) 2015-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,20 +14,20 @@ class CDeterministicMNList;
 class CGovernanceVote;
 class CTransaction;
 class CZMQAbstractNotifier;
-
-typedef std::shared_ptr<const CTransaction> CTransactionRef;
-
-namespace Governance
-{
-    class Object;
-} //namespace Governance
-
+namespace chainlock {
+struct ChainLockSig;
+} // namespace chainlock
+namespace Governance {
+class Object;
+} // namespace Governance
+namespace instantsend {
+struct InstantSendLock;
+} // namespace instantsend
 namespace llmq {
-    class CChainLockSig;
-    struct CInstantSendLock;
-    class CRecoveredSig;
+class CRecoveredSig;
 } // namespace llmq
 
+using CTransactionRef = std::shared_ptr<const CTransaction>;
 using CZMQNotifierFactory = std::unique_ptr<CZMQAbstractNotifier> (*)();
 
 class CZMQAbstractNotifier
@@ -70,9 +70,9 @@ public:
     virtual bool NotifyTransactionRemoval(const CTransaction &transaction, uint64_t mempool_sequence);
     // Notifies of transactions added to mempool or appearing in blocks
     virtual bool NotifyTransaction(const CTransaction &transaction);
-    virtual bool NotifyChainLock(const CBlockIndex *pindex, const std::shared_ptr<const llmq::CChainLockSig>& clsig);
-    virtual bool NotifyTransactionLock(const CTransactionRef& transaction, const std::shared_ptr<const llmq::CInstantSendLock>& islock);
-    virtual bool NotifyGovernanceVote(const CDeterministicMNList& tip_mn_list, const std::shared_ptr<const CGovernanceVote>& vote);
+    virtual bool NotifyChainLock(const CBlockIndex *pindex, const std::shared_ptr<const chainlock::ChainLockSig>& clsig);
+    virtual bool NotifyTransactionLock(const CTransactionRef& transaction, const std::shared_ptr<const instantsend::InstantSendLock>& islock);
+    virtual bool NotifyGovernanceVote(const std::shared_ptr<CDeterministicMNList>& tip_mn_list, const std::shared_ptr<const CGovernanceVote>& vote);
     virtual bool NotifyGovernanceObject(const std::shared_ptr<const Governance::Object>& object);
     virtual bool NotifyInstantSendDoubleSpendAttempt(const CTransactionRef& currentTx, const CTransactionRef& previousTx);
     virtual bool NotifyRecoveredSig(const std::shared_ptr<const llmq::CRecoveredSig>& sig);

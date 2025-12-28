@@ -6,9 +6,15 @@
 #define BITCOIN_WALLETINITINTERFACE_H
 
 class ArgsManager;
-class CoinJoinWalletManager;
-
+namespace interfaces {
+class WalletLoader;
+namespace CoinJoin {
+class Loader;
+} // namespace CoinJoin
+} // namespace interfaces
+namespace node {
 struct NodeContext;
+} // namespace node
 
 class WalletInitInterface {
 public:
@@ -19,12 +25,12 @@ public:
     /** Check wallet parameter interaction */
     virtual bool ParameterInteraction() const = 0;
     /** Add wallets that should be opened to list of chain clients. */
-    virtual void Construct(NodeContext& node) const = 0;
+    virtual void Construct(node::NodeContext& node) const = 0;
 
-    // Dash Specific WalletInitInterface
-    virtual void AutoLockMasternodeCollaterals() const = 0;
-    virtual void InitCoinJoinSettings(const CoinJoinWalletManager& cjwalletman) const = 0;
-    virtual bool InitAutoBackup() const = 0;
+    // Orin Specific WalletInitInterface
+    virtual void AutoLockMasternodeCollaterals(interfaces::WalletLoader& wallet_loader) const = 0;
+    virtual void InitCoinJoinSettings(interfaces::CoinJoin::Loader& coinjoin_loader, interfaces::WalletLoader& wallet_loader) const = 0;
+    virtual void InitAutoBackup() const = 0;
 
     virtual ~WalletInitInterface() {}
 };

@@ -1,19 +1,28 @@
-# syntax = edrevo/dockerfile-plus
+# syntax = devthefuture/dockerfile-x
 
-FROM ubuntu:jammy
-
-INCLUDE+ ci/Dockerfile
+FROM ./ci/ci.Dockerfile
 
 # The inherited Dockerfile switches to non-privileged context and we've
 # just started configuring this image, give us root access
 USER root
 
-# Make development environment more standalone
-RUN apt-get update && \
-    apt-get install $APT_ARGS \
+# Make development environment more standalone, allow running Orin Qt
+RUN set -ex; \
+    apt-get update && apt-get install ${APT_ARGS} \
     apt-cacher-ng \
     gdb \
     gpg \
+    libxcb-icccm4 \
+    libxcb-image0 \
+    libxcb-keysyms1 \
+    libxcb-randr0 \
+    libxcb-render-util0 \
+    libxcb-shape0 \
+    libxcb-sync1 \
+    libxcb-xfixes0 \
+    libxcb-xinerama0 \
+    libxcb-xkb1 \
+    libxkbcommon-x11-0 \
     lsb-release \
     nano \
     openssh-client \
@@ -31,14 +40,17 @@ RUN apt-get update && \
 # unconditionally returns 0
 #
 RUN groupadd docker && \
-    usermod -aG sudo dash && \
-    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+    usermod -aG sudo orin && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers; \
+    mkdir -p /home/orin/.config/gdb; \
+    echo "add-auto-load-safe-path /usr/lib/llvm-${LLVM_VERSION}/lib" | tee /home/orin/.config/gdb/gdbinit; \
+    chown ${USER_ID}:${GROUP_ID} -R /home/orin
 
 # Disable noninteractive mode
 ENV DEBIAN_FRONTEND="dialog"
 
-# Expose Dash P2P and RPC ports for main network and test networks
+# Expose Orin P2P and RPC ports for main network and test networks
 EXPOSE 9998 9999 19998 19999
 
 # We're done, switch back to non-privileged user
-USER dash
+USER orin

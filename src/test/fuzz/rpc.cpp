@@ -70,7 +70,6 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "addconnection",  // avoid DNS lookups
     "addnode",        // avoid DNS lookups
     "addpeeraddress", // avoid DNS lookups
-    "analyzepsbt",    // avoid signed integer overflow in CFeeRate::GetFee(unsigned long) (https://github.com/bitcoin/bitcoin/issues/20607)
     "dumptxoutset",   // avoid writing to disk
     "dumpwallet", // avoid writing to disk
     "echoipc",              // avoid assertion failure (Assertion `"EnsureAnyNodeContext(request.context).init" && check' failed.)
@@ -79,7 +78,6 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "gettxoutproof",        // avoid prohibitively slow execution
     "importwallet", // avoid reading from disk
     "loadwallet",   // avoid reading from disk
-    "prioritisetransaction", // avoid signed integer overflow in CTxMemPool::PrioritiseTransaction(uint256 const&, long const&) (https://github.com/bitcoin/bitcoin/issues/20626)
     "savemempool",           // disabled as a precautionary measure: may take a file path argument in the future
     "setban",                // avoid DNS lookups
     "stop",                  // avoid shutdown state
@@ -87,6 +85,7 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
 
 // RPC commands which are safe for fuzzing.
 const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
+    "analyzepsbt",
     "clearbanned",
     "combinepsbt",
     "combinerawtransaction",
@@ -126,6 +125,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "getmempoolancestors",
     "getmempooldescendants",
     "getmempoolentry",
+    "gettxspendingprevout",
     "getmempoolinfo",
     "getmininginfo",
     "getnettotals",
@@ -138,6 +138,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "getrpcinfo",
     "gettxout",
     "gettxoutsetinfo",
+    "gettxspendingprevout",
     "help",
     "invalidateblock",
     "joinpsbts",
@@ -146,6 +147,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "mockscheduler",
     "ping",
     "preciousblock",
+    "prioritisetransaction",
     "pruneblockchain",
     "reconsiderblock",
     "scantxoutset",
@@ -296,7 +298,7 @@ std::string ConsumeScalarRPCArgument(FuzzedDataProvider& fuzzed_data_provider)
 std::string ConsumeArrayRPCArgument(FuzzedDataProvider& fuzzed_data_provider)
 {
     std::vector<std::string> scalar_arguments;
-    while (fuzzed_data_provider.ConsumeBool()) {
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100) {
         scalar_arguments.push_back(ConsumeScalarRPCArgument(fuzzed_data_provider));
     }
     return "[\"" + Join(scalar_arguments, "\",\"") + "\"]";
@@ -337,7 +339,7 @@ void initialize_rpc()
     }
 }
 
-FUZZ_TARGET_INIT(rpc, initialize_rpc)
+FUZZ_TARGET(rpc, .init = initialize_rpc)
 {
     FuzzedDataProvider fuzzed_data_provider{buffer.data(), buffer.size()};
     SetMockTime(ConsumeTime(fuzzed_data_provider));
@@ -350,16 +352,14 @@ FUZZ_TARGET_INIT(rpc, initialize_rpc)
         return;
     }
     std::vector<std::string> arguments;
-    while (fuzzed_data_provider.ConsumeBool()) {
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100) {
         arguments.push_back(ConsumeRPCArgument(fuzzed_data_provider));
     }
     try {
         rpc_testing_setup->CallRPC(rpc_command, arguments);
     } catch (const UniValue& json_rpc_error) {
-        const std::string error_msg{find_value(json_rpc_error, "message").get_str()};
-        // Once c++20 is allowed, starts_with can be used.
-        // if (error_msg.starts_with("Internal bug detected")) {
-        if (0 == error_msg.rfind("Internal bug detected", 0)) {
+        const std::string error_msg{json_rpc_error.find_value("message").get_str()};
+        if (error_msg.starts_with("Internal bug detected")) {
             // Only allow the intentional internal bug
             assert(error_msg.find("trigger_internal_bug") != std::string::npos);
         }

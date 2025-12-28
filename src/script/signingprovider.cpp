@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -55,18 +55,13 @@ bool FlatSigningProvider::GetKeyOrigin(const CKeyID& keyid, KeyOriginInfo& info)
 }
 bool FlatSigningProvider::GetKey(const CKeyID& keyid, CKey& key) const { return LookupHelper(keys, keyid, key); }
 
-FlatSigningProvider Merge(const FlatSigningProvider& a, const FlatSigningProvider& b)
+FlatSigningProvider& FlatSigningProvider::Merge(FlatSigningProvider&& b)
 {
-    FlatSigningProvider ret;
-    ret.scripts = a.scripts;
-    ret.scripts.insert(b.scripts.begin(), b.scripts.end());
-    ret.pubkeys = a.pubkeys;
-    ret.pubkeys.insert(b.pubkeys.begin(), b.pubkeys.end());
-    ret.keys = a.keys;
-    ret.keys.insert(b.keys.begin(), b.keys.end());
-    ret.origins = a.origins;
-    ret.origins.insert(b.origins.begin(), b.origins.end());
-    return ret;
+    scripts.merge(b.scripts);
+    pubkeys.merge(b.pubkeys);
+    keys.merge(b.keys);
+    origins.merge(b.origins);
+    return *this;
 }
 
 bool FillableSigningProvider::GetPubKey(const CKeyID &address, CPubKey &vchPubKeyOut) const

@@ -1,11 +1,12 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_SCRIPT_STANDARD_H
 #define BITCOIN_SCRIPT_STANDARD_H
 
+#include <pubkey.h>
 #include <script/interpreter.h>
 #include <uint256.h>
 #include <util/hash_type.h>
@@ -108,6 +109,11 @@ bool IsValidDestination(const CTxDestination& dest);
 /** Get the name of a TxoutType as a C string, or nullptr if unknown. */
 std::string GetTxnOutputType(TxoutType t);
 
+constexpr bool IsPushdataOp(opcodetype opcode)
+{
+    return opcode > OP_FALSE && opcode <= OP_PUSHDATA4;
+}
+
 /**
  * Parse a scriptPubKey and identify script type for standard scripts. If
  * successful, returns script type and parsed pubkeys or hashes, depending on
@@ -122,22 +128,10 @@ TxoutType Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned c
 
 /**
  * Parse a standard scriptPubKey for the destination address. Assigns result to
- * the addressRet parameter and returns true if successful. For multisig
- * scripts, instead use ExtractDestinations. Currently only works for P2PK,
+ * the addressRet parameter and returns true if successful. Currently only works for P2PK,
  * P2PKH, and P2SH scripts.
  */
 bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet);
-
-/**
- * Parse a standard scriptPubKey with one or more destination addresses. For
- * multisig scripts, this populates the addressRet vector with the pubkey IDs
- * and nRequiredRet with the n required to spend. For other destinations,
- * addressRet is populated with a single value and nRequiredRet is set to 1.
- * Returns true if successful.
- *
- * TODO: from v21 ("addresses" and "reqSigs" deprecated) "ExtractDestinations" should be removed
- */
-bool ExtractDestinations(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<CTxDestination>& addressRet, int& nRequiredRet);
 
 /**
  * Generate a Bitcoin scriptPubKey for the given CTxDestination. Returns a P2PKH

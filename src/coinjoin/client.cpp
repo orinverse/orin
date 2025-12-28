@@ -1,19 +1,19 @@
-// Copyright (c) 2014-2025 The Dash Core developers
+// Copyright (c) 2014-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <coinjoin/client.h>
 
+#include <chain.h>
 #include <chainparams.h>
 #include <coinjoin/options.h>
-#include <consensus/validation.h>
 #include <core_io.h>
 #include <evo/deterministicmns.h>
 #include <masternode/meta.h>
 #include <masternode/sync.h>
 #include <net.h>
-#include <net_processing.h>
 #include <netmessagemaker.h>
+#include <rpc/evo_util.h>
 #include <shutdown.h>
 #include <util/check.h>
 #include <util/irange.h>
@@ -21,42 +21,53 @@
 #include <util/ranges.h>
 #include <util/system.h>
 #include <util/translation.h>
-#include <validation.h>
 #include <version.h>
 #include <wallet/coincontrol.h>
-#include <wallet/fees.h>
-#include <walletinitinterface.h>
+#include <wallet/coinjoin.h>
+#include <wallet/coinselection.h>
+#include <wallet/receive.h>
+#include <wallet/spend.h>
 
 #include <memory>
 #include <univalue.h>
 
-PeerMsgRet CCoinJoinClientQueueManager::ProcessMessage(const CNode& peer, CConnman& connman, PeerManager& peerman,
-                                                       std::string_view msg_type, CDataStream& vRecv)
-{
-    if (m_is_masternode) return {};
-    if (!m_mn_sync.IsBlockchainSynced()) return {};
+using wallet::CCoinControl;
+using wallet::CompactTallyItem;
+using wallet::COutput;
+using wallet::CoinType;
+using wallet::CWallet;
+using wallet::ReserveDestination;
 
-    if (msg_type == NetMsgType::DSQUEUE) {
-        return CCoinJoinClientQueueManager::ProcessDSQueue(peer, connman, peerman, vRecv);
-    }
-    return {};
+CCoinJoinClientQueueManager::CCoinJoinClientQueueManager(CoinJoinWalletManager& walletman, CDeterministicMNManager& dmnman,
+                                                         CMasternodeMetaMan& mn_metaman, const CMasternodeSync& mn_sync) :
+    m_walletman{walletman},
+    m_dmnman{dmnman},
+    m_mn_metaman{mn_metaman},
+    m_mn_sync{mn_sync}
+{
 }
 
-PeerMsgRet CCoinJoinClientQueueManager::ProcessDSQueue(const CNode& peer, CConnman& connman, PeerManager& peerman,
-                                                       CDataStream& vRecv)
+CCoinJoinClientQueueManager::~CCoinJoinClientQueueManager() = default;
+
+MessageProcessingResult CCoinJoinClientQueueManager::ProcessMessage(NodeId from, CConnman& connman,
+                                                                    std::string_view msg_type, CDataStream& vRecv)
 {
+    if (msg_type != NetMsgType::DSQUEUE) {
+        return {};
+    }
+    if (!m_mn_sync.IsBlockchainSynced()) return {};
+
     assert(m_mn_metaman.IsValid());
 
     CCoinJoinQueue dsq;
     vRecv >> dsq;
 
-    {
-        LOCK(cs_main);
-        peerman.EraseObjectRequest(peer.GetId(), CInv(MSG_DSQ, dsq.GetHash()));
-    }
+    MessageProcessingResult ret{};
+    ret.m_to_erase = CInv{MSG_DSQ, dsq.GetHash()};
 
     if (dsq.masternodeOutpoint.IsNull() && dsq.m_protxHash.IsNull()) {
-        return tl::unexpected{100};
+        ret.m_error = MisbehavingError{100};
+        return ret;
     }
 
     const auto tip_mn_list = m_dmnman.GetListAtChainTip();
@@ -64,7 +75,8 @@ PeerMsgRet CCoinJoinClientQueueManager::ProcessDSQueue(const CNode& peer, CConnm
         if (auto dmn = tip_mn_list.GetValidMN(dsq.m_protxHash)) {
             dsq.masternodeOutpoint = dmn->collateralOutpoint;
         } else {
-            return tl::unexpected{10};
+            ret.m_error = MisbehavingError{10};
+            return ret;
         }
     }
 
@@ -76,41 +88,41 @@ PeerMsgRet CCoinJoinClientQueueManager::ProcessDSQueue(const CNode& peer, CConnm
             // process every dsq only once
             for (const auto &q: vecCoinJoinQueue) {
                 if (q == dsq) {
-                    return {};
+                    return ret;
                 }
                 if (q.fReady == dsq.fReady && q.masternodeOutpoint == dsq.masternodeOutpoint) {
                     // no way the same mn can send another dsq with the same readiness this soon
                     LogPrint(BCLog::COINJOIN, /* Continued */
-                             "DSQUEUE -- Peer %s is sending WAY too many dsq messages for a masternode with collateral %s\n",
-                             peer.GetLogString(), dsq.masternodeOutpoint.ToStringShort());
-                    return {};
+                             "DSQUEUE -- Peer %d is sending WAY too many dsq messages for a masternode with collateral %s\n",
+                             from, dsq.masternodeOutpoint.ToStringShort());
+                    return ret;
                 }
             }
         } // cs_vecqueue
 
         LogPrint(BCLog::COINJOIN, "DSQUEUE -- %s new\n", dsq.ToString());
 
-        if (dsq.IsTimeOutOfBounds()) return {};
+        if (dsq.IsTimeOutOfBounds()) return ret;
 
         auto dmn = tip_mn_list.GetValidMNByCollateral(dsq.masternodeOutpoint);
-        if (!dmn) return {};
+        if (!dmn) return ret;
 
         if (dsq.m_protxHash.IsNull()) {
             dsq.m_protxHash = dmn->proTxHash;
         }
 
         if (!dsq.CheckSignature(dmn->pdmnState->pubKeyOperator.Get())) {
-            return tl::unexpected{10};
+            ret.m_error = MisbehavingError{10};
+            return ret;
         }
 
         // if the queue is ready, submit if we can
         if (dsq.fReady &&
-            m_walletman.ForAnyCJClientMan([this, &connman, &dmn](std::unique_ptr<CCoinJoinClientManager>& clientman) {
-                return clientman->TrySubmitDenominate(dmn->pdmnState->addr, connman);
+            m_walletman.ForAnyCJClientMan([&connman, &dmn](std::unique_ptr<CCoinJoinClientManager>& clientman) {
+                return clientman->TrySubmitDenominate(dmn->proTxHash, connman);
             })) {
-            LogPrint(BCLog::COINJOIN, "DSQUEUE -- CoinJoin queue (%s) is ready on masternode %s\n", dsq.ToString(),
-                     dmn->pdmnState->addr.ToStringAddrPort());
-            return {};
+            LogPrint(BCLog::COINJOIN, "DSQUEUE -- CoinJoin queue is ready, masternode=%s, queue=%s\n", dmn->proTxHash.ToString(), dsq.ToString());
+            return ret;
         } else {
             int64_t nLastDsq = m_mn_metaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
             int64_t nDsqThreshold = m_mn_metaman.GetDsqThreshold(dmn->proTxHash, tip_mn_list.GetValidMNsCount());
@@ -120,13 +132,12 @@ PeerMsgRet CCoinJoinClientQueueManager::ProcessDSQueue(const CNode& peer, CConnm
             if (nLastDsq != 0 && nDsqThreshold > m_mn_metaman.GetDsqCount()) {
                 LogPrint(BCLog::COINJOIN, "DSQUEUE -- Masternode %s is sending too many dsq messages\n",
                          dmn->proTxHash.ToString());
-                return {};
+                return ret;
             }
 
             m_mn_metaman.AllowMixing(dmn->proTxHash);
 
-            LogPrint(BCLog::COINJOIN, "DSQUEUE -- new CoinJoin queue (%s) from masternode %s\n", dsq.ToString(),
-                     dmn->pdmnState->addr.ToStringAddrPort());
+            LogPrint(BCLog::COINJOIN, "DSQUEUE -- new CoinJoin queue, masternode=%s, queue=%s\n", dmn->proTxHash.ToString(), dsq.ToString());
 
             m_walletman.ForAnyCJClientMan([&dsq](const std::unique_ptr<CCoinJoinClientManager>& clientman) {
                 return clientman->MarkAlreadyJoinedQueueAsTried(dsq);
@@ -135,13 +146,34 @@ PeerMsgRet CCoinJoinClientQueueManager::ProcessDSQueue(const CNode& peer, CConnm
             WITH_LOCK(cs_vecqueue, vecCoinJoinQueue.push_back(dsq));
         }
     } // cs_ProcessDSQueue
-    peerman.RelayDSQ(dsq);
-    return {};
+    ret.m_dsq.push_back(dsq);
+    return ret;
 }
+
+void CCoinJoinClientQueueManager::DoMaintenance()
+{
+    if (!m_mn_sync.IsBlockchainSynced() || ShutdownRequested()) return;
+
+    CheckQueue();
+}
+
+CCoinJoinClientManager::CCoinJoinClientManager(const std::shared_ptr<wallet::CWallet>& wallet,
+                                               CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
+                                               const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
+                                               const std::unique_ptr<CCoinJoinClientQueueManager>& queueman) :
+    m_wallet{wallet},
+    m_dmnman{dmnman},
+    m_mn_metaman{mn_metaman},
+    m_mn_sync{mn_sync},
+    m_isman{isman},
+    m_queueman{queueman}
+{
+}
+
+CCoinJoinClientManager::~CCoinJoinClientManager() = default;
 
 void CCoinJoinClientManager::ProcessMessage(CNode& peer, CChainState& active_chainstate, CConnman& connman, const CTxMemPool& mempool, std::string_view msg_type, CDataStream& vRecv)
 {
-    if (m_is_masternode) return;
     if (!CCoinJoinClientOptions::IsEnabled()) return;
     if (!m_mn_sync.IsBlockchainSynced()) return;
 
@@ -163,46 +195,33 @@ void CCoinJoinClientManager::ProcessMessage(CNode& peer, CChainState& active_cha
     }
 }
 
-CCoinJoinClientSession::CCoinJoinClientSession(const std::shared_ptr<CWallet>& wallet, CoinJoinWalletManager& walletman,
-                                               CCoinJoinClientManager& clientman, CDeterministicMNManager& dmnman,
-                                               CMasternodeMetaMan& mn_metaman, const CMasternodeSync& mn_sync,
-                                               const llmq::CInstantSendManager& isman,
-                                               const std::unique_ptr<CCoinJoinClientQueueManager>& queueman,
-                                               bool is_masternode) :
+CCoinJoinClientSession::CCoinJoinClientSession(const std::shared_ptr<CWallet>& wallet, CCoinJoinClientManager& clientman,
+                                               CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
+                                               const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
+                                               const std::unique_ptr<CCoinJoinClientQueueManager>& queueman) :
     m_wallet(wallet),
-    m_walletman(walletman),
     m_clientman(clientman),
     m_dmnman(dmnman),
     m_mn_metaman(mn_metaman),
     m_mn_sync(mn_sync),
     m_isman{isman},
-    m_queueman(queueman),
-    m_is_masternode{is_masternode}
+    m_queueman(queueman)
 {}
 
 void CCoinJoinClientSession::ProcessMessage(CNode& peer, CChainState& active_chainstate, CConnman& connman, const CTxMemPool& mempool, std::string_view msg_type, CDataStream& vRecv)
 {
-    if (m_is_masternode) return;
     if (!CCoinJoinClientOptions::IsEnabled()) return;
     if (!m_mn_sync.IsBlockchainSynced()) return;
 
-    if (msg_type == NetMsgType::DSSTATUSUPDATE) {
-        if (!mixingMasternode) return;
-        if (mixingMasternode->pdmnState->addr != peer.addr) {
-            return;
-        }
+    if (!mixingMasternode) return;
+    if (mixingMasternode->pdmnState->netInfo->GetPrimary() != peer.addr) return;
 
+    if (msg_type == NetMsgType::DSSTATUSUPDATE) {
         CCoinJoinStatusUpdate psssup;
         vRecv >> psssup;
 
         ProcessPoolStateUpdate(psssup);
-
     } else if (msg_type == NetMsgType::DSFINALTX) {
-        if (!mixingMasternode) return;
-        if (mixingMasternode->pdmnState->addr != peer.addr) {
-            return;
-        }
-
         int nMsgSessionID;
         vRecv >> nMsgSessionID;
         CTransaction txNew(deserialize, vRecv);
@@ -216,15 +235,7 @@ void CCoinJoinClientSession::ProcessMessage(CNode& peer, CChainState& active_cha
 
         // check to see if input is spent already? (and probably not confirmed)
         SignFinalTransaction(peer, active_chainstate, connman, mempool, txNew);
-
     } else if (msg_type == NetMsgType::DSCOMPLETE) {
-        if (!mixingMasternode) return;
-        if (mixingMasternode->pdmnState->addr != peer.addr) {
-            WalletCJLogPrint(m_wallet, "DSCOMPLETE -- message doesn't match current Masternode: infoMixingMasternode=%s  addr=%s\n",
-                             mixingMasternode->pdmnState->addr.ToStringAddrPort(), peer.addr.ToStringAddrPort());
-            return;
-        }
-
         int nMsgSessionID;
         PoolMessage nMsgMessageID;
         vRecv >> nMsgSessionID >> nMsgMessageID;
@@ -270,7 +281,6 @@ void CCoinJoinClientSession::ResetPool()
 void CCoinJoinClientManager::ResetPool()
 {
     nCachedLastSuccessBlock = 0;
-    vecMasternodesUsed.clear();
     AssertLockNotHeld(cs_deqsessions);
     LOCK(cs_deqsessions);
     for (auto& session : deqSessions) {
@@ -350,17 +360,18 @@ bilingual_str CCoinJoinClientSession::GetStatus(bool fWaitForBlock) const
     }
 }
 
-bilingual_str CCoinJoinClientManager::GetStatuses()
+std::vector<std::string> CCoinJoinClientManager::GetStatuses() const
 {
-    bilingual_str strStatus;
-    bool fWaitForBlock = WaitForAnotherBlock();
-
     AssertLockNotHeld(cs_deqsessions);
+
+    bool fWaitForBlock{WaitForAnotherBlock()};
+    std::vector<std::string> ret;
+
     LOCK(cs_deqsessions);
     for (const auto& session : deqSessions) {
-        strStatus = strStatus + session.GetStatus(fWaitForBlock) + Untranslated("; ");
+        ret.push_back(session.GetStatus(fWaitForBlock).original);
     }
-    return strStatus;
+    return ret;
 }
 
 std::string CCoinJoinClientManager::GetSessionDenoms()
@@ -400,8 +411,6 @@ bool CCoinJoinClientManager::GetMixingMasternodesInfo(std::vector<CDeterministic
 //
 bool CCoinJoinClientSession::CheckTimeout()
 {
-    if (m_is_masternode) return false;
-
     if (nState == POOL_STATE_IDLE) return false;
 
     if (nState == POOL_STATE_ERROR) {
@@ -437,7 +446,6 @@ bool CCoinJoinClientSession::CheckTimeout()
 void CCoinJoinClientManager::CheckTimeout()
 {
     AssertLockNotHeld(cs_deqsessions);
-    if (m_is_masternode) return;
 
     if (!CCoinJoinClientOptions::IsEnabled() || !IsMixing()) return;
 
@@ -455,11 +463,6 @@ void CCoinJoinClientManager::CheckTimeout()
 //
 bool CCoinJoinClientSession::SendDenominate(const std::vector<std::pair<CTxDSIn, CTxOut> >& vecPSInOutPairsIn, CConnman& connman)
 {
-    if (m_is_masternode) {
-        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::SendDenominate -- CoinJoin from a Masternode is not supported currently.\n");
-        return false;
-    }
-
     if (CTransaction(txMyCollateral).IsNull()) {
         WalletCJLogPrint(m_wallet, "CCoinJoinClient:SendDenominate -- CoinJoin collateral not set\n");
         return false;
@@ -512,8 +515,6 @@ bool CCoinJoinClientSession::SendDenominate(const std::vector<std::pair<CTxDSIn,
 // Process incoming messages from Masternode updating the progress of mixing
 void CCoinJoinClientSession::ProcessPoolStateUpdate(CCoinJoinStatusUpdate psssup)
 {
-    if (m_is_masternode) return;
-
     // do not update state when mixing client state is one of these
     if (nState == POOL_STATE_IDLE || nState == POOL_STATE_ERROR) return;
 
@@ -566,7 +567,6 @@ bool CCoinJoinClientSession::SignFinalTransaction(CNode& peer, CChainState& acti
 {
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
 
-    if (m_is_masternode) return false;
     if (!mixingMasternode) return false;
 
     LOCK(m_wallet->cs_wallet);
@@ -696,8 +696,6 @@ bool CCoinJoinClientSession::SignFinalTransaction(CNode& peer, CChainState& acti
 // mixing transaction was completed (failed or successful)
 void CCoinJoinClientSession::CompletedTransaction(PoolMessage nMessageID)
 {
-    if (m_is_masternode) return;
-
     if (nMessageID == MSG_SUCCESS) {
         m_clientman.UpdatedSuccessBlock();
         keyHolderStorage.KeepAll();
@@ -713,7 +711,6 @@ void CCoinJoinClientSession::CompletedTransaction(PoolMessage nMessageID)
 
 void CCoinJoinClientManager::UpdatedSuccessBlock()
 {
-    if (m_is_masternode) return;
     nCachedLastSuccessBlock = nCachedBlockHeight;
 }
 
@@ -805,7 +802,6 @@ bool CCoinJoinClientManager::CheckAutomaticBackup()
 bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman, CConnman& connman,
                                                      const CTxMemPool& mempool, bool fDryRun)
 {
-    if (m_is_masternode) return false; // no client-side mixing on masternodes
     if (nState != POOL_STATE_IDLE) return false;
 
     if (!m_mn_sync.IsBlockchainSynced()) {
@@ -843,7 +839,7 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
             return false;
         }
 
-        const auto bal = m_wallet->GetBalance();
+        const auto bal = GetBalance(*m_wallet);
 
         // check if there is anything left to do
         CAmount nBalanceAnonymized = bal.m_anonymized;
@@ -986,7 +982,6 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
 bool CCoinJoinClientManager::DoAutomaticDenominating(ChainstateManager& chainman, CConnman& connman,
                                                      const CTxMemPool& mempool, bool fDryRun)
 {
-    if (m_is_masternode) return false; // no client-side mixing on masternodes
     if (!CCoinJoinClientOptions::IsEnabled() || !IsMixing()) return false;
 
     if (!m_mn_sync.IsBlockchainSynced()) {
@@ -1004,19 +999,21 @@ bool CCoinJoinClientManager::DoAutomaticDenominating(ChainstateManager& chainman
     // If we've used 90% of the Masternode list then drop the oldest first ~30%
     int nThreshold_high = nMnCountEnabled * 0.9;
     int nThreshold_low = nThreshold_high * 0.7;
-    WalletCJLogPrint(m_wallet, "Checking vecMasternodesUsed: size: %d, threshold: %d\n", (int)vecMasternodesUsed.size(), nThreshold_high);
+    size_t used_count{m_mn_metaman.GetUsedMasternodesCount()};
 
-    if ((int)vecMasternodesUsed.size() > nThreshold_high) {
-        vecMasternodesUsed.erase(vecMasternodesUsed.begin(), vecMasternodesUsed.begin() + vecMasternodesUsed.size() - nThreshold_low);
-        WalletCJLogPrint(m_wallet, "  vecMasternodesUsed: new size: %d, threshold: %d\n", (int)vecMasternodesUsed.size(), nThreshold_high);
+    WalletCJLogPrint(m_wallet, "Checking threshold - used: %d, threshold: %d\n", (int)used_count, nThreshold_high);
+
+    if ((int)used_count > nThreshold_high) {
+        m_mn_metaman.RemoveUsedMasternodes(used_count - nThreshold_low);
+        WalletCJLogPrint(m_wallet, "  new used: %d, threshold: %d\n", (int)m_mn_metaman.GetUsedMasternodesCount(),
+                         nThreshold_high);
     }
 
     bool fResult = true;
     AssertLockNotHeld(cs_deqsessions);
     LOCK(cs_deqsessions);
     if (int(deqSessions.size()) < CCoinJoinClientOptions::GetSessions()) {
-        deqSessions.emplace_back(m_wallet, m_walletman, *this, m_dmnman, m_mn_metaman, m_mn_sync, m_isman, m_queueman,
-                                 m_is_masternode);
+        deqSessions.emplace_back(m_wallet, *this, m_dmnman, m_mn_metaman, m_mn_sync, m_isman, m_queueman);
     }
     for (auto& session : deqSessions) {
         if (!CheckAutomaticBackup()) return false;
@@ -1033,9 +1030,9 @@ bool CCoinJoinClientManager::DoAutomaticDenominating(ChainstateManager& chainman
     return fResult;
 }
 
-void CCoinJoinClientManager::AddUsedMasternode(const COutPoint& outpointMn)
+void CCoinJoinClientManager::AddUsedMasternode(const uint256& proTxHash)
 {
-    vecMasternodesUsed.push_back(outpointMn);
+    m_mn_metaman.AddUsedMasternode(proTxHash);
 }
 
 CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
@@ -1043,7 +1040,7 @@ CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
     auto mnList = m_dmnman.GetListAtChainTip();
 
     size_t nCountEnabled = mnList.GetValidMNsCount();
-    size_t nCountNotExcluded = nCountEnabled - vecMasternodesUsed.size();
+    size_t nCountNotExcluded{nCountEnabled - m_mn_metaman.GetUsedMasternodesCount()};
 
     WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::%s -- %d enabled masternodes, %d masternodes to choose from\n", __func__, nCountEnabled, nCountNotExcluded);
     if (nCountNotExcluded < 1) {
@@ -1060,15 +1057,14 @@ CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
     // shuffle pointers
     Shuffle(vpMasternodesShuffled.begin(), vpMasternodesShuffled.end(), FastRandomContext());
 
-    std::set<COutPoint> excludeSet(vecMasternodesUsed.begin(), vecMasternodesUsed.end());
-
-    // loop through
+    // loop through - using direct O(1) lookup instead of creating a set copy
     for (const auto& dmn : vpMasternodesShuffled) {
-        if (excludeSet.count(dmn->collateralOutpoint)) {
+        if (m_mn_metaman.IsUsedMasternode(dmn->proTxHash)) {
             continue;
         }
 
-        WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::%s -- found, masternode=%s\n", __func__, dmn->collateralOutpoint.ToStringShort());
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::%s -- found, masternode=%s\n", __func__,
+                         dmn->proTxHash.ToString());
         return dmn;
     }
 
@@ -1121,26 +1117,23 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
             continue;
         }
 
-        m_clientman.AddUsedMasternode(dsq.masternodeOutpoint);
+        m_clientman.AddUsedMasternode(dmn->proTxHash);
 
-        if (connman.IsMasternodeOrDisconnectRequested(dmn->pdmnState->addr)) {
+        if (connman.IsMasternodeOrDisconnectRequested(dmn->pdmnState->netInfo->GetPrimary())) {
             WalletCJLogPrint(m_wallet, /* Continued */
-                             "CCoinJoinClientSession::JoinExistingQueue -- skipping masternode connection, addr=%s\n",
-                             dmn->pdmnState->addr.ToStringAddrPort());
+                             "CCoinJoinClientSession::JoinExistingQueue -- skipping connection, masternode=%s\n", dmn->proTxHash.ToString());
             continue;
         }
 
         nSessionDenom = dsq.nDenom;
         mixingMasternode = dmn;
-        pendingDsaRequest = CPendingDsaRequest(dmn->pdmnState->addr, CCoinJoinAccept(nSessionDenom, txMyCollateral));
+        pendingDsaRequest = CPendingDsaRequest(dmn->proTxHash, CCoinJoinAccept(nSessionDenom, txMyCollateral));
         connman.AddPendingMasternode(dmn->proTxHash);
         SetState(POOL_STATE_QUEUE);
         nTimeLastSuccessfulStep = GetTime();
         WalletCJLogPrint(m_wallet, /* Continued */
-                         "CCoinJoinClientSession::JoinExistingQueue -- pending connection (from queue): nSessionDenom: "
-                         "%d (%s), addr=%s\n",
-                         nSessionDenom, CoinJoin::DenominationToString(nSessionDenom),
-                         dmn->pdmnState->addr.ToStringAddrPort());
+                         "CCoinJoinClientSession::JoinExistingQueue -- pending connection, masternode=%s, nSessionDenom=%d (%s)\n",
+                         dmn->proTxHash.ToString(), nSessionDenom, CoinJoin::DenominationToString(nSessionDenom));
         strAutoDenomResult = _("Trying to connect…");
         return true;
     }
@@ -1178,7 +1171,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
             return false;
         }
 
-        m_clientman.AddUsedMasternode(dmn->collateralOutpoint);
+        m_clientman.AddUsedMasternode(dmn->proTxHash);
 
         // skip next mn payments winners
         if (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip()) {
@@ -1191,28 +1184,27 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
         int64_t nDsqThreshold = m_mn_metaman.GetDsqThreshold(dmn->proTxHash, nMnCount);
         if (nLastDsq != 0 && nDsqThreshold > m_mn_metaman.GetDsqCount()) {
             WalletCJLogPrint(m_wallet, /* Continued */
-                             "CCoinJoinClientSession::StartNewQueue -- Too early to mix on this masternode!" /* Continued */
-                             " masternode=%s  addr=%s  nLastDsq=%d  nDsqThreshold=%d  nDsqCount=%d\n",
-                             dmn->proTxHash.ToString(), dmn->pdmnState->addr.ToStringAddrPort(), nLastDsq,
-                             nDsqThreshold, m_mn_metaman.GetDsqCount());
+                             "CCoinJoinClientSession::StartNewQueue -- too early to mix with node," /* Continued */
+                             " masternode=%s, nLastDsq=%d, nDsqThreshold=%d, nDsqCount=%d\n",
+                             dmn->proTxHash.ToString(), nLastDsq, nDsqThreshold, m_mn_metaman.GetDsqCount());
             nTries++;
             continue;
         }
 
-        if (connman.IsMasternodeOrDisconnectRequested(dmn->pdmnState->addr)) {
-            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- skipping masternode connection, addr=%s\n",
-                             dmn->pdmnState->addr.ToStringAddrPort());
+        if (connman.IsMasternodeOrDisconnectRequested(dmn->pdmnState->netInfo->GetPrimary())) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- skipping connection, masternode=%s\n",
+                             dmn->proTxHash.ToString());
             nTries++;
             continue;
         }
 
-        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- attempt %d connection to Masternode %s\n",
-                         nTries, dmn->pdmnState->addr.ToStringAddrPort());
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- attempting connection, masternode=%s, tries=%s\n",
+                         dmn->proTxHash.ToString(), nTries);
 
         // try to get a single random denom out of setAmounts
         while (nSessionDenom == 0) {
             for (auto it = setAmounts.rbegin(); it != setAmounts.rend(); ++it) {
-                if (setAmounts.size() > 1 && GetRandInt(2)) continue;
+                if (setAmounts.size() > 1 && GetRand<size_t>(/*nMax=*/2)) continue;
                 nSessionDenom = CoinJoin::AmountToDenomination(*it);
                 break;
             }
@@ -1220,12 +1212,12 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
 
         mixingMasternode = dmn;
         connman.AddPendingMasternode(dmn->proTxHash);
-        pendingDsaRequest = CPendingDsaRequest(dmn->pdmnState->addr, CCoinJoinAccept(nSessionDenom, txMyCollateral));
+        pendingDsaRequest = CPendingDsaRequest(dmn->proTxHash, CCoinJoinAccept(nSessionDenom, txMyCollateral));
         SetState(POOL_STATE_QUEUE);
         nTimeLastSuccessfulStep = GetTime();
         WalletCJLogPrint( /* Continued */
-            m_wallet, "CCoinJoinClientSession::StartNewQueue -- pending connection, nSessionDenom: %d (%s), addr=%s\n",
-            nSessionDenom, CoinJoin::DenominationToString(nSessionDenom), dmn->pdmnState->addr.ToStringAddrPort());
+            m_wallet, "CCoinJoinClientSession::StartNewQueue -- pending connection, masternode=%s, nSessionDenom=%d (%s)\n",
+            dmn->proTxHash.ToString(), nSessionDenom, CoinJoin::DenominationToString(nSessionDenom));
         strAutoDenomResult = _("Trying to connect…");
         return true;
     }
@@ -1237,7 +1229,17 @@ bool CCoinJoinClientSession::ProcessPendingDsaRequest(CConnman& connman)
 {
     if (!pendingDsaRequest) return false;
 
-    bool fDone = connman.ForNode(pendingDsaRequest.GetAddr(), [this, &connman](CNode* pnode) {
+    CService mn_addr;
+    if (auto dmn = m_dmnman.GetListAtChainTip().GetMN(pendingDsaRequest.GetProTxHash())) {
+        mn_addr = Assert(dmn->pdmnState)->netInfo->GetPrimary();
+    } else {
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::%s -- cannot find address to connect, masternode=%s\n", __func__,
+            pendingDsaRequest.GetProTxHash().ToString());
+        WITH_LOCK(cs_coinjoin, SetNull());
+        return false;
+    }
+
+    bool fDone = connman.ForNode(mn_addr, [this, &connman](CNode* pnode) {
         WalletCJLogPrint(m_wallet, "-- processing dsa queue for addr=%s\n", pnode->addr.ToStringAddrPort());
         nTimeLastSuccessfulStep = GetTime();
         CNetMsgMaker msgMaker(pnode->GetCommonVersion());
@@ -1248,8 +1250,8 @@ bool CCoinJoinClientSession::ProcessPendingDsaRequest(CConnman& connman)
     if (fDone) {
         pendingDsaRequest = CPendingDsaRequest();
     } else if (pendingDsaRequest.IsExpired()) {
-        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::%s -- failed to connect to %s\n", __func__,
-                         pendingDsaRequest.GetAddr().ToStringAddrPort());
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::%s -- failed to connect, masternode=%s\n", __func__,
+                         pendingDsaRequest.GetProTxHash().ToString());
         WITH_LOCK(cs_coinjoin, SetNull());
     }
 
@@ -1267,13 +1269,13 @@ void CCoinJoinClientManager::ProcessPendingDsaRequest(CConnman& connman)
     }
 }
 
-bool CCoinJoinClientManager::TrySubmitDenominate(const CService& mnAddr, CConnman& connman)
+bool CCoinJoinClientManager::TrySubmitDenominate(const uint256& proTxHash, CConnman& connman)
 {
     AssertLockNotHeld(cs_deqsessions);
     LOCK(cs_deqsessions);
     for (auto& session : deqSessions) {
         CDeterministicMNCPtr mnMixing;
-        if (session.GetMixingMasternodeInfo(mnMixing) && mnMixing->pdmnState->addr == mnAddr && session.GetState() == POOL_STATE_QUEUE) {
+        if (session.GetMixingMasternodeInfo(mnMixing) && mnMixing->proTxHash == proTxHash && session.GetState() == POOL_STATE_QUEUE) {
             session.SubmitDenominate(connman);
             return true;
         }
@@ -1398,7 +1400,7 @@ bool CCoinJoinClientSession::PrepareDenominate(int nMinRounds, int nMaxRounds, s
         } else {
             // randomly skip some inputs when we have at least one of the same denom already
             // TODO: make it adjustable via options/cmd-line params
-            if (nSteps >= 1 && GetRandInt(5) == 0) {
+            if (nSteps >= 1 && GetRand<size_t>(/*nMax=*/5) == 0) {
                 // still count it as a step to randomize number of inputs
                 // if we have more than (or exactly) COINJOIN_ENTRY_MAX_SIZE of them
                 ++nSteps;
@@ -1479,12 +1481,12 @@ bool CCoinJoinClientSession::MakeCollateralAmounts(const CompactTallyItem& tally
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
 
     // Denominated input is always a single one, so we can check its amount directly and return early
-    if (!fTryDenominated && tallyItem.vecInputCoins.size() == 1 && CoinJoin::IsDenominatedAmount(tallyItem.nAmount)) {
+    if (!fTryDenominated && tallyItem.outpoints.size() == 1 && CoinJoin::IsDenominatedAmount(tallyItem.nAmount)) {
         return false;
     }
 
     // Skip single inputs that can be used as collaterals already
-    if (tallyItem.vecInputCoins.size() == 1 && CoinJoin::IsCollateralAmount(tallyItem.nAmount)) {
+    if (tallyItem.outpoints.size() == 1 && CoinJoin::IsCollateralAmount(tallyItem.nAmount)) {
         return false;
     }
 
@@ -1561,22 +1563,18 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
 {
     AssertLockHeld(m_wallet->cs_wallet);
 
-    std::vector<COutput> vCoins;
-    CCoinControl coin_control;
-    coin_control.nCoinType = CoinType::ONLY_COINJOIN_COLLATERAL;
-
-    m_wallet->AvailableCoins(vCoins, &coin_control);
-
+    CCoinControl coin_control(CoinType::ONLY_COINJOIN_COLLATERAL);
+    std::vector<COutput> vCoins{AvailableCoinsListUnspent(*m_wallet, &coin_control).all()};
     if (vCoins.empty()) {
         strReason = strprintf("%s requires a collateral transaction and could not locate an acceptable input!", gCoinJoinName);
         return false;
     }
 
     const auto& output = vCoins.at(GetRand(vCoins.size()));
-    const CTxOut txout = output.tx->tx->vout[output.i];
+    const CTxOut txout = output.txout;
 
     txCollateral.vin.clear();
-    txCollateral.vin.emplace_back(output.tx->GetHash(), output.i);
+    txCollateral.vin.emplace_back(output.outpoint.hash, output.outpoint.n);
     txCollateral.vout.clear();
 
     // pay collateral charge in fees
@@ -1585,11 +1583,10 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
     if (txout.nValue >= CoinJoin::GetCollateralAmount() * 2) {
         // make our change address
         CScript scriptChange;
-        CTxDestination dest;
         ReserveDestination reserveDest(m_wallet.get());
-        bool success = reserveDest.GetReservedDestination(dest, true);
-        assert(success); // should never fail, as we just unlocked
-        scriptChange = GetScriptForDestination(dest);
+        auto dest_opt = reserveDest.GetReservedDestination(true);
+        assert(dest_opt); // should never fail, as we just unlocked
+        scriptChange = GetScriptForDestination(*dest_opt);
         reserveDest.KeepDestination();
         // return change
         txCollateral.vout.emplace_back(txout.nValue - CoinJoin::GetCollateralAmount(), scriptChange);
@@ -1647,7 +1644,7 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
 
     // denominated input is always a single one, so we can check its amount directly and return early
-    if (tallyItem.vecInputCoins.size() == 1 && CoinJoin::IsDenominatedAmount(tallyItem.nAmount)) {
+    if (tallyItem.outpoints.size() == 1 && CoinJoin::IsDenominatedAmount(tallyItem.nAmount)) {
         return false;
     }
 
@@ -1831,7 +1828,7 @@ void CCoinJoinClientSession::RelayIn(const CCoinJoinEntry& entry, CConnman& conn
 {
     if (!mixingMasternode) return;
 
-    connman.ForNode(mixingMasternode->pdmnState->addr, [&entry, &connman, this](CNode* pnode) {
+    connman.ForNode(mixingMasternode->pdmnState->netInfo->GetPrimary(), [&entry, &connman, this](CNode* pnode) {
         WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::RelayIn -- found master, relaying message to %s\n",
                          pnode->addr.ToStringAddrPort());
         CNetMsgMaker msgMaker(pnode->GetCommonVersion());
@@ -1852,19 +1849,9 @@ void CCoinJoinClientManager::UpdatedBlockTip(const CBlockIndex* pindex)
     WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::UpdatedBlockTip -- nCachedBlockHeight: %d\n", nCachedBlockHeight);
 }
 
-void CCoinJoinClientQueueManager::DoMaintenance()
-{
-    if (m_is_masternode) return; // no client-side mixing on masternodes
-
-    if (!m_mn_sync.IsBlockchainSynced() || ShutdownRequested()) return;
-
-    CheckQueue();
-}
-
 void CCoinJoinClientManager::DoMaintenance(ChainstateManager& chainman, CConnman& connman, const CTxMemPool& mempool)
 {
     if (!CCoinJoinClientOptions::IsEnabled()) return;
-    if (m_is_masternode) return; // no client-side mixing on masternodes
 
     if (!m_mn_sync.IsBlockchainSynced() || ShutdownRequested()) return;
 
@@ -1876,7 +1863,7 @@ void CCoinJoinClientManager::DoMaintenance(ChainstateManager& chainman, CConnman
     ProcessPendingDsaRequest(connman);
     if (nDoAutoNextRun == nTick) {
         DoAutomaticDenominating(chainman, connman, mempool);
-        nDoAutoNextRun = nTick + COINJOIN_AUTO_TIMEOUT_MIN + GetRandInt(COINJOIN_AUTO_TIMEOUT_MAX - COINJOIN_AUTO_TIMEOUT_MIN);
+        nDoAutoNextRun = nTick + COINJOIN_AUTO_TIMEOUT_MIN + GetRand<int>(/*nMax=*/COINJOIN_AUTO_TIMEOUT_MAX - COINJOIN_AUTO_TIMEOUT_MIN);
     }
 }
 
@@ -1887,7 +1874,8 @@ void CCoinJoinClientSession::GetJsonInfo(UniValue& obj) const
         assert(mixingMasternode->pdmnState);
         obj.pushKV("protxhash", mixingMasternode->proTxHash.ToString());
         obj.pushKV("outpoint", mixingMasternode->collateralOutpoint.ToStringShort());
-        obj.pushKV("service", mixingMasternode->pdmnState->addr.ToStringAddrPort());
+        obj.pushKV("service", mixingMasternode->pdmnState->netInfo->GetPrimary().ToStringAddrPort());
+        obj.pushKV("addrs_core_p2p", mixingMasternode->pdmnState->netInfo->ToJson(NetInfoPurpose::CORE_P2P));
     }
     obj.pushKV("denomination", ValueFromAmount(CoinJoin::DenominationToAmount(nSessionDenom)));
     obj.pushKV("state", GetStateString());
@@ -1912,16 +1900,34 @@ void CCoinJoinClientManager::GetJsonInfo(UniValue& obj) const
     obj.pushKV("sessions", arrSessions);
 }
 
+CoinJoinWalletManager::CoinJoinWalletManager(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
+                                             CMasternodeMetaMan& mn_metaman, const CTxMemPool& mempool,
+                                             const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
+                                             const std::unique_ptr<CCoinJoinClientQueueManager>& queueman) :
+    m_chainman{chainman},
+    m_dmnman{dmnman},
+    m_mn_metaman{mn_metaman},
+    m_mempool{mempool},
+    m_mn_sync{mn_sync},
+    m_isman{isman},
+    m_queueman{queueman}
+{
+}
+
+CoinJoinWalletManager::~CoinJoinWalletManager()
+{
+    LOCK(cs_wallet_manager_map);
+    for (auto& [wallet_name, cj_man] : m_wallet_manager_map) {
+        cj_man.reset();
+    }
+}
+
 void CoinJoinWalletManager::Add(const std::shared_ptr<CWallet>& wallet)
 {
-    {
-        LOCK(cs_wallet_manager_map);
-        m_wallet_manager_map.try_emplace(wallet->GetName(),
-                                         std::make_unique<CCoinJoinClientManager>(wallet, *this, m_dmnman, m_mn_metaman,
-                                                                                  m_mn_sync, m_isman, m_queueman,
-                                                                                  m_is_masternode));
-    }
-    g_wallet_init_interface.InitCoinJoinSettings(*this);
+    LOCK(cs_wallet_manager_map);
+    m_wallet_manager_map.try_emplace(wallet->GetName(),
+                                     std::make_unique<CCoinJoinClientManager>(wallet, m_dmnman, m_mn_metaman, m_mn_sync,
+                                                                              m_isman, m_queueman));
 }
 
 void CoinJoinWalletManager::DoMaintenance(CConnman& connman)
@@ -1933,11 +1939,8 @@ void CoinJoinWalletManager::DoMaintenance(CConnman& connman)
 }
 
 void CoinJoinWalletManager::Remove(const std::string& name) {
-    {
-        LOCK(cs_wallet_manager_map);
-        m_wallet_manager_map.erase(name);
-    }
-    g_wallet_init_interface.InitCoinJoinSettings(*this);
+    LOCK(cs_wallet_manager_map);
+    m_wallet_manager_map.erase(name);
 }
 
 void CoinJoinWalletManager::Flush(const std::string& name)

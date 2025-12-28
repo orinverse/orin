@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2025 The Dash Core developers
+// Copyright (c) 2021-2025 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -37,11 +37,11 @@ enum class LLMQType : uint8_t {
     LLMQ_TEST_PLATFORM = 106,    // 3 members, 2 (66%) threshold, one per hour.
 
     // for devnets only. rotated version (v2) for devnets
-    LLMQ_DEVNET_DIP0024 = 105 // 8 members, 4 (50%) threshold, one per hour. Params might differ when -llmqdevnetparams is used
+    LLMQ_DEVNET_DIP0024 = 105, // 8 members, 4 (50%) threshold, one per hour. Params might differ when -llmqdevnetparams is used
 };
 
 // Configures a LLMQ and its DKG
-// See https://github.com/dashpay/dips/blob/master/dip-0006.md for more details
+// See https://github.com/orinpay/dips/blob/master/dip-0006.md for more details
 struct LLMQParams {
     LLMQType type;
 
@@ -121,6 +121,7 @@ public:
 
     // For how many blocks recent DKG info should be kept
     [[nodiscard]] constexpr int max_store_depth() const { return max_cycles(keepOldKeys) * dkgInterval; }
+    [[nodiscard]] constexpr bool is_single_member() const { return size == 1; }
 };
 
 //static_assert(std::is_trivial_v<Consensus::LLMQParams>, "LLMQParams is not a trivial type");
@@ -184,7 +185,7 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
     },
 
     /**
-     * llmq_test (Dash Core 0.17) aka llmq_test_v17
+     * llmq_test (Orin Core 0.17) aka llmq_test_v17
      * This quorum is only used for testing
      *
      */
@@ -451,7 +452,7 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
      * This quorum is deployed on mainnet and requires
      * 80 - 100 participants
      *
-     * Used by Dash Platform
+     * Used by Orin Platform
      */
     LLMQParams{
         .type = LLMQType::LLMQ_100_67,
@@ -479,7 +480,7 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
      * This quorum is deployed on Testnet and requires
      * 25 participants
      *
-     * Used by Dash Platform
+     * Used by Orin Platform
      */
     LLMQParams{
         .type = LLMQType::LLMQ_25_67,

@@ -96,12 +96,11 @@ bool CMnemonic::Check(const SecureString& mnemonic)
 
     SecureString ssCurrentWord;
     SecureVector bits(32 + 1);
-
-    uint32_t ki, nBitsCount{};
+    uint32_t nBitsCount{};
 
     for (size_t i = 0; i < mnemonic.size(); ++i)
     {
-        ssCurrentWord = "";
+        ssCurrentWord.resize(0); // we resize ssCurrentWord instead recreating to avoid new allocations
         while (i + ssCurrentWord.size() < mnemonic.size() && mnemonic[i + ssCurrentWord.size()] != ' ') {
             if (ssCurrentWord.size() >= 9) {
                 return false;
@@ -115,7 +114,7 @@ bool CMnemonic::Check(const SecureString& mnemonic)
                 return false;
             }
             if (ssCurrentWord == wordlist[nWordIndex]) { // word found on index nWordIndex
-                for (ki = 0; ki < 11; ki++) {
+                for (uint32_t ki = 0; ki < 11; ki++) {
                     if (nWordIndex & (1 << (10 - ki))) {
                         bits[nBitsCount / 8] |= 1 << (7 - (nBitsCount % 8));
                     }
@@ -143,7 +142,8 @@ void CMnemonic::ToSeed(const SecureString& mnemonic, const SecureString& passphr
 {
 
     SecureString ssSalt = SecureString("mnemonic") + passphrase;
-    SecureVector vchSalt(ssSalt.begin(), ssSalt.begin() + strnlen(ssSalt.data(), 256));
+    SecureVector vchSalt(ssSalt.begin(), ssSalt.begin() + std::min<size_t>(256, ssSalt.size()));
     seedRet.resize(64);
+    // NOTE: c_str() here is fine because mnemonic has only [a-z ] characters
     PKCS5_PBKDF2_HMAC_SHA512(mnemonic.c_str(), mnemonic.size(), vchSalt.data(), vchSalt.size(), 2048, 64, seedRet.data());
 }

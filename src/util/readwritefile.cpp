@@ -7,8 +7,9 @@
 
 #include <fs.h>
 
+#include <algorithm>
+#include <cstdio>
 #include <limits>
-#include <stdio.h>
 #include <string>
 #include <utility>
 

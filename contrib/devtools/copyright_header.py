@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2016-2020 The Bitcoin Core developers
-# Copyright (c) 2019-2024 The Dash Core developers
+# Copyright (c) 2016-2021 The Bitcoin Core developers
+# Copyright (c) 2019-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -17,16 +17,14 @@ import os
 
 EXCLUDE = [
     # auto generated:
-    'src/qt/dashstrings.cpp',
+    'src/qt/orinstrings.cpp',
     'src/chainparamsseeds.h',
     # other external copyrights:
     'src/bench/nanobench.h',
     'src/crypto/*',
     'src/ctpl_stl.h',
-    'src/reverse_iterator.h',
     'src/test/fuzz/FuzzedDataProvider.h',
     'src/tinyformat.h',
-    'src/util/expected.h',
     'src/wallet/bip39.cpp',
     'src/wallet/bip39.h',
     'src/wallet/bip39_english.h',
@@ -40,13 +38,12 @@ EXCLUDE_DIRS = [
     # git subtrees
     "src/crc32c/",
     "src/crypto/ctaes/",
-    "src/dashbls/",
+    "src/orinbls/",
     "src/gsl/",
     "src/immer/",
     "src/leveldb/",
     "src/minisketch",
     "src/secp256k1/",
-    "src/univalue/",
 ]
 
 INCLUDE = ['*.h', '*.cpp', '*.cc', '*.c', '*.mm', '*.py', '*.sh', '*.bash-completion']
@@ -105,7 +102,7 @@ def compile_copyright_regex(copyright_style, year_style, name):
 EXPECTED_HOLDER_NAMES = [
     r"Satoshi Nakamoto",
     r"The Bitcoin Core developers",
-    r"The Dash Core developers",
+    r"The Orin Core developers",
     r"BitPay Inc\.",
     r"University of Illinois at Urbana-Champaign\.",
     r"Pieter Wuille",
@@ -287,7 +284,7 @@ Usage:
     $ ./copyright_header.py report <base_directory> [verbose]
 
 Arguments:
-    <base_directory> - The base directory of a Dash Core source code repository.
+    <base_directory> - The base directory of a Orin Core source code repository.
     [verbose] - Includes a list of every file of each subcategory in the report.
 """
 
@@ -333,15 +330,13 @@ def get_most_recent_git_change_year(filename):
 ################################################################################
 
 def read_file_lines(filename):
-    f = open(filename, 'r', encoding="utf8")
-    file_lines = f.readlines()
-    f.close()
+    with open(filename, 'r', encoding="utf8") as f:
+        file_lines = f.readlines()
     return file_lines
 
 def write_file_lines(filename, file_lines):
-    f = open(filename, 'w', encoding="utf8")
-    f.write(''.join(file_lines))
-    f.close()
+    with open(filename, 'w', encoding="utf8") as f:
+        f.write(''.join(file_lines))
 
 ################################################################################
 # update header years execution
@@ -350,7 +345,7 @@ def write_file_lines(filename, file_lines):
 COPYRIGHT = r'Copyright \(c\)'
 YEAR = "20[0-9][0-9]"
 YEAR_RANGE = '(%s)(-%s)?' % (YEAR, YEAR)
-HOLDER = 'The Dash Core developers'
+HOLDER = 'The Orin Core developers'
 UPDATEABLE_LINE_COMPILED = re.compile(' '.join([COPYRIGHT, YEAR_RANGE, HOLDER]))
 
 def get_updatable_copyright_line(file_lines):
@@ -384,7 +379,7 @@ def create_updated_copyright_line(line, last_git_change_year):
     space_split = after_copyright.split(' ')
     year_range = space_split[0]
     start_year, end_year = parse_year_range(year_range)
-    if end_year == last_git_change_year:
+    if end_year >= last_git_change_year:
         return line
     return (before_copyright + copyright_splitter +
             year_range_to_str(start_year, last_git_change_year) + ' ' +
@@ -415,24 +410,24 @@ def exec_update_header_year(base_directory):
 ################################################################################
 
 UPDATE_USAGE = """
-Updates all the copyright headers of "The Dash Core developers" which were
+Updates all the copyright headers of "The Orin Core developers" which were
 changed in a year more recent than is listed. For example:
 
-// Copyright (c) <firstYear>-<lastYear> The Dash Core developers
+// Copyright (c) <firstYear>-<lastYear> The Orin Core developers
 
 will be updated to:
 
-// Copyright (c) <firstYear>-<lastModifiedYear> The Dash Core developers
+// Copyright (c) <firstYear>-<lastModifiedYear> The Orin Core developers
 
 where <lastModifiedYear> is obtained from the 'git log' history.
 
 This subcommand also handles copyright headers that have only a single year. In those cases:
 
-// Copyright (c) <year> The Dash Core developers
+// Copyright (c) <year> The Orin Core developers
 
 will be updated to:
 
-// Copyright (c) <year>-<lastModifiedYear> The Dash Core developers
+// Copyright (c) <year>-<lastModifiedYear> The Orin Core developers
 
 where the update is appropriate.
 
@@ -440,7 +435,7 @@ Usage:
     $ ./copyright_header.py update <base_directory>
 
 Arguments:
-    <base_directory> - The base directory of Dash Core source code repository.
+    <base_directory> - The base directory of Orin Core source code repository.
 """
 
 def print_file_action_message(filename, action):
@@ -465,7 +460,7 @@ def get_header_lines(header, start_year, end_year):
     return [line + '\n' for line in lines]
 
 CPP_HEADER = '''
-// Copyright (c) %s The Dash Core developers
+// Copyright (c) %s The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
@@ -474,7 +469,7 @@ def get_cpp_header_lines_to_insert(start_year, end_year):
     return reversed(get_header_lines(CPP_HEADER, start_year, end_year))
 
 SCRIPT_HEADER = '''
-# Copyright (c) %s The Dash Core developers
+# Copyright (c) %s The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
@@ -529,7 +524,7 @@ def insert_cpp_header(filename, file_lines, start_year, end_year):
 def exec_insert_header(filename, style):
     file_lines = read_file_lines(filename)
     if file_already_has_core_copyright(file_lines):
-        sys.exit('*** %s already has a copyright by The Dash Core developers'
+        sys.exit('*** %s already has a copyright by The Orin Core developers'
                  % (filename))
     start_year, end_year = get_git_change_year_range(filename)
     if style in ['python', 'shell']:
@@ -542,7 +537,7 @@ def exec_insert_header(filename, style):
 ################################################################################
 
 INSERT_USAGE = """
-Inserts a copyright header for "The Dash Core developers" at the top of the
+Inserts a copyright header for "The Orin Core developers" at the top of the
 file in either Python or C++ style as determined by the file extension. If the
 file is a Python file and it has a '#!' starting the first line, the header is
 inserted in the line below it.
@@ -556,14 +551,14 @@ where <year_introduced> is according to the 'git log' history. If
 
 "<current_year>"
 
-If the file already has a copyright for "The Dash Core developers", the
+If the file already has a copyright for "The Orin Core developers", the
 script will exit.
 
 Usage:
     $ ./copyright_header.py insert <file>
 
 Arguments:
-    <file> - A source file in the Dash Core repository.
+    <file> - A source file in the Orin Core repository.
 """
 
 def insert_cmd(argv):
@@ -590,7 +585,7 @@ def insert_cmd(argv):
 ################################################################################
 
 USAGE = """
-copyright_header.py - utilities for managing copyright headers of 'The Dash
+copyright_header.py - utilities for managing copyright headers of 'The Orin
 Core developers' in repository source files.
 
 Usage:

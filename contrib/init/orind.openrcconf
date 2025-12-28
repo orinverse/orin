@@ -1,0 +1,33 @@
+# /etc/conf.d/orind: config file for /etc/init.d/orind
+
+# Config file location
+#BITCOIND_CONFIGFILE="/etc/orincore/orin.conf"
+
+# What directory to write pidfile to?  (created and owned by $BITCOIND_USER)
+#BITCOIND_PIDDIR="/var/run/orind"
+
+# What filename to give the pidfile
+#BITCOIND_PIDFILE="${BITCOIND_PIDDIR}/orind.pid"
+
+# Where to write orind data (be mindful that the blockchain is large)
+#BITCOIND_DATADIR="/var/lib/orind"
+
+# User and group to own orind process
+#BITCOIND_USER="orincore"
+#BITCOIND_GROUP="orincore"
+
+# Path to orind executable
+#BITCOIND_BIN="/usr/bin/orind"
+
+# Nice value to run orind under
+#BITCOIND_NICE=0
+
+# Additional options (avoid -conf and -datadir, use flags above)
+#BITCOIND_OPTS=""
+
+# The timeout in seconds OpenRC will wait for orind to terminate
+# after a SIGTERM has been raised.
+# Note that this will be mapped as argument to start-stop-daemon's
+# '--retry' option, which means you can specify a retry schedule
+# here. For more information see man 8 start-stop-daemon.
+BITCOIND_SIGTERM_TIMEOUT=60

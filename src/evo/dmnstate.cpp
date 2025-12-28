@@ -1,17 +1,15 @@
-// Copyright (c) 2018-2024 The Dash Core developers
+// Copyright (c) 2018-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <evo/dmnstate.h>
-#include <evo/providertx.h>
 
-#include <chainparams.h>
-#include <consensus/validation.h>
 #include <script/standard.h>
-#include <validationinterface.h>
+
+#include <evo/netinfo.h>
+#include <rpc/evo_util.h>
 
 #include <univalue.h>
-#include <messagesigner.h>
 
 std::string CDeterministicMNState::ToString() const
 {
@@ -27,55 +25,21 @@ std::string CDeterministicMNState::ToString() const
 
     return strprintf("CDeterministicMNState(nVersion=%d, nRegisteredHeight=%d, nLastPaidHeight=%d, nPoSePenalty=%d, "
                      "nPoSeRevivedHeight=%d, nPoSeBanHeight=%d, nRevocationReason=%d, "
-                     "ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, addr=%s, payoutAddress=%s, "
-                     "operatorPayoutAddress=%s)",
+                     "ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, netInfo=%s, payoutAddress=%s, "
+                     "operatorPayoutAddress=%s)\n",
                      nVersion, nRegisteredHeight, nLastPaidHeight, nPoSePenalty, nPoSeRevivedHeight, nPoSeBanHeight,
                      nRevocationReason, EncodeDestination(PKHash(keyIDOwner)), pubKeyOperator.ToString(),
-                     EncodeDestination(PKHash(keyIDVoting)), addr.ToStringAddrPort(), payoutAddress,
-                     operatorPayoutAddress);
-}
-
-UniValue CDeterministicMNState::ToJson(MnType nType) const
-{
-    UniValue obj;
-    obj.setObject();
-    obj.pushKV("version", nVersion);
-    obj.pushKV("service", addr.ToStringAddrPort());
-    obj.pushKV("registeredHeight", nRegisteredHeight);
-    obj.pushKV("lastPaidHeight", nLastPaidHeight);
-    obj.pushKV("consecutivePayments", nConsecutivePayments);
-    obj.pushKV("PoSePenalty", nPoSePenalty);
-    obj.pushKV("PoSeRevivedHeight", nPoSeRevivedHeight);
-    obj.pushKV("PoSeBanHeight", nPoSeBanHeight);
-    obj.pushKV("revocationReason", nRevocationReason);
-    obj.pushKV("ownerAddress", EncodeDestination(PKHash(keyIDOwner)));
-    obj.pushKV("votingAddress", EncodeDestination(PKHash(keyIDVoting)));
-    if (nType == MnType::Evo) {
-        obj.pushKV("platformNodeID", platformNodeID.ToString());
-        obj.pushKV("platformP2PPort", platformP2PPort);
-        obj.pushKV("platformHTTPPort", platformHTTPPort);
-    }
-
-    CTxDestination dest;
-    if (ExtractDestination(scriptPayout, dest)) {
-        obj.pushKV("payoutAddress", EncodeDestination(dest));
-    }
-    obj.pushKV("pubKeyOperator", pubKeyOperator.ToString());
-    if (ExtractDestination(scriptOperatorPayout, dest)) {
-        obj.pushKV("operatorPayoutAddress", EncodeDestination(dest));
-    }
-    return obj;
+                     EncodeDestination(PKHash(keyIDVoting)), netInfo->ToString(), payoutAddress, operatorPayoutAddress);
 }
 
 UniValue CDeterministicMNStateDiff::ToJson(MnType nType) const
 {
-    UniValue obj;
-    obj.setObject();
+    UniValue obj(UniValue::VOBJ);
     if (fields & Field_nVersion) {
         obj.pushKV("version", state.nVersion);
     }
-    if (fields & Field_addr) {
-        obj.pushKV("service", state.addr.ToStringAddrPort());
+    if (fields & Field_netInfo) {
+        obj.pushKV("service", state.netInfo->GetPrimary().ToStringAddrPort());
     }
     if (fields & Field_nRegisteredHeight) {
         obj.pushKV("registeredHeight", state.nRegisteredHeight);
@@ -128,6 +92,38 @@ UniValue CDeterministicMNStateDiff::ToJson(MnType nType) const
         }
         if (fields & Field_platformHTTPPort) {
             obj.pushKV("platformHTTPPort", state.platformHTTPPort);
+        }
+    }
+    {
+        const bool has_netinfo = (fields & Field_netInfo);
+
+        UniValue netInfoObj(UniValue::VOBJ);
+        if (has_netinfo) {
+            netInfoObj = state.netInfo->ToJson();
+        }
+        if (nType == MnType::Evo && (!has_netinfo || !state.netInfo->CanStorePlatform())) {
+            auto unknownAddr = [](uint16_t port) -> UniValue {
+                UniValue obj(UniValue::VARR);
+                // We don't know what the address is because it wasn't changed in the
+                // diff but we still need to report the port number in addr:port format
+                obj.push_back(strprintf("255.255.255.255:%d", port));
+                return obj;
+            };
+            if (fields & Field_platformP2PPort) {
+                netInfoObj.pushKV(PurposeToString(NetInfoPurpose::PLATFORM_P2P).data(),
+                                  (has_netinfo)
+                                      ? ArrFromService(CService(state.netInfo->GetPrimary(), state.platformP2PPort))
+                                      : unknownAddr(state.platformP2PPort));
+            }
+            if (fields & Field_platformHTTPPort) {
+                netInfoObj.pushKV(PurposeToString(NetInfoPurpose::PLATFORM_HTTPS).data(),
+                                  (has_netinfo)
+                                      ? ArrFromService(CService(state.netInfo->GetPrimary(), state.platformHTTPPort))
+                                      : unknownAddr(state.platformHTTPPort));
+            }
+        }
+        if (!netInfoObj.empty()) {
+            obj.pushKV("addresses", netInfoObj);
         }
     }
     return obj;

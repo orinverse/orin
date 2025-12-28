@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2020 The Bitcoin Core developers
+// Copyright (c) 2009-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -68,7 +68,7 @@ namespace BCLog {
         BLOCKSTORE  = (1 << 26),
         TXRECONCILIATION = (1 << 27),
 
-        //Start Dash
+        //Start Orin
         CHAINLOCKS  = ((uint64_t)1 << 32),
         GOBJECT     = ((uint64_t)1 << 33),
         INSTANTSEND = ((uint64_t)1 << 34),
@@ -83,12 +83,12 @@ namespace BCLog {
         EHF         = ((uint64_t)1 << 44),
         CREDITPOOL  = ((uint64_t)1 << 45),
 
-        DASH        = CHAINLOCKS | GOBJECT | INSTANTSEND | LLMQ | LLMQ_DKG
+        ORIN        = CHAINLOCKS | GOBJECT | INSTANTSEND | LLMQ | LLMQ_DKG
                     | LLMQ_SIGS | MNPAYMENTS | MNSYNC | COINJOIN | SPORK | NETCONN
                     | EHF | CREDITPOOL,
 
         NET_NETCONN = NET | NETCONN, // use this to have something logged in NET and NETCONN as well
-        //End Dash
+        //End Orin
 
         ALL         = ~(uint64_t)0,
     };
@@ -272,13 +272,18 @@ static inline void LogPrintf_(const std::string& logging_function, const std::st
     }
 }
 
-
 #define LogPrintLevel_(category, level, ...) LogPrintf_(__func__, __FILE__, __LINE__, category, level, __VA_ARGS__)
 
+// Log unconditionally.
 #define LogPrintf(...) LogPrintLevel_(BCLog::LogFlags::NONE, BCLog::Level::None, __VA_ARGS__)
+
+// Log unconditionally, prefixing the output with the passed category name.
+#define LogPrintfCategory(category, ...) LogPrintLevel_(category, BCLog::Level::None, __VA_ARGS__)
 
 // Use a macro instead of a function for conditional logging to prevent
 // evaluating arguments when logging for the category is not enabled.
+
+// Log conditionally, prefixing the output with the passed category name.
 #define LogPrint(category, ...)                                        \
     do {                                                               \
         if (LogAcceptCategory((category), BCLog::Level::Debug)) {      \
@@ -286,6 +291,7 @@ static inline void LogPrintf_(const std::string& logging_function, const std::st
         }                                                              \
     } while (0)
 
+// Log conditionally, prefixing the output with the passed category name and severity level.
 #define LogPrintLevel(category, level, ...)               \
     do {                                                  \
         if (LogAcceptCategory((category), (level))) {     \

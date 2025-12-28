@@ -1,11 +1,14 @@
-// Copyright (c) 2018-2025 The Dash Core developers
+// Copyright (c) 2018-2025 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_LLMQ_DKGSESSIONHANDLER_H
 #define BITCOIN_LLMQ_DKGSESSIONHANDLER_H
 
+#include <msg_result.h>
+
 #include <net.h> // for NodeId
+#include <net_processing.h>
 
 #include <atomic>
 #include <list>
@@ -14,6 +17,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -24,7 +28,6 @@ class CChainState;
 class CConnman;
 class CDeterministicMNManager;
 class CMasternodeMetaMan;
-class CNode;
 class CSporkManager;
 class PeerManager;
 
@@ -64,7 +67,7 @@ public:
     using BinaryMessage = std::pair<NodeId, std::shared_ptr<CDataStream>>;
 
 private:
-    const int invType;
+    const uint32_t invType;
     const size_t maxMessagesPerNode;
     mutable Mutex cs_messages;
     std::list<BinaryMessage> pendingMessages GUARDED_BY(cs_messages);
@@ -72,26 +75,28 @@ private:
     std::set<uint256> seenMessages GUARDED_BY(cs_messages);
 
 public:
-    explicit CDKGPendingMessages(size_t _maxMessagesPerNode, int _invType) :
+    explicit CDKGPendingMessages(size_t _maxMessagesPerNode, uint32_t _invType) :
             invType(_invType), maxMessagesPerNode(_maxMessagesPerNode) {};
 
-    void PushPendingMessage(NodeId from, CDataStream& vRecv, PeerManager& peerman);
-    std::list<BinaryMessage> PopPendingMessages(size_t maxCount);
-    bool HasSeen(const uint256& hash) const;
+    [[nodiscard]] MessageProcessingResult PushPendingMessage(NodeId from, CDataStream& vRecv)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_messages);
+    std::list<BinaryMessage> PopPendingMessages(size_t maxCount) EXCLUSIVE_LOCKS_REQUIRED(!cs_messages);
+    bool HasSeen(const uint256& hash) const EXCLUSIVE_LOCKS_REQUIRED(!cs_messages);
     void Misbehaving(NodeId from, int score, PeerManager& peerman);
-    void Clear();
+    void Clear() EXCLUSIVE_LOCKS_REQUIRED(!cs_messages);
 
     template <typename Message>
-    void PushPendingMessage(NodeId from, Message& msg, PeerManager& peerman)
+    void PushPendingMessage(NodeId from, Message& msg, PeerManager& peerman) EXCLUSIVE_LOCKS_REQUIRED(!cs_messages)
     {
         CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
         ds << msg;
-        PushPendingMessage(from, ds, peerman);
+        peerman.PostProcessMessage(PushPendingMessage(from, ds), from);
     }
 
     // Might return nullptr messages, which indicates that deserialization failed for some reason
-    template<typename Message>
+    template <typename Message>
     std::vector<std::pair<NodeId, std::shared_ptr<Message>>> PopAndDeserializeMessages(size_t maxCount)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_messages)
     {
         auto binaryMessages = PopPendingMessages(maxCount);
         if (binaryMessages.empty()) {
@@ -164,8 +169,8 @@ public:
                        const CSporkManager& sporkman, const Consensus::LLMQParams& _params, int _quorumIndex);
     ~CDKGSessionHandler();
 
-    void UpdatedBlockTip(const CBlockIndex *pindexNew);
-    void ProcessMessage(const CNode& pfrom, PeerManager& peerman, const std::string& msg_type, CDataStream& vRecv);
+    void UpdatedBlockTip(const CBlockIndex* pindexNew) EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
+    [[nodiscard]] MessageProcessingResult ProcessMessage(NodeId from, std::string_view msg_type, CDataStream& vRecv);
 
     void StartThread(CConnman& connman, PeerManager& peerman);
     void StopThread();
@@ -178,7 +183,7 @@ public:
 private:
     bool InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex);
 
-    std::pair<QuorumPhase, uint256> GetPhaseAndQuorumHash() const;
+    std::pair<QuorumPhase, uint256> GetPhaseAndQuorumHash() const EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
 
     using StartPhaseFunc = std::function<void()>;
     using WhileWaitFunc = std::function<bool()>;
@@ -188,12 +193,17 @@ private:
      * @param expectedQuorumHash expected QuorumHash, defaults to null
      * @param shouldNotWait function that returns bool, defaults to function that returns false. If the function returns false, we will wait in the loop, if true, we don't wait
      */
-    void WaitForNextPhase(std::optional<QuorumPhase> curPhase, QuorumPhase nextPhase, const uint256& expectedQuorumHash=uint256(), const WhileWaitFunc& shouldNotWait=[]{return false;}) const;
-    void WaitForNewQuorum(const uint256& oldQuorumHash) const;
-    void SleepBeforePhase(QuorumPhase curPhase, const uint256& expectedQuorumHash, double randomSleepFactor, const WhileWaitFunc& runWhileWaiting) const;
-    void HandlePhase(QuorumPhase curPhase, QuorumPhase nextPhase, const uint256& expectedQuorumHash, double randomSleepFactor, const StartPhaseFunc& startPhaseFunc, const WhileWaitFunc& runWhileWaiting);
-    void HandleDKGRound(CConnman& connman, PeerManager& peerman);
-    void PhaseHandlerThread(CConnman& connman, PeerManager& peerman);
+    void WaitForNextPhase(
+        std::optional<QuorumPhase> curPhase, QuorumPhase nextPhase, const uint256& expectedQuorumHash = uint256(),
+        const WhileWaitFunc& shouldNotWait = [] { return false; }) const EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
+    void WaitForNewQuorum(const uint256& oldQuorumHash) const EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
+    void SleepBeforePhase(QuorumPhase curPhase, const uint256& expectedQuorumHash, double randomSleepFactor,
+                          const WhileWaitFunc& runWhileWaiting) const EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
+    void HandlePhase(QuorumPhase curPhase, QuorumPhase nextPhase, const uint256& expectedQuorumHash,
+                     double randomSleepFactor, const StartPhaseFunc& startPhaseFunc,
+                     const WhileWaitFunc& runWhileWaiting) EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
+    void HandleDKGRound(CConnman& connman, PeerManager& peerman) EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
+    void PhaseHandlerThread(CConnman& connman, PeerManager& peerman) EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
 };
 
 } // namespace llmq

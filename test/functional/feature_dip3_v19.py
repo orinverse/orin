@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2024 The Dash Core developers
+# Copyright (c) 2015-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,7 +14,10 @@ from io import BytesIO
 from test_framework.p2p import P2PInterface
 from test_framework.messages import CBlock, CBlockHeader, CCbTx, CMerkleBlock, from_hex, hash256, msg_getmnlistd, \
     QuorumId, ser_uint256
-from test_framework.test_framework import DashTestFramework
+from test_framework.test_framework import (
+    DashTestFramework,
+    MasternodeInfo,
+)
 from test_framework.util import (
     assert_equal
 )
@@ -44,9 +47,10 @@ class TestP2PConn(P2PInterface):
 class DIP3V19Test(DashTestFramework):
     def set_test_params(self):
         self.extra_args = [[
+            '-deprecatedrpc=legacy_mn',
             '-testactivationheight=v19@200',
         ]] * 6
-        self.set_dash_test_params(6, 5, evo_count=2, extra_args=self.extra_args)
+        self.set_orin_test_params(6, 5, evo_count=2, extra_args=self.extra_args)
 
 
     def run_test(self):
@@ -78,30 +82,28 @@ class DIP3V19Test(DashTestFramework):
         self.log.info("pubkeyoperator should still be shown using legacy scheme")
         assert_equal(pubkeyoperator_list_before, pubkeyoperator_list_after)
 
-        evo_info_0 = self.dynamically_add_masternode(evo=True, rnd=7)
+        evo_info_0: MasternodeInfo = self.dynamically_add_masternode(evo=True, rnd=7)
         assert evo_info_0 is not None
 
         self.log.info("Checking that protxs with duplicate EvoNodes fields are rejected")
-        evo_info_1 = self.dynamically_add_masternode(evo=True, rnd=7, should_be_rejected=True)
+        evo_info_1: MasternodeInfo = self.dynamically_add_masternode(evo=True, rnd=7, should_be_rejected=True)
         assert evo_info_1 is None
         self.dynamically_evo_update_service(evo_info_0, 8)
-        evo_info_2 = self.dynamically_add_masternode(evo=True, rnd=8, should_be_rejected=True)
+        evo_info_2: MasternodeInfo = self.dynamically_add_masternode(evo=True, rnd=8, should_be_rejected=True)
         assert evo_info_2 is None
-        evo_info_3 = self.dynamically_add_masternode(evo=True, rnd=9)
+        evo_info_3: MasternodeInfo = self.dynamically_add_masternode(evo=True, rnd=9)
         assert evo_info_3 is not None
         self.dynamically_evo_update_service(evo_info_0, 9, should_be_rejected=True)
 
-        revoke_protx = self.mninfo[-1].proTxHash
-        revoke_keyoperator = self.mninfo[-1].keyOperator
-        self.log.info(f"Trying to revoke proTx:{revoke_protx}")
-        self.test_revoke_protx(evo_info_3.nodeIdx, revoke_protx, revoke_keyoperator)
+        self.log.info(f"Trying to revoke proTx:{self.mninfo[-1].proTxHash}")
+        self.test_revoke_protx(evo_info_3.nodeIdx, self.mninfo[-1])
 
         self.mine_quorum(llmq_type_name='llmq_test', llmq_type=100)
 
         self.log.info("Checking that adding more regular MNs after v19 doesn't break DKGs and IS/CLs")
 
         for i in range(6):
-            new_mn = self.dynamically_add_masternode(evo=False, rnd=(10 + i))
+            new_mn: MasternodeInfo = self.dynamically_add_masternode(evo=False, rnd=(10 + i))
             assert new_mn is not None
 
         # mine more quorums and make sure everything still works
@@ -112,14 +114,14 @@ class DIP3V19Test(DashTestFramework):
 
         self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
 
-    def test_revoke_protx(self, node_idx, revoke_protx, revoke_keyoperator):
+    def test_revoke_protx(self, node_idx, revoke_mn: MasternodeInfo):
         funds_address = self.nodes[0].getnewaddress()
         fund_txid = self.nodes[0].sendtoaddress(funds_address, 1)
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
         tip = self.generate(self.nodes[0], 1)[0]
         assert_equal(self.nodes[0].getrawtransaction(fund_txid, 1, tip)['confirmations'], 1)
 
-        protx_result = self.nodes[0].protx('revoke', revoke_protx, revoke_keyoperator, 1, funds_address)
+        protx_result = revoke_mn.revoke(self.nodes[0], submit=True, reason=1, fundsAddr=funds_address)
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
         tip = self.generate(self.nodes[0], 1, sync_fun=self.no_op)[0]
         assert_equal(self.nodes[0].getrawtransaction(protx_result, 1, tip)['confirmations'], 1)
@@ -128,9 +130,9 @@ class DIP3V19Test(DashTestFramework):
         self.wait_until(lambda: self.nodes[node_idx].getconnectioncount() == 0)
         self.connect_nodes(node_idx, 0)
         self.sync_all()
-        self.log.info(f"Successfully revoked={revoke_protx}")
-        for mn in self.mninfo:
-            if mn.proTxHash == revoke_protx:
+        self.log.info(f"Successfully revoked={revoke_mn.proTxHash}")
+        for mn in self.mninfo: # type: MasternodeInfo
+            if mn.proTxHash == revoke_mn.proTxHash:
                 self.mninfo.remove(mn)
                 return
 

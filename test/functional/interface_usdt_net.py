@@ -4,7 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 """  Tests the net:* tracepoint API interface.
-     See https://github.com/dashpay/dash/blob/develop/doc/tracing.md#context-net
+     See https://github.com/orinpay/orin/blob/develop/doc/tracing.md#context-net
 """
 
 import ctypes
@@ -92,7 +92,7 @@ class NetTracepointTest(BitcoinTestFramework):
 
     def run_test(self):
         # Tests the net:inbound_message and net:outbound_message tracepoints
-        # See https://github.com/dashpay/dash/blob/develop/doc/tracing.md#context-net
+        # See https://github.com/orinpay/orin/blob/develop/doc/tracing.md#context-net
 
         class P2PMessage(ctypes.Structure):
             _fields_ = [
@@ -114,15 +114,12 @@ class NetTracepointTest(BitcoinTestFramework):
                          fn_name="trace_inbound_message")
         ctx.enable_probe(probe="net:outbound_message",
                          fn_name="trace_outbound_message")
-        bpf = BPF(text=net_tracepoints_program, usdt_contexts=[ctx], debug=0)
+        bpf = BPF(text=net_tracepoints_program, usdt_contexts=[ctx], debug=0, cflags=["-Wno-error=implicit-function-declaration"])
 
-        # The handle_* function is a ctypes callback function called from C. When
-        # we assert in the handle_* function, the AssertError doesn't propagate
-        # back to Python. The exception is ignored. We manually count and assert
-        # that the handle_* functions succeeded.
         EXPECTED_INOUTBOUND_VERSION_MSG = 1
         checked_inbound_version_msg = 0
         checked_outbound_version_msg = 0
+        events = []
 
         def check_p2p_message(event, inbound):
             nonlocal checked_inbound_version_msg, checked_outbound_version_msg
@@ -142,27 +139,31 @@ class NetTracepointTest(BitcoinTestFramework):
                     checked_outbound_version_msg += 1
 
         def handle_inbound(_, data, __):
+            nonlocal events
             event = ctypes.cast(data, ctypes.POINTER(P2PMessage)).contents
-            check_p2p_message(event, True)
+            events.append((event, True))
 
         def handle_outbound(_, data, __):
             event = ctypes.cast(data, ctypes.POINTER(P2PMessage)).contents
-            check_p2p_message(event, False)
+            events.append((event, False))
 
         bpf["inbound_messages"].open_perf_buffer(handle_inbound)
         bpf["outbound_messages"].open_perf_buffer(handle_outbound)
 
-        self.log.info("connect a P2P test node to our dashd node")
+        self.log.info("connect a P2P test node to our orind node")
         test_node = P2PInterface()
         self.nodes[0].add_p2p_connection(test_node)
         bpf.perf_buffer_poll(timeout=200)
 
         self.log.info(
-            "check that we got both an inbound and outbound version message")
+            "check receipt and content of in- and outbound version messages")
+        for event, inbound in events:
+            check_p2p_message(event, inbound)
         assert_equal(EXPECTED_INOUTBOUND_VERSION_MSG,
                      checked_inbound_version_msg)
         assert_equal(EXPECTED_INOUTBOUND_VERSION_MSG,
                      checked_outbound_version_msg)
+
 
         bpf.cleanup()
 

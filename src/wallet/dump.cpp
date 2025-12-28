@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Bitcoin Core developers
+// Copyright (c) 2020-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,13 +15,14 @@
 #include <utility>
 #include <vector>
 
+namespace wallet {
 static const std::string DUMP_MAGIC = "BITCOIN_CORE_WALLET_DUMP";
 uint32_t DUMP_VERSION = 1;
 
-bool DumpWallet(CWallet& wallet, bilingual_str& error)
+bool DumpWallet(const ArgsManager& args, CWallet& wallet, bilingual_str& error)
 {
     // Get the dumpfile
-    std::string dump_filename = gArgs.GetArg("-dumpfile", "");
+    std::string dump_filename = args.GetArg("-dumpfile", "");
     if (dump_filename.empty()) {
         error = _("No dump file provided. To use dump, -dumpfile=<filename> must be provided.");
         return false;
@@ -33,14 +34,13 @@ bool DumpWallet(CWallet& wallet, bilingual_str& error)
         error = strprintf(_("File %s already exists. If you are sure this is what you want, move it out of the way first."), fs::PathToString(path));
         return false;
     }
-    std::ofstream dump_file;
-    dump_file.open(path);
+    std::ofstream dump_file = fsbridge::ofstream(path);
     if (dump_file.fail()) {
         error = strprintf(_("Unable to open %s for writing"), fs::PathToString(path));
         return false;
     }
 
-    CHashWriter hasher(0, 0);
+    HashWriter hasher{};
 
     WalletDatabase& db = wallet.GetDatabase();
     std::unique_ptr<DatabaseBatch> batch = db.MakeBatch();
@@ -113,10 +113,10 @@ static void WalletToolReleaseWallet(CWallet* wallet)
     delete wallet;
 }
 
-bool CreateFromDump(const std::string& name, const fs::path& wallet_path, bilingual_str& error, std::vector<bilingual_str>& warnings)
+bool CreateFromDump(const ArgsManager& args, const std::string& name, const fs::path& wallet_path, bilingual_str& error, std::vector<bilingual_str>& warnings)
 {
     // Get the dumpfile
-    std::string dump_filename = gArgs.GetArg("-dumpfile", "");
+    std::string dump_filename = args.GetArg("-dumpfile", "");
     if (dump_filename.empty()) {
         error = _("No dump file provided. To use createfromdump, -dumpfile=<filename> must be provided.");
         return false;
@@ -128,10 +128,10 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
         error = strprintf(_("Dump file %s does not exist."), fs::PathToString(dump_path));
         return false;
     }
-    std::ifstream dump_file{dump_path};
+    std::ifstream dump_file = fsbridge::ifstream(dump_path);
 
     // Compute the checksum
-    CHashWriter hasher(0, 0);
+    HashWriter hasher{};
     uint256 checksum;
 
     // Check the magic and version
@@ -152,7 +152,7 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
         return false;
     }
     if (ver != DUMP_VERSION) {
-        error = strprintf(_("Error: Dumpfile version is not supported. This version of bitcoin-wallet only supports version 1 dumpfiles. Got dumpfile with version %s"), version_value);
+        error = strprintf(_("Error: Dumpfile version is not supported. This version of orin-wallet only supports version 1 dumpfiles. Got dumpfile with version %s"), version_value);
         dump_file.close();
         return false;
     }
@@ -170,7 +170,7 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
         return false;
     }
     // Get the data file format with format_value as the default
-    std::string file_format = gArgs.GetArg("-format", format_value);
+    std::string file_format = args.GetArg("-format", format_value);
     if (file_format.empty()) {
         error = _("No wallet file format provided. To use createfromdump, -format=<format> must be provided.");
         return false;
@@ -192,6 +192,7 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
 
     DatabaseOptions options;
     DatabaseStatus status;
+    ReadDatabaseArgs(args, options);
     options.require_create = true;
     options.require_format = data_format;
     std::unique_ptr<WalletDatabase> database = MakeDatabase(wallet_path, options, status, error);
@@ -199,7 +200,7 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
 
     // dummy chain interface
     bool ret = true;
-    std::shared_ptr<CWallet> wallet(new CWallet(nullptr /* chain */, /*coinjoin_loader=*/ nullptr, name, std::move(database)), WalletToolReleaseWallet);
+    std::shared_ptr<CWallet> wallet(new CWallet(/*chain=*/nullptr, /*coinjoin_loader=*/nullptr, name, gArgs, std::move(database)), WalletToolReleaseWallet);
     {
         LOCK(wallet->cs_wallet);
         DBErrors load_wallet_ret = wallet->LoadWallet();
@@ -292,3 +293,4 @@ bool CreateFromDump(const std::string& name, const fs::path& wallet_path, biling
 
     return ret;
 }
+} // namespace wallet

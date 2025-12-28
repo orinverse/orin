@@ -1,11 +1,10 @@
-// Copyright (c) 2019-2024 The Dash Core developers
+// Copyright (c) 2019-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <evo/mnauth.h>
 
 #include <bls/bls.h>
-#include <chain.h>
 #include <chainparams.h>
 #include <evo/deterministicmns.h>
 #include <llmq/utils.h>
@@ -13,10 +12,8 @@
 #include <masternode/node.h>
 #include <masternode/sync.h>
 #include <net.h>
-#include <net_types.h>
 #include <netmessagemaker.h>
 #include <util/time.h>
-#include <validation.h>
 
 void CMNAuth::PushMNAUTH(CNode& peer, CConnman& connman, const CActiveMasternodeManager& mn_activeman)
 {
@@ -37,17 +34,11 @@ void CMNAuth::PushMNAUTH(CNode& peer, CConnman& connman, const CActiveMasternode
     // This is ok as we only use MNAUTH as a DoS protection and not for sensitive stuff
     int nOurNodeVersion{PROTOCOL_VERSION};
     if (Params().NetworkIDString() != CBaseChainParams::MAIN && gArgs.IsArgSet("-pushversion")) {
-        nOurNodeVersion = gArgs.GetArg("-pushversion", PROTOCOL_VERSION);
+        nOurNodeVersion = gArgs.GetIntArg("-pushversion", PROTOCOL_VERSION);
     }
     auto pk = mn_activeman.GetPubKey();
     const CBLSPublicKey pubKey(pk);
-    uint256 signHash = [&]() {
-        if (peer.nVersion < MNAUTH_NODE_VER_VERSION || nOurNodeVersion < MNAUTH_NODE_VER_VERSION) {
-            return ::SerializeHash(std::make_tuple(pubKey, receivedMNAuthChallenge, peer.IsInboundConn()));
-        } else {
-            return ::SerializeHash(std::make_tuple(pubKey, receivedMNAuthChallenge, peer.IsInboundConn(), nOurNodeVersion));
-        }
-    }();
+    const uint256 signHash{::SerializeHash(std::make_tuple(pubKey, receivedMNAuthChallenge, peer.IsInboundConn(), nOurNodeVersion))};
 
     mnauth.proRegTxHash = mn_activeman.GetProTxHash();
 
@@ -58,9 +49,9 @@ void CMNAuth::PushMNAUTH(CNode& peer, CConnman& connman, const CActiveMasternode
     connman.PushMessage(&peer, CNetMsgMaker(peer.GetCommonVersion()).Make(NetMsgType::MNAUTH, mnauth));
 }
 
-PeerMsgRet CMNAuth::ProcessMessage(CNode& peer, ServiceFlags node_services, CConnman& connman, CMasternodeMetaMan& mn_metaman, const CActiveMasternodeManager* const mn_activeman,
-                                   const CMasternodeSync& mn_sync, const CDeterministicMNList& tip_mn_list,
-                                   std::string_view msg_type, CDataStream& vRecv)
+MessageProcessingResult CMNAuth::ProcessMessage(CNode& peer, ServiceFlags node_services, CConnman& connman, CMasternodeMetaMan& mn_metaman,
+                                                const CActiveMasternodeManager* const mn_activeman, const CMasternodeSync& mn_sync,
+                                                const CDeterministicMNList& tip_mn_list, std::string_view msg_type, CDataStream& vRecv)
 {
     assert(mn_metaman.IsValid());
 
@@ -74,22 +65,22 @@ PeerMsgRet CMNAuth::ProcessMessage(CNode& peer, ServiceFlags node_services, CCon
 
     // only one MNAUTH allowed
     if (!peer.GetVerifiedProRegTxHash().IsNull()) {
-        return tl::unexpected{MisbehavingError{100, "duplicate mnauth"}};
+        return MisbehavingError{100, "duplicate mnauth"};
     }
 
     if ((~node_services) & (NODE_NETWORK | NODE_BLOOM)) {
         // either NODE_NETWORK or NODE_BLOOM bit is missing in node's services
-        return tl::unexpected{MisbehavingError{100, "mnauth from a node with invalid services"}};
+        return MisbehavingError{100, "mnauth from a node with invalid services"};
     }
 
     if (mnauth.proRegTxHash.IsNull()) {
-        return tl::unexpected{MisbehavingError{100, "empty mnauth proRegTxHash"}};
+        return MisbehavingError{100, "empty mnauth proRegTxHash"};
     }
 
     if (!mnauth.sig.IsValid()) {
         LogPrint(BCLog::NET_NETCONN, "CMNAuth::ProcessMessage -- invalid mnauth for protx=%s with sig=%s\n",
                  mnauth.proRegTxHash.ToString(), mnauth.sig.ToString(false));
-        return tl::unexpected{MisbehavingError{100, "invalid mnauth signature"}};
+        return MisbehavingError{100, "invalid mnauth signature"};
     }
 
     const auto dmn = tip_mn_list.GetMN(mnauth.proRegTxHash);
@@ -97,27 +88,18 @@ PeerMsgRet CMNAuth::ProcessMessage(CNode& peer, ServiceFlags node_services, CCon
         // in case node was unlucky and not up to date, just let it be connected as a regular node, which gives it
         // a chance to get up-to-date and thus realize that it's not a MN anymore. We still give it a
         // low DoS score.
-        return tl::unexpected{MisbehavingError{10, "missing mnauth masternode"}};
+        return MisbehavingError{10, "missing mnauth masternode"};
     }
 
-    uint256 signHash;
-    int nOurNodeVersion{PROTOCOL_VERSION};
-    if (Params().NetworkIDString() != CBaseChainParams::MAIN && gArgs.IsArgSet("-pushversion")) {
-        nOurNodeVersion = gArgs.GetArg("-pushversion", PROTOCOL_VERSION);
-    }
     const CBLSPublicKey pubKey(dmn->pdmnState->pubKeyOperator.Get());
     // See comment in PushMNAUTH (fInbound is negated here as we're on the other side of the connection)
-    if (peer.nVersion < MNAUTH_NODE_VER_VERSION || nOurNodeVersion < MNAUTH_NODE_VER_VERSION) {
-        signHash = ::SerializeHash(std::make_tuple(pubKey, peer.GetSentMNAuthChallenge(), !peer.IsInboundConn()));
-    } else {
-        signHash = ::SerializeHash(std::make_tuple(pubKey, peer.GetSentMNAuthChallenge(), !peer.IsInboundConn(), peer.nVersion.load()));
-    }
+    const uint256 signHash{::SerializeHash(std::make_tuple(pubKey, peer.GetSentMNAuthChallenge(), !peer.IsInboundConn(), peer.nVersion.load()))};
     LogPrint(BCLog::NET_NETCONN, "CMNAuth::%s -- constructed signHash for nVersion %d, peer=%d\n", __func__, peer.nVersion, peer.GetId());
 
     if (!mnauth.sig.VerifyInsecure(dmn->pdmnState->pubKeyOperator.Get(), signHash, false)) {
         // Same as above, MN seems to not know its fate yet, so give it a chance to update. If this is a
         // malicious node (DoSing us), it'll get banned soon.
-        return tl::unexpected{MisbehavingError{10, "mnauth signature verification failed"}};
+        return MisbehavingError{10, "mnauth signature verification failed"};
     }
 
     if (!peer.IsInboundConn()) {

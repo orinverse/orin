@@ -56,7 +56,7 @@ public:
 
     bool Condition(int32_t version) const
     {
-        uint32_t mask = ((uint32_t)1) << m_bit;
+        uint32_t mask = (uint32_t{1}) << m_bit;
         return (((version & VERSIONBITS_TOP_MASK) == VERSIONBITS_TOP_BITS) && (version & mask) != 0);
     }
 
@@ -111,7 +111,7 @@ void initialize_versionbits()
 
 constexpr uint32_t MAX_START_TIME = 4102444800; // 2100-01-01
 
-FUZZ_TARGET_INIT(versionbits, initialize_versionbits)
+FUZZ_TARGET(versionbits, .init = initialize_versionbits)
 {
     const CChainParams& params = *g_params;
     const int64_t interval = params.GetConsensus().nPowTargetSpacing;
@@ -200,7 +200,7 @@ FUZZ_TARGET_INIT(versionbits, initialize_versionbits)
     const uint32_t signalling_mask = fuzzed_data_provider.ConsumeIntegral<uint32_t>();
 
     // mine prior periods
-    while (fuzzed_data_provider.remaining_bytes() > 0) {
+    while (fuzzed_data_provider.remaining_bytes() > 0) { // early exit; no need for LIMITED_WHILE
         // all blocks in these periods either do or don't signal
         bool signal = fuzzed_data_provider.ConsumeBool();
         for (int b = 0; b < period; ++b) {

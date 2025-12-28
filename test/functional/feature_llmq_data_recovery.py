@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2024 The Dash Core developers
+# Copyright (c) 2021-2024 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import time
+from typing import List, Optional
 from test_framework.p2p import logger
-from test_framework.test_framework import DashTestFramework
+from test_framework.test_framework import (
+    DashTestFramework,
+    MasternodeInfo,
+)
 from test_framework.util import force_finish_mnsync
 
 '''
@@ -24,12 +28,12 @@ llmq_type_strings = {llmq_test: 'llmq_test', llmq_test_v17: 'llmq_test_v17'}
 
 class QuorumDataRecoveryTest(DashTestFramework):
     def set_test_params(self):
-        extra_args = [["-vbparams=testdummy:0:999999999999:0:10:8:6:5:-1"] for _ in range(9)]
-        self.set_dash_test_params(9, 7, extra_args=extra_args)
-        self.set_dash_llmq_test_params(4, 3)
+        extra_args = [["-vbparams=testdummy:0:999999999999:0:10:8:6:5:-1"] for _ in range(7)]
+        self.set_orin_test_params(7, 6, extra_args=extra_args)
+        self.set_orin_llmq_test_params(4, 3)
 
-    def restart_mn(self, mn, reindex=False, qvvec_sync=None, qdata_recovery_enabled=True):
-        args = self.extra_args[mn.node.index] + ['-masternodeblsprivkey=%s' % mn.keyOperator,
+    def restart_mn(self, mn: MasternodeInfo, reindex=False, qvvec_sync=None, qdata_recovery_enabled=True):
+        args = self.extra_args[mn.nodeIdx] + ['-masternodeblsprivkey=%s' % mn.keyOperator,
                                               '-llmq-data-recovery=%d' % qdata_recovery_enabled]
         if qvvec_sync is None:
             qvvec_sync = []
@@ -37,29 +41,40 @@ class QuorumDataRecoveryTest(DashTestFramework):
             args.append('-llmq-qvvec-sync=%s:%d' % (llmq_type_strings[llmq_sync[0]], llmq_sync[1]))
         if reindex:
             args.append('-reindex')
-            bb_hash = mn.node.getbestblockhash()
-            self.restart_node(mn.node.index, args)
-            self.wait_until(lambda: mn.node.getbestblockhash() == bb_hash)
+            self.restart_node(mn.nodeIdx, args)
         else:
-            self.restart_node(mn.node.index, args)
-        force_finish_mnsync(mn.node)
-        self.connect_nodes(mn.node.index, 0)
-        if qdata_recovery_enabled:
-            # trigger recovery threads and wait for them to start
-            self.generate(self.nodes[0], 1, sync_fun=self.no_op)
+            self.restart_node(mn.nodeIdx, args)
 
-            self.bump_mocktime(self.quorum_data_thread_request_timeout_seconds + 1)
-            time.sleep(1)
-        self.sync_blocks()
+    def wait_restarted_mn(self, mn: MasternodeInfo, reindex=False, block_count=None):
+        if reindex:
+            self.wait_until(lambda: mn.get_node(self).getblockcount() >= block_count)
+
+        force_finish_mnsync(mn.get_node(self))
+        self.connect_nodes(mn.nodeIdx, 0)
 
     def restart_mns(self, mns=None, exclude=None, reindex=False, qvvec_sync=None, qdata_recovery_enabled=True):
         if exclude is None:
             exclude = []
         if qvvec_sync is None:
             qvvec_sync = []
-        for mn in self.mninfo if mns is None else mns:
+
+        block_count = self.nodes[0].getblockcount()
+        for mn in self.mninfo if mns is None else mns: # type: MasternodeInfo
             if mn not in exclude:
                 self.restart_mn(mn, reindex, qvvec_sync, qdata_recovery_enabled)
+
+        for mn in self.mninfo if mns is None else mns: # type: MasternodeInfo
+            if mn not in exclude:
+                self.wait_restarted_mn(mn, reindex, block_count)
+
+        if qdata_recovery_enabled:
+            # trigger recovery threads and wait for them to start
+            self.generate(self.nodes[0], 1, sync_fun=self.no_op)
+
+            self.bump_mocktime(self.quorum_data_thread_request_timeout_seconds + 1)
+            time.sleep(1)
+
+        self.sync_blocks()
         self.wait_for_sporks_same()
 
     def test_mns(self, quorum_type_in, quorum_hash_in, valid_mns=None, all_mns=None, test_secret=True, expect_secret=True,
@@ -73,13 +88,13 @@ class QuorumDataRecoveryTest(DashTestFramework):
                 assert not self.test_mn_quorum_data(mn, quorum_type_in, quorum_hash_in, test_secret, False)
         self.wait_for_quorum_data(valid_mns, quorum_type_in, quorum_hash_in, test_secret, expect_secret, recover, timeout)
 
-    def get_mn(self, protx_hash):
-        for mn in self.mninfo:
+    def get_mn(self, protx_hash) -> Optional[MasternodeInfo]:
+        for mn in self.mninfo: # type: MasternodeInfo
             if mn.proTxHash == protx_hash:
                 return mn
         return None
 
-    def get_member_mns(self, quorum_type, quorum_hash):
+    def get_member_mns(self, quorum_type, quorum_hash) -> List[Optional[MasternodeInfo]]:
         members = self.nodes[0].quorum("info", quorum_type, quorum_hash)["members"]
         mns = []
         for member in members:
@@ -87,7 +102,7 @@ class QuorumDataRecoveryTest(DashTestFramework):
                 mns.append(self.get_mn(member["proTxHash"]))
         return mns
 
-    def get_subset_only_in_left(self, quorum_members_left, quorum_members_right):
+    def get_subset_only_in_left(self, quorum_members_left, quorum_members_right) -> List[MasternodeInfo]:
         quorum_members_subset = quorum_members_left.copy()
         for mn in list(set(quorum_members_left) & set(quorum_members_right)):
             quorum_members_subset.remove(mn)
@@ -120,10 +135,11 @@ class QuorumDataRecoveryTest(DashTestFramework):
                 quorum_hash_2 = None
                 members_only_in_1 = []
                 members_only_in_2 = []
+                member_mns_2 = []
                 while len(members_only_in_1) == 0 or len(members_only_in_2) == 0:
-                    quorum_hash_1 = self.mine_quorum()
+                    quorum_hash_1 = quorum_hash_2
                     quorum_hash_2 = self.mine_quorum()
-                    member_mns_1 = self.get_member_mns(llmq_type, quorum_hash_1)
+                    member_mns_1 = member_mns_2
                     member_mns_2 = self.get_member_mns(llmq_type, quorum_hash_2)
                     members_only_in_1 = self.get_subset_only_in_left(member_mns_1, member_mns_2)
                     members_only_in_2 = self.get_subset_only_in_left(member_mns_2, member_mns_1)
@@ -147,8 +163,8 @@ class QuorumDataRecoveryTest(DashTestFramework):
 
         logger.info("Test automated DGK data recovery")
         # This two nodes will remain the only ones with valid DKG data
-        last_resort_test = None
-        last_resort_v17 = None
+        last_resort_test: MasternodeInfo = None
+        last_resort_v17: MasternodeInfo = None
         while True:
             # Mine the quorums used for the recovery test
             quorum_hash_recover = self.mine_quorum()

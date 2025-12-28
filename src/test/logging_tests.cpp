@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -98,7 +98,7 @@ BOOST_FIXTURE_TEST_CASE(logging_LogPrintf_, LogSetup)
     LogPrintf_("fn2", "src2", 2, BCLog::LogFlags::NET, BCLog::Level::None, "foo2: %s", "bar2\n");
     LogPrintf_("fn3", "src3", 3, BCLog::LogFlags::NONE, BCLog::Level::Debug, "foo3: %s", "bar3\n");
     LogPrintf_("fn4", "src4", 4, BCLog::LogFlags::NONE, BCLog::Level::None, "foo4: %s", "bar4\n");
-    std::ifstream file{tmp_log_path};
+    std::ifstream file = fsbridge::ifstream(tmp_log_path);
     std::vector<std::string> log_lines;
     for (std::string log; std::getline(file, log);) {
         log_lines.push_back(log);
@@ -120,7 +120,8 @@ BOOST_FIXTURE_TEST_CASE(logging_LogPrintMacros, LogSetup)
     LogPrintLevel(BCLog::NET, BCLog::Level::Info, "foo8: %s\n", "bar8");
     LogPrintLevel(BCLog::NET, BCLog::Level::Warning, "foo9: %s\n", "bar9");
     LogPrintLevel(BCLog::NET, BCLog::Level::Error, "foo10: %s\n", "bar10");
-    std::ifstream file{tmp_log_path};
+    LogPrintfCategory(BCLog::VALIDATION, "foo11: %s\n", "bar11");
+    std::ifstream file = fsbridge::ifstream(tmp_log_path);
     std::vector<std::string> log_lines;
     for (std::string log; std::getline(file, log);) {
         log_lines.push_back(log);
@@ -131,7 +132,9 @@ BOOST_FIXTURE_TEST_CASE(logging_LogPrintMacros, LogSetup)
         "[net:debug] foo7: bar7",
         "[net:info] foo8: bar8",
         "[net:warning] foo9: bar9",
-        "[net:error] foo10: bar10"};
+        "[net:error] foo10: bar10",
+        "[validation] foo11: bar11",
+    };
     BOOST_CHECK_EQUAL_COLLECTIONS(log_lines.begin(), log_lines.end(), expected.begin(), expected.end());
 }
 
@@ -157,7 +160,7 @@ BOOST_FIXTURE_TEST_CASE(logging_LogPrintMacros_CategoryName, LogSetup)
         expected.push_back(expected_log);
     }
 
-    std::ifstream file{tmp_log_path};
+    std::ifstream file = fsbridge::ifstream(tmp_log_path);
     std::vector<std::string> log_lines;
     for (std::string log; std::getline(file, log);) {
         log_lines.push_back(log);
@@ -190,7 +193,7 @@ BOOST_FIXTURE_TEST_CASE(logging_SeverityLevels, LogSetup)
         "[net:warning] foo5: bar5",
         "[net:error] foo7: bar7",
     };
-    std::ifstream file{tmp_log_path};
+    std::ifstream file = fsbridge::ifstream(tmp_log_path);
     std::vector<std::string> log_lines;
     for (std::string log; std::getline(file, log);) {
         log_lines.push_back(log);
@@ -205,7 +208,7 @@ BOOST_FIXTURE_TEST_CASE(logging_Conf, LogSetup)
         ResetLogger();
         ArgsManager args;
         args.AddArg("-loglevel", "...", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
-        const char* argv_test[] = {"dashd", "-loglevel=debug"};
+        const char* argv_test[] = {"orind", "-loglevel=debug"};
         std::string err;
         BOOST_REQUIRE(args.ParseParameters(2, argv_test, err));
         init::SetLoggingLevel(args);
@@ -217,7 +220,7 @@ BOOST_FIXTURE_TEST_CASE(logging_Conf, LogSetup)
         ResetLogger();
         ArgsManager args;
         args.AddArg("-loglevel", "...", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
-        const char* argv_test[] = {"dashd", "-loglevel=net:trace"};
+        const char* argv_test[] = {"orind", "-loglevel=net:trace"};
         std::string err;
         BOOST_REQUIRE(args.ParseParameters(2, argv_test, err));
         init::SetLoggingLevel(args);
@@ -234,7 +237,7 @@ BOOST_FIXTURE_TEST_CASE(logging_Conf, LogSetup)
         ResetLogger();
         ArgsManager args;
         args.AddArg("-loglevel", "...", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
-        const char* argv_test[] = {"dashd", "-loglevel=debug", "-loglevel=net:trace", "-loglevel=http:info"};
+        const char* argv_test[] = {"orind", "-loglevel=debug", "-loglevel=net:trace", "-loglevel=http:info"};
         std::string err;
         BOOST_REQUIRE(args.ParseParameters(4, argv_test, err));
         init::SetLoggingLevel(args);

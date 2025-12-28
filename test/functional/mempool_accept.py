@@ -24,13 +24,11 @@ from test_framework.messages import (
 from test_framework.script import (
     CScript,
     OP_0,
-    OP_2,
-    OP_3,
-    OP_CHECKMULTISIG,
     OP_HASH160,
     OP_RETURN,
 )
 from test_framework.script_util import (
+    keys_to_multisig_script,
     script_to_p2sh_script,
 )
 from test_framework.util import (
@@ -65,7 +63,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         assert_equal(node.getmempoolinfo()['size'], self.mempool_size)
 
         self.log.info('Should not accept garbage to testmempoolaccept')
-        assert_raises_rpc_error(-3, 'Expected type array, got string', lambda: node.testmempoolaccept(rawtxs='ff00baar'))
+        assert_raises_rpc_error(-3, 'JSON value of type string is not of expected type array', lambda: node.testmempoolaccept(rawtxs='ff00baar'))
         assert_raises_rpc_error(-8, 'Array must contain between 1 and 25 transactions.', lambda: node.testmempoolaccept(rawtxs=['ff22']*26))
         assert_raises_rpc_error(-8, 'Array must contain between 1 and 25 transactions.', lambda: node.testmempoolaccept(rawtxs=[]))
         assert_raises_rpc_error(-22, 'TX decode failed', lambda: node.testmempoolaccept(rawtxs=['ff00baar']))
@@ -76,7 +74,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout[0].nValue = int(0.3 * COIN)
         tx.vout[1].nValue = int(49 * COIN)
         raw_tx_in_block = tx.serialize().hex()
-        txid_in_block = self.wallet.sendrawtransaction(from_node=node, tx_hex=raw_tx_in_block, maxfeerate=0)
+        txid_in_block = self.wallet.sendrawtransaction(from_node=node, tx_hex=raw_tx_in_block)
         self.generate(node, 1)
         self.mempool_size = 0
         self.check_mempool_result(
@@ -129,7 +127,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         raw_tx_0_reject = tx.serialize().hex()
         txid_0_reject = tx.rehash()
         self.check_mempool_result(
-            # No RBF in DASH
+            # No RBF in ORIN
             result_expected=[{'txid': txid_0_reject, 'allowed': False, 'reject-reason': 'txn-mempool-conflict'}],
             rawtxs=[raw_tx_0_reject],
         )
@@ -166,7 +164,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vin[1].prevout = COutPoint(hash=int(txid_1, 16), n=0)
         tx.vout[0].nValue = int(0.1 * COIN)
         raw_tx_spend_both = tx.serialize().hex()
-        txid_spend_both = self.wallet.sendrawtransaction(from_node=node, tx_hex=raw_tx_spend_both, maxfeerate=0)
+        txid_spend_both = self.wallet.sendrawtransaction(from_node=node, tx_hex=raw_tx_spend_both)
         self.generate(node, 1)
         self.mempool_size = 0
         # Now see if we can add the coins back to the utxo set by sending the exact txs again
@@ -275,7 +273,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         key = ECKey()
         key.generate()
         pubkey = key.get_pubkey().get_bytes()
-        tx.vout[0].scriptPubKey = CScript([OP_2, pubkey, pubkey, pubkey, OP_3, OP_CHECKMULTISIG])  # Some bare multisig script (2-of-3)
+        tx.vout[0].scriptPubKey = keys_to_multisig_script([pubkey] * 3, k=2)  # Some bare multisig script (2-of-3)
         self.check_mempool_result(
             result_expected=[{'txid': tx.rehash(), 'allowed': False, 'reject-reason': 'bare-multisig'}],
             rawtxs=[tx.serialize().hex()],

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -40,6 +40,7 @@ public:
 };
 
 using banmap_t = std::map<CSubNet, CBanEntry>;
+using NodeId = int64_t;
 
 /**
  * Convert a `banmap_t` object to a JSON array.
@@ -57,6 +58,5 @@ UniValue BanMapToJson(const banmap_t& bans);
  * unparsable values.
  */
 void BanMapFromJson(const UniValue& bans_json, banmap_t& bans);
-
 
 #endif // BITCOIN_NET_TYPES_H

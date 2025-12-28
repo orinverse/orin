@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2015-2024 The Dash Core developers
+# Copyright (c) 2015-2025 The Orin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,11 +14,15 @@ from io import BytesIO
 
 from test_framework.messages import CBlock, CBlockHeader, CCbTx, CMerkleBlock, from_hex, hash256, msg_getmnlistd, QuorumId, ser_uint256
 from test_framework.p2p import P2PInterface
-from test_framework.test_framework import DashTestFramework
+from test_framework.test_framework import (
+    DashTestFramework,
+    MasternodeInfo,
+)
 from test_framework.util import assert_equal
 
 DIP0008_HEIGHT = 432
 DIP0024_HEIGHT = 900
+V20_HEIGHT = 900
 
 # TODO: this helper used in many tests, find a new home for it
 class TestP2PConn(P2PInterface):
@@ -45,10 +49,11 @@ class TestP2PConn(P2PInterface):
 class LLMQCoinbaseCommitmentsTest(DashTestFramework):
     def set_test_params(self):
         self.extra_args = [[ f'-testactivationheight=dip0008@{DIP0008_HEIGHT}', f'-testactivationheight=dip0024@{DIP0024_HEIGHT}', "-vbparams=testdummy:999999999999:999999999999" ]] * 4
-        self.set_dash_test_params(4, 3, extra_args = self.extra_args)
+        self.set_orin_test_params(4, 3, extra_args = self.extra_args)
+        self.delay_v20_and_mn_rr(height=V20_HEIGHT)
 
     def remove_masternode(self, idx):
-        mn = self.mninfo[idx]
+        mn: MasternodeInfo = self.mninfo[idx]
         rawtx = self.nodes[0].createrawtransaction([{"txid": mn.collateral_txid, "vout": mn.collateral_vout}], {self.nodes[0].getnewaddress(): 999.9999})
         rawtx = self.nodes[0].signrawtransactionwithwallet(rawtx)
         self.nodes[0].sendrawtransaction(rawtx["hex"])
@@ -78,7 +83,7 @@ class LLMQCoinbaseCommitmentsTest(DashTestFramework):
         # Register one more MN, but don't start it (that would fail as DashTestFramework doesn't support this atm)
         baseBlockHash = self.nodes[0].getbestblockhash()
         self.prepare_masternode(self.mn_count)
-        new_mn = self.mninfo[self.mn_count]
+        new_mn: MasternodeInfo = self.mninfo[self.mn_count]
 
         # Now test if that MN appears in a diff when the base block is the one just before MN registration
         expectedDeleted = []
@@ -253,17 +258,6 @@ class LLMQCoinbaseCommitmentsTest(DashTestFramework):
 
         return d
 
-    def activate_dip8(self, slow_mode=False):
-        # NOTE: set slow_mode=True if you are activating dip8 after a huge reorg
-        # or nodes might fail to catch up otherwise due to a large
-        # (MAX_BLOCKS_IN_TRANSIT_PER_PEER = 16 blocks) reorg error.
-        self.log.info("Wait for dip0008 activation")
-        while self.nodes[0].getblockcount() < DIP0008_HEIGHT:
-            self.bump_mocktime(10)
-            self.generate(self.nodes[0], 10, sync_fun=self.no_op)
-            if slow_mode:
-                self.sync_blocks()
-        self.sync_blocks()
 
     def test_dip8_quorum_merkle_root_activation(self, with_initial_quorum, slow_mode=False):
         if with_initial_quorum:
@@ -279,7 +273,9 @@ class LLMQCoinbaseCommitmentsTest(DashTestFramework):
         cbtx = self.nodes[0].getblock(self.nodes[0].getbestblockhash(), 2)["tx"][0]
         assert cbtx["cbTx"]["version"] == 1
 
-        self.activate_dip8(slow_mode)
+        self.activate_by_name('dip0008', expected_activation_height=DIP0008_HEIGHT)
+        self.log.info("Mine one more block with new rules of dip0008")
+        self.generate(self.nodes[0], 1)
 
         # Assert that merkleRootQuorums is present and 0 (we have no quorums yet)
         cbtx = self.nodes[0].getblock(self.nodes[0].getbestblockhash(), 2)["tx"][0]

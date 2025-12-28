@@ -1,11 +1,11 @@
 Sample configuration files for:
 ```
-systemd: dashd.service
-Upstart: dashd.conf
-OpenRC:  dashd.openrc
-         dashd.openrcconf
-CentOS:  dashd.init
-macOS:   org.dash.dashd.plist
+systemd: orind.service
+Upstart: orind.conf
+OpenRC:  orind.openrc
+         orind.openrcconf
+CentOS:  orind.init
+macOS:   org.orin.orind.plist
 ```
 have been made available to assist packagers in creating node packages here.
 

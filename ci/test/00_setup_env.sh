@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2019-2020 The Bitcoin Core developers
+# Copyright (c) 2019-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -38,13 +38,13 @@ export USE_BUSY_BOX=${USE_BUSY_BOX:-false}
 
 export RUN_UNIT_TESTS=${RUN_UNIT_TESTS:-true}
 export RUN_FUNCTIONAL_TESTS=${RUN_FUNCTIONAL_TESTS:-true}
+export RUN_TIDY=${RUN_TIDY:-false}
 export RUN_SECURITY_TESTS=${RUN_SECURITY_TESTS:-false}
 # By how much to scale the test_runner timeouts (option --timeout-factor).
 # This is needed because some ci machines have slow CPU or disk, so sanitizers
 # might be slow or a reindex might be waiting on disk IO.
 export TEST_RUNNER_TIMEOUT_FACTOR=${TEST_RUNNER_TIMEOUT_FACTOR:-4}
 export RUN_FUZZ_TESTS=${RUN_FUZZ_TESTS:-false}
-export EXPECTED_TESTS_DURATION_IN_SECONDS=${EXPECTED_TESTS_DURATION_IN_SECONDS:-1000}
 
 export CONTAINER_NAME=${CONTAINER_NAME:-ci_unnamed}
 export DOCKER_NAME_TAG=${DOCKER_NAME_TAG:-ubuntu:20.04}
@@ -55,7 +55,7 @@ export BOOST_TEST_RANDOM=${BOOST_TEST_RANDOM:-1}
 export DEBIAN_FRONTEND=noninteractive
 export HOST_CACHE_DIR=${HOST_CACHE_DIR:-$BASE_ROOT_DIR/ci-cache-$BUILD_TARGET}
 export CACHE_DIR=${CACHE_DIR:-$HOST_CACHE_DIR}
-export CCACHE_SIZE=${CCACHE_SIZE:-100M}
+export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-100M}
 export CCACHE_TEMPDIR=${CCACHE_TEMPDIR:-/tmp/.ccache-temp}
 export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
 # The cache dir.
@@ -75,8 +75,8 @@ export GOAL=${GOAL:-install}
 export DIR_QA_ASSETS=${DIR_QA_ASSETS:-${BASE_SCRATCH_DIR}/qa-assets}
 export PATH=${BASE_ROOT_DIR}/ci/retry:$PATH
 export CI_RETRY_EXE=${CI_RETRY_EXE:-"retry --"}
-# Dash's Docker-specifics
-export BUILDER_IMAGE_NAME="dash-builder-$BUILD_TARGET-$JOB_NUMBER"
+# Orin's Docker-specifics
+export BUILDER_IMAGE_NAME="orin-builder-$BUILD_TARGET-$JOB_NUMBER"
 export DOCKER_RUN_VOLUME_ARGS="-v $BASE_ROOT_DIR:$BASE_ROOT_DIR -v $HOST_CACHE_DIR:$CACHE_DIR"
 export DOCKER_RUN_ENV_ARGS="-e BASE_ROOT_DIR=$BASE_ROOT_DIR -e CACHE_DIR=$CACHE_DIR -e PULL_REQUEST=$PULL_REQUEST -e COMMIT_RANGE=$COMMIT_RANGE -e JOB_NUMBER=$JOB_NUMBER -e BUILD_TARGET=$BUILD_TARGET"
 export DOCKER_RUN_ARGS="$DOCKER_RUN_VOLUME_ARGS $DOCKER_RUN_ENV_ARGS"

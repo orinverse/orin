@@ -1,22 +1,17 @@
-// Copyright (c) 2014-2024 The Dash Core developers
+// Copyright (c) 2014-2024 The Orin Core developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <governance/classes.h>
 
 #include <chainparams.h>
-#include <consensus/validation.h>
 #include <core_io.h>
-#include <deploymentstatus.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
 #include <script/standard.h>
-#include <util/moneystr.h>
 #include <util/strencodings.h>
-#include <util/time.h>
 #include <util/underlying.h>
 #include <validation.h>
-#include <versionbits.h>
 
 #include <univalue.h>
 
@@ -24,55 +19,41 @@ CAmount ParsePaymentAmount(const std::string& strAmount)
 {
     CAmount nAmount = 0;
     if (strAmount.empty()) {
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: Amount is empty";
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- Amount is empty", __func__));
     }
     if (strAmount.size() > 20) {
         // String is much too long, the functions below impose stricter
         // requirements
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: Amount string too long";
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- Amount string too long", __func__));
     }
     // Make sure the string makes sense as an amount
     // Note: No spaces allowed
     // Also note: No scientific notation
     size_t pos = strAmount.find_first_not_of("0123456789.");
     if (pos != std::string::npos) {
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: Amount string contains invalid character";
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- Amount string contains invalid character", __func__));
     }
 
     pos = strAmount.find('.');
     if (pos == 0) {
         // JSON doesn't allow values to start with a decimal point
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: Invalid amount string, leading decimal point not allowed";
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- Invalid amount string, leading decimal point not allowed", __func__));
     }
 
     // Make sure there's no more than 1 decimal point
     if ((pos != std::string::npos) && (strAmount.find('.', pos + 1) != std::string::npos)) {
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: Invalid amount string, too many decimal points";
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- Invalid amount string, too many decimal points", __func__));
     }
 
     // Note this code is taken from AmountFromValue in rpcserver.cpp
     // which is used for parsing the amounts in createrawtransaction.
     if (!ParseFixedPoint(strAmount, 8, &nAmount)) {
         nAmount = 0;
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: ParseFixedPoint failed for string: " << strAmount;
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- ParseFixedPoint failed for string \"%s\"", __func__, strAmount));
     }
     if (!MoneyRange(nAmount)) {
         nAmount = 0;
-        std::ostringstream ostr;
-        ostr << "ParsePaymentAmount: Invalid amount string, value outside of valid money range";
-        throw std::runtime_error(ostr.str());
+        throw std::runtime_error(strprintf("%s -- Invalid amount string, value outside of valid money range", __func__));
     }
 
     return nAmount;
@@ -102,12 +83,12 @@ CSuperblock::CSuperblock(const CGovernanceObject& govObj, uint256& nHash) :
 
     UniValue obj = govObj.GetJSONObject();
 
-    if (obj["type"].get_int() != ToUnderlying(GovernanceObject::TRIGGER)) {
+    if (obj["type"].getInt<int>() != ToUnderlying(GovernanceObject::TRIGGER)) {
         throw std::runtime_error("CSuperblock: invalid data type");
     }
 
     // FIRST WE GET THE START HEIGHT, THE BLOCK HEIGHT AT WHICH THE PAYMENT SHALL OCCUR
-    nBlockHeight = obj["event_block_height"].get_int();
+    nBlockHeight = obj["event_block_height"].getInt<int>();
 
     // NEXT WE GET THE PAYMENT INFORMATION AND RECONSTRUCT THE PAYMENT VECTOR
     std::string strAddresses = obj["payment_addresses"].get_str();
@@ -188,17 +169,15 @@ void CSuperblock::ParsePaymentSchedule(const std::string& strPaymentAddresses, c
     // IF THESE DON'T MATCH, SOMETHING IS WRONG
 
     if (vecPaymentAddresses.size() != vecPaymentAmounts.size() || vecPaymentAddresses.size() != vecProposalHashes.size()) {
-        std::ostringstream ostr;
-        ostr << "CSuperblock::ParsePaymentSchedule -- Mismatched payments, amounts and proposalHashes";
-        LogPrintf("%s\n", ostr.str());
-        throw std::runtime_error(ostr.str());
+        std::string msg{strprintf("CSuperblock::%s -- Mismatched payments, amounts and proposalHashes", __func__)};
+        LogPrintf("%s\n", msg);
+        throw std::runtime_error(msg);
     }
 
     if (vecPaymentAddresses.empty()) {
-        std::ostringstream ostr;
-        ostr << "CSuperblock::ParsePaymentSchedule -- Error no payments";
-        LogPrintf("%s\n", ostr.str());
-        throw std::runtime_error(ostr.str());
+        std::string msg{strprintf("CSuperblock::%s -- Error no payments", __func__)};
+        LogPrintf("%s\n", msg);
+        throw std::runtime_error(msg);
     }
 
     // LOOP THROUGH THE ADDRESSES/AMOUNTS AND CREATE PAYMENTS
@@ -210,24 +189,22 @@ void CSuperblock::ParsePaymentSchedule(const std::string& strPaymentAddresses, c
     for (int i = 0; i < (int)vecPaymentAddresses.size(); i++) {
         CTxDestination dest = DecodeDestination(vecPaymentAddresses[i]);
         if (!IsValidDestination(dest)) {
-            std::ostringstream ostr;
-            ostr << "CSuperblock::ParsePaymentSchedule -- Invalid Dash Address : " << vecPaymentAddresses[i];
-            LogPrintf("%s\n", ostr.str());
-            throw std::runtime_error(ostr.str());
+            std::string msg{strprintf("CSuperblock::%s -- Invalid Orin Address: %s", __func__, vecPaymentAddresses[i])};
+            LogPrintf("%s\n", msg);
+            throw std::runtime_error(msg);
         }
 
         CAmount nAmount = ParsePaymentAmount(vecPaymentAmounts[i]);
 
         uint256 proposalHash;
         if (!ParseHashStr(vecProposalHashes[i], proposalHash)) {
-            std::ostringstream ostr;
-            ostr << "CSuperblock::ParsePaymentSchedule -- Invalid proposal hash : " << vecProposalHashes[i];
-            LogPrintf("%s\n", ostr.str());
-            throw std::runtime_error(ostr.str());
+            std::string msg{strprintf("CSuperblock::%s -- Invalid proposal hash: %s", __func__, vecProposalHashes[i])};
+            LogPrintf("%s\n", msg);
+            throw std::runtime_error(msg);
         }
 
         LogPrint(BCLog::GOBJECT, /* Continued */
-                 "CSuperblock::ParsePaymentSchedule -- i = %d, amount string = %s, nAmount = %lld, proposalHash = %s\n",
+                 "CSuperblock::%s -- i = %d, amount string = %s, nAmount = %lld, proposalHash = %s\n", __func__,
                  i, vecPaymentAmounts[i], nAmount, proposalHash.ToString());
 
         CGovernancePayment payment(dest, nAmount, proposalHash);
@@ -235,11 +212,10 @@ void CSuperblock::ParsePaymentSchedule(const std::string& strPaymentAddresses, c
             vecPayments.push_back(payment);
         } else {
             vecPayments.clear();
-            std::ostringstream ostr;
-            ostr << "CSuperblock::ParsePaymentSchedule -- Invalid payment found: address = " << EncodeDestination(dest)
-                 << ", amount = " << nAmount;
-            LogPrintf("%s\n", ostr.str());
-            throw std::runtime_error(ostr.str());
+            std::string msg{strprintf("CSuperblock::%s -- Invalid payment found: address = %s, amount = %d", __func__,
+                EncodeDestination(dest), nAmount)};
+            LogPrintf("%s\n", msg);
+            throw std::runtime_error(msg);
         }
     }
 }

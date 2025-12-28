@@ -1,15 +1,17 @@
-// Copyright (c) 2021-2024 The Dash Core developers
+// Copyright (c) 2021-2024 The Orin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_QT_GOVERNANCELIST_H
 #define BITCOIN_QT_GOVERNANCELIST_H
 
-#include <governance/object.h>
 #include <primitives/transaction.h>
+#include <pubkey.h>
 #include <qt/bitcoinunits.h>
 #include <sync.h>
 #include <util/system.h>
+
+#include <governance/object.h>
 
 #include <QAbstractTableModel>
 #include <QDateTime>
@@ -18,15 +20,22 @@
 #include <QTimer>
 #include <QWidget>
 
+#include <map>
+#include <memory>
+
 inline constexpr int GOVERNANCELIST_UPDATE_SECONDS = 10;
 
 namespace Ui {
 class GovernanceList;
 }
 
-class CDeterministicMNList;
 class ClientModel;
 class ProposalModel;
+class WalletModel;
+class ProposalWizard;
+
+class CDeterministicMNList;
+enum vote_outcome_enum_t : int;
 
 /** Governance Manager page widget */
 class GovernanceList : public QWidget
@@ -37,9 +46,11 @@ public:
     explicit GovernanceList(QWidget* parent = nullptr);
     ~GovernanceList() override;
     void setClientModel(ClientModel* clientModel);
+    void setWalletModel(WalletModel* walletModel);
 
 private:
     ClientModel* clientModel{nullptr};
+    WalletModel* walletModel{nullptr};
 
     std::unique_ptr<Ui::GovernanceList> ui;
     ProposalModel* proposalModel;
@@ -48,12 +59,26 @@ private:
     QMenu* proposalContextMenu;
     QTimer* timer;
 
+    // Voting-related members
+    std::map<uint256, CKeyID> votableMasternodes; // proTxHash -> voting keyID
+
+    void updateVotingCapability();
+    bool canVote() const { return !votableMasternodes.empty(); }
+    void voteForProposal(vote_outcome_enum_t outcome);
+
 private Q_SLOTS:
     void updateDisplayUnit();
     void updateProposalList();
     void updateProposalCount() const;
+    void updateMasternodeCount() const;
     void showProposalContextMenu(const QPoint& pos);
     void showAdditionalInfo(const QModelIndex& index);
+    void showCreateProposalDialog();
+
+    // Voting slots
+    void voteYes();
+    void voteNo();
+    void voteAbstain();
 };
 
 class Proposal : public QObject
@@ -94,7 +119,7 @@ class ProposalModel : public QAbstractTableModel
 private:
     QList<const Proposal*> m_data;
     int nAbsVoteReq = 0;
-    int m_display_unit{BitcoinUnits::DASH};
+    BitcoinUnit m_display_unit{BitcoinUnit::ORIN};
 
 public:
     explicit ProposalModel(QObject* parent = nullptr) :
@@ -123,7 +148,7 @@ public:
 
     const Proposal* getProposalAt(const QModelIndex& index) const;
 
-    void setDisplayUnit(int display_unit);
+    void setDisplayUnit(BitcoinUnit display_unit);
 };
 
 #endif // BITCOIN_QT_GOVERNANCELIST_H

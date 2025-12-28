@@ -1,0 +1,17 @@
+Skip libdir parsing error for clang-based mingw toolchains
+
+Qt fails to detect default library paths when using llvm-mingw via
+the g++ mkspec. We already pass the correct directories via
+CROSS_COMPILE, so relax the check on win32 targets.
+
+--- a/qtbase/mkspecs/features/toolchain.prf	2025-11-12 00:35:40.542282776 +0200
++++ b/qtbase/mkspecs/features/toolchain.prf	2025-11-12 00:35:40.546283131 +0200
+@@ -292,7 +292,7 @@
+             !integrity: \
+                 error("failed to parse default include paths from compiler output")
+         isEmpty(QMAKE_DEFAULT_LIBDIRS): \
+-            !integrity:!darwin: \
++            !integrity:!darwin:!win32: \
+                 error("failed to parse default library paths from compiler output")
+         QMAKE_DEFAULT_LIBDIRS = $$unique(QMAKE_DEFAULT_LIBDIRS)
+     } else: ghs {

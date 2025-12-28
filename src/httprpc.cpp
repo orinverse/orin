@@ -1,10 +1,9 @@
-// Copyright (c) 2015-2020 The Bitcoin Core developers
+// Copyright (c) 2015-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <httprpc.h>
 
-#include <chainparams.h>
 #include <crypto/hmac_sha256.h>
 #include <httpserver.h>
 #include <rpc/protocol.h>
@@ -12,7 +11,6 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/system.h>
-#include <util/translation.h>
 #include <walletinitinterface.h>
 
 #include <algorithm>
@@ -21,6 +19,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 /** WWW-Authenticate to present with 401 Unauthorized response */
 static const char* WWW_AUTH_HEADER_DATA = "Basic realm=\"jsonrpc\"";
@@ -116,15 +115,12 @@ static bool JSONErrorReply(RpcHttpRequest& rpcRequest, const UniValue& objError,
 {
     // Send error reply from json-rpc error object
     int nStatus = HTTP_INTERNAL_SERVER_ERROR;
-    int code = find_value(objError, "code").get_int();
+    int code = objError.find_value("code").getInt<int>();
 
     if (code == RPC_INVALID_REQUEST)
         nStatus = HTTP_BAD_REQUEST;
     else if (code == RPC_METHOD_NOT_FOUND)
         nStatus = HTTP_NOT_FOUND;
-    else if (code == RPC_PLATFORM_RESTRICTION) {
-        nStatus = HTTP_FORBIDDEN;
-    }
 
     std::string strReply = JSONRPCReply(NullUniValue, objError, id);
 
@@ -256,7 +252,7 @@ static bool HTTPReq_JSONRPC(const CoreContext& context, HTTPRequest* req)
                     } else {
                         const UniValue& request = valRequest[reqIdx].get_obj();
                         // Parse method
-                        std::string strMethod = find_value(request, "method").get_str();
+                        std::string strMethod = request.find_value("method").get_str();
                         if (!whitelisted(jreq)) {
                             LogPrintf("RPC User %s not allowed to call method %s\n", jreq.authUser, strMethod);
                             return rpcRequest.send_reply(HTTP_FORBIDDEN);
@@ -291,12 +287,14 @@ static bool InitRPCAuthentication()
         LogPrintf("Config options rpcuser and rpcpassword will soon be deprecated. Locally-run instances may remove rpcuser to use cookie-based auth, or may be replaced with rpcauth. Please see share/rpcauth for rpcauth auth generation.\n");
         strRPCUserColonPass = gArgs.GetArg("-rpcuser", "") + ":" + gArgs.GetArg("-rpcpassword", "");
     }
-    if (gArgs.GetArg("-rpcauth","") != "")
-    {
+    if (gArgs.GetArg("-rpcauth", "") != "") {
         LogPrintf("Using rpcauth authentication.\n");
         for (const std::string& rpcauth : gArgs.GetArgs("-rpcauth")) {
-            std::vector<std::string> fields = SplitString(rpcauth, ":$");
-            if (fields.size() == 3) {
+            std::vector<std::string> fields{SplitString(rpcauth, ':')};
+            const std::vector<std::string> salt_hmac{SplitString(fields.back(), '$')};
+            if (fields.size() == 2 && salt_hmac.size() == 2) {
+                fields.pop_back();
+                fields.insert(fields.end(), salt_hmac.begin(), salt_hmac.end());
                 g_rpcauth.push_back(fields);
             } else {
                 LogPrintf("Invalid -rpcauth argument.\n");

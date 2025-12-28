@@ -1,17 +1,18 @@
-// Copyright (c) 2018-2020 The Bitcoin Core developers
+// Copyright (c) 2018-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_INTERFACES_NODE_H
 #define BITCOIN_INTERFACES_NODE_H
 
-#include <consensus/amount.h> // For CAmount
-#include <net.h>        // For NodeId
-#include <net_types.h>  // For banmap_t
-#include <netaddress.h> // For Network
-#include <netbase.h>    // For ConnectionDirection
+#include <consensus/amount.h>          // For CAmount
+#include <net.h>                       // For NodeId
+#include <net_types.h>                 // For banmap_t
+#include <netaddress.h>                // For Network
+#include <netbase.h>                   // For ConnectionDirection
 #include <support/allocators/secure.h> // For SecureString
 #include <uint256.h>
+#include <util/settings.h>             // For util::SettingsValue
 #include <util/translation.h>
 
 #include <functional>
@@ -24,41 +25,46 @@
 
 class BanMan;
 class CBlockIndex;
-class CCoinControl;
 class CDeterministicMNList;
 class CFeeRate;
 class CGovernanceObject;
+class CGovernanceVote;
 class CNodeStats;
 class Coin;
 class RPCTimerInterface;
 class UniValue;
 class Proxy;
-struct bilingual_str;
 enum class SynchronizationState;
 enum class TransactionError;
-struct CNodeStateStats;
-struct NodeContext;
-
 enum vote_signal_enum_t : int;
+struct bilingual_str;
+struct CNodeStateStats;
+namespace node {
+struct NodeContext;
+} // namespace node
+namespace wallet {
+class CCoinControl;
+} // namespace wallet
 
 namespace interfaces {
 class Handler;
+class Wallet; // forward declaration for type-safe wallet parameter
 class WalletLoader;
 namespace CoinJoin {
 class Loader;
-} //namespsace CoinJoin
+} // namespace CoinJoin
 struct BlockTip;
 
-//! Interface for the src/evo part of a dash node (dashd process).
+//! Interface for the src/evo part of a orin node (orind process).
 class EVO
 {
 public:
     virtual ~EVO() {}
     virtual std::pair<CDeterministicMNList, const CBlockIndex*> getListAtChainTip() = 0;
-    virtual void setContext(NodeContext* context) {}
+    virtual void setContext(node::NodeContext* context) {}
 };
 
-//! Interface for the src/governance part of a dash node (dashd process).
+//! Interface for the src/governance part of a orin node (orind process).
 class GOV
 {
 public:
@@ -67,19 +73,36 @@ public:
     virtual int32_t getObjAbsYesCount(const CGovernanceObject& obj, vote_signal_enum_t vote_signal) = 0;
     virtual bool getObjLocalValidity(const CGovernanceObject& obj, std::string& error, bool check_collateral) = 0;
     virtual bool isEnabled() = 0;
-    virtual void setContext(NodeContext* context) {}
+    virtual bool processVoteAndRelay(const CGovernanceVote& vote, std::string& error) = 0;
+    struct GovernanceInfo {
+        CAmount proposalfee{0};
+        int superblockcycle{0};
+        int superblockmaturitywindow{0};
+        int lastsuperblock{0};
+        int nextsuperblock{0};
+        int fundingthreshold{0};
+        CAmount governancebudget{0};
+        int relayRequiredConfs{1};
+        int requiredConfs{6};
+    };
+    virtual GovernanceInfo getGovernanceInfo() = 0;
+    virtual std::optional<CGovernanceObject> createProposal(int32_t revision, int64_t created_time,
+                                const std::string& data_hex, std::string& error) = 0;
+    virtual bool submitProposal(const uint256& parent, int32_t revision, int64_t created_time, const std::string& data_hex,
+                                const uint256& fee_txid, std::string& out_object_hash, std::string& error) = 0;
+    virtual void setContext(node::NodeContext* context) {}
 };
 
-//! Interface for the src/llmq part of a dash node (dashd process).
+//! Interface for the src/llmq part of a orin node (orind process).
 class LLMQ
 {
 public:
     virtual ~LLMQ() {}
     virtual size_t getInstantSentLockCount() = 0;
-    virtual void setContext(NodeContext* context) {}
+    virtual void setContext(node::NodeContext* context) {}
 };
 
-//! Interface for the src/masternode part of a dash node (dashd process).
+//! Interface for the src/masternode part of a orin node (orind process).
 namespace Masternode
 {
 class Sync
@@ -89,7 +112,7 @@ public:
     virtual bool isBlockchainSynced() = 0;
     virtual bool isSynced() = 0;
     virtual std::string getSyncStatus() =  0;
-    virtual void setContext(NodeContext* context) {}
+    virtual void setContext(node::NodeContext* context) {}
 };
 }
 
@@ -135,7 +158,7 @@ struct BlockAndHeaderTipInfo
     double verification_progress;
 };
 
-//! Top-level interface for a dash node (dashd process).
+//! Top-level interface for a orin node (orind process).
 class Node
 {
 public:
@@ -170,6 +193,24 @@ public:
 
     //! Return whether shutdown was requested.
     virtual bool shutdownRequested() = 0;
+
+    //! Return whether a particular setting in <datadir>/settings.json is or
+    //! would be ignored because it is also specified in the command line.
+    virtual bool isSettingIgnored(const std::string& name) = 0;
+
+    //! Return setting value from <datadir>/settings.json or orin.conf.
+    virtual util::SettingsValue getPersistentSetting(const std::string& name) = 0;
+
+    //! Update a setting in <datadir>/settings.json.
+    virtual void updateRwSetting(const std::string& name, const util::SettingsValue& value) = 0;
+
+    //! Force a setting value to be applied, overriding any other configuration
+    //! source, but not being persisted.
+    virtual void forceSetting(const std::string& name, const util::SettingsValue& value) = 0;
+
+    //! Clear all settings in <datadir>/settings.json and store a backup of
+    //! previous settings in <datadir>/settings.json.bak.
+    virtual void resetSettings() = 0;
 
     //! Map port.
     virtual void mapPort(bool use_upnp, bool use_natpmp) = 0;
@@ -211,11 +252,17 @@ public:
     //! Get mempool dynamic usage.
     virtual size_t getMempoolDynamicUsage() = 0;
 
+    //! Get mempool maximum memory usage.
+    virtual size_t getMempoolMaxUsage() = 0;
+
     //! Get header tip height and time.
     virtual bool getHeaderTip(int& height, int64_t& block_time) = 0;
 
     //! Get num blocks.
     virtual int getNumBlocks() = 0;
+
+    //! Get network local addresses.
+    virtual std::map<CNetAddr, LocalServiceInfo> getNetLocalAddresses() = 0;
 
     //! Get best block hash.
     virtual uint256 getBestBlockHash() = 0;
@@ -235,11 +282,8 @@ public:
     //! Is masternode.
     virtual bool isMasternode() = 0;
 
-    //! Get reindex.
-    virtual bool getReindex() = 0;
-
-    //! Get importing.
-    virtual bool getImporting() = 0;
+    //! Is loading blocks.
+    virtual bool isLoadingBlocks() = 0;
 
     //! Set network active.
     virtual void setNetworkActive(bool active) = 0;
@@ -357,12 +401,12 @@ public:
 
     //! Get and set internal node context. Useful for testing, but not
     //! accessible across processes.
-    virtual NodeContext* context() { return nullptr; }
-    virtual void setContext(NodeContext* context) { }
+    virtual node::NodeContext* context() { return nullptr; }
+    virtual void setContext(node::NodeContext* context) { }
 };
 
 //! Return implementation of Node interface.
-std::unique_ptr<Node> MakeNode(NodeContext* context = nullptr);
+std::unique_ptr<Node> MakeNode(node::NodeContext& context);
 
 //! Block tip (could be a header or not, depends on the subscribed signal).
 struct BlockTip {

@@ -12,7 +12,7 @@ For example:
 
     make HOST=x86_64-w64-mingw32 -j4
 
-**Dash Core's `configure` script by default will ignore the depends output.** In
+**Orin Core's `configure` script by default will ignore the depends output.** In
 order for it to pick up libraries, tools, and settings from the depends build,
 you must set the `CONFIG_SITE` environment variable to point to a `config.site` settings file.
 In the above example, a file named `depends/x86_64-w64-mingw32/share/config.site` will be
@@ -84,9 +84,6 @@ For linux RISC-V 64-bit cross compilation (there are no packages for 32-bit):
 
     sudo apt-get install g++-riscv64-linux-gnu binutils-riscv64-linux-gnu
 
-RISC-V known issue: gcc-7.3.0 and gcc-7.3.1 result in a broken `test_dash` executable (see https://github.com/bitcoin/bitcoin/pull/13543),
-this is apparently fixed in gcc-8.1.0.
-
 For linux S390X cross compilation:
 
     sudo apt-get install g++-s390x-linux-gnu binutils-s390x-linux-gnu
@@ -108,7 +105,9 @@ The following can be set when running make: `make FOO=bar`
 - `SDK_PATH`: Path where SDKs can be found (used by macOS)
 - `FALLBACK_DOWNLOAD_PATH`: If a source file can't be fetched, try here before giving up
 - `C_STANDARD`: Set the C standard version used. Defaults to `c11`.
-- `CXX_STANDARD`: Set the C++ standard version used. Defaults to `c++17`.
+- `CXX_STANDARD`: Set the C++ standard version used. Defaults to `c++20`.
+- `NO_BOOST`: Don't download/build/cache Boost
+- `NO_LIBEVENT`: Don't download/build/cache Libevent
 - `NO_QT`: Don't download/build/cache Qt and its dependencies
 - `NO_QR`: Don't download/build/cache packages needed for enabling qrencode
 - `NO_ZMQ`: Don't download/build/cache packages needed for enabling ZeroMQ
@@ -116,10 +115,11 @@ The following can be set when running make: `make FOO=bar`
 - `NO_BDB`: Don't download/build/cache BerkeleyDB
 - `NO_SQLITE`: Don't download/build/cache SQLite
 - `NO_UPNP`: Don't download/build/cache packages needed for enabling UPnP
+- `NO_NATPMP`: Don't download/build/cache packages needed for enabling NAT-PMP
+- `NO_USDT`: Don't download/build/cache packages needed for enabling USDT tracepoints
 - `ALLOW_HOST_PACKAGES`: Packages that are missed in dependencies (due to `NO_*` option or
   build script logic) are searched for among the host system packages using
   `pkg-config`. It allows building with packages of other (newer) versions
-- `NO_NATPMP`: Don't download/build/cache packages needed for enabling NAT-PMP
 - `MULTIPROCESS`: build libmultiprocess (experimental, requires cmake)
 - `DEBUG`: Disable some optimizations and enable more runtime checking
 - `HOST_ID_SALT`: Optional salt to use when generating host package ids
@@ -128,9 +128,10 @@ The following can be set when running make: `make FOO=bar`
   resides in the `depends` directory, and the log file is printed out automatically in case
   of build error. After successful build log files are moved along with package archives
 - `LTO`: Enable options needed for LTO. Does not add `-flto` related options to *FLAGS.
+- `NO_HARDEN=1`: Don't use hardening options when building packages
 
 If some packages are not built, for example `make NO_WALLET=1`, the appropriate
-options will be passed to Dash Core's configure. In this case, `--disable-wallet`.
+options will be passed to Orin Core's configure. In this case, `--disable-wallet`.
 
 ### Additional targets
 
